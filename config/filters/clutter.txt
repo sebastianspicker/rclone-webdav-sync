@@ -1,0 +1,63 @@
+# Global rclone filter rules (used with --filter-from).
+#
+# These keep OS/editor/tool debris out of the synced tree. Rules are
+# applied top to bottom; a path matching no rule is included. Only
+# exclusions here, so everything else is synced.
+#
+# Directories containing a file named .nosync are skipped entirely by
+# sync/pull runs (--exclude-if-present .nosync).
+
+# --- OS / desktop metadata ------------------------------------------------
+- .DS_Store
+- ._*
+- .Spotlight-V100/
+- .Trashes/
+- .fseventsd/
+- Thumbs.db
+- desktop.ini
+- .directory
+
+# --- Editor / tool temporary files ---------------------------------------
+- *.swp
+- *.swo
+- *.swx
+- *~
+- .#*
+- \#*\#
+- 4913
+- *.tmp
+- *.temp
+- .*.swp
+
+# --- Optional: development clutter ---------------------------------------
+# Uncomment the groups you want. node_modules/__pycache__/etc. are often
+# regenerable and can dwarf the rest of a repository.
+# - node_modules/
+# - __pycache__/
+# - .venv/
+# - venv/
+# - .pytest_cache/
+# - .mypy_cache/
+# - .ruff_cache/
+# - .tox/
+# - .cache/
+# - target/
+# - dist/
+# - build/
+# - .next/
+# - .terraform/
+# - vendor/
+
+# --- Optional: repository internals --------------------------------------
+# This project treats git repos as ordinary folders, so .git/ is synced by
+# default. Uncomment to keep only working trees in the cloud (history
+# then lives solely in your git remotes). Never combine this with a
+# cloud-side clone expectation.
+# - .git/
+# - .hg/
+# - .svn/
+
+# --- Optional: logs and coverage -----------------------------------------
+# - *.log
+# - coverage/
+# - .nyc_output/

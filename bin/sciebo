@@ -1,0 +1,107 @@
+#!/bin/bash
+# sciebo - single entrypoint for the rclone-sciebo tooling.
+#
+# Interpreter is /bin/bash on purpose: launchd runs bash 3.2 on macOS and
+# every module must stay compatible with it.
+#
+# Contracts:
+#   - Command functions return a status; only die/usage_error exit.
+#   - Commands never call each other in-process; spawn ${PROJECT_DIR}/bin/sciebo.
+#   - The EXIT trap releases the run lock; commands acquire it once.
+#   - Commands source only the lib/ helpers, never each other's internals.
+
+# shellcheck source-path=SCRIPTDIR
+set -euo pipefail
+umask 077
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# shellcheck source=../lib/core.sh
+source "${SCRIPT_DIR}/../lib/core.sh"
+# shellcheck source=../lib/rclone.sh
+source "${SCRIPT_DIR}/../lib/rclone.sh"
+# shellcheck source=../lib/settings.sh
+source "${SCRIPT_DIR}/../lib/settings.sh"
+# shellcheck source=../lib/lock.sh
+source "${SCRIPT_DIR}/../lib/lock.sh"
+# shellcheck source=../lib/manifest.sh
+source "${SCRIPT_DIR}/../lib/manifest.sh"
+# shellcheck source=../lib/ui.sh
+source "${SCRIPT_DIR}/../lib/ui.sh"
+# shellcheck source=../lib/commands/setup.sh
+source "${SCRIPT_DIR}/../lib/commands/setup.sh"
+# shellcheck source=../lib/commands/doctor.sh
+source "${SCRIPT_DIR}/../lib/commands/doctor.sh"
+# shellcheck source=../lib/commands/discover.sh
+source "${SCRIPT_DIR}/../lib/commands/discover.sh"
+# shellcheck source=../lib/commands/sync.sh
+source "${SCRIPT_DIR}/../lib/commands/sync.sh"
+# shellcheck source=../lib/commands/folders.sh
+source "${SCRIPT_DIR}/../lib/commands/folders.sh"
+# shellcheck source=../lib/commands/folders_choose.sh
+source "${SCRIPT_DIR}/../lib/commands/folders_choose.sh"
+# shellcheck source=../lib/commands/mount.sh
+source "${SCRIPT_DIR}/../lib/commands/mount.sh"
+# shellcheck source=../lib/commands/cleanup.sh
+source "${SCRIPT_DIR}/../lib/commands/cleanup.sh"
+# shellcheck source=../lib/commands/schedule.sh
+source "${SCRIPT_DIR}/../lib/commands/schedule.sh"
+
+COMMANDS="setup doctor discover list check sync folders mount umount mounts cleanup schedule"
+
+usage_main() {
+  cat <<'EOF'
+Usage: sciebo <command> [options]
+
+Sync local directories with a sciebo (Nextcloud/WebDAV) remote via rclone.
+Transfers and deletions happen only through `sync` and `cleanup --apply`.
+
+Commands:
+  setup                     create/update the sciebo rclone remote
+  doctor [--offline]        preflight checks (PASS/WARN/FAIL report)
+  discover [--write]        find git repositories under roots.conf
+  list                      list configured sources (mode, name, paths, filter)
+  check                     dry run of all sources (no changes)
+  sync [options]            apply sync/pull/bisync for all sources
+  folders <subcommand>      choose/add/list/remove folder pairs
+  mount [options]           mount the remote on demand (nfsmount)
+  umount <selector>         unmount a recorded mount
+  mounts [--folder SUB]     show recorded mounts
+  cleanup [options]         old logs / stale chunk-upload housekeeping
+  schedule <subcommand>     install/uninstall/status of the launchd agent
+
+Run `sciebo help <command>` or `<command> --help` for command options.
+EOF
+}
+
+main() {
+  local command="${1:-help}"
+  [[ $# -eq 0 ]] || shift
+  case "$command" in
+    help | -h | --help)
+      if [[ $# -eq 0 ]]; then
+        usage_main
+      else
+        case " $COMMANDS " in
+          *" $1 "*) "usage_$1" ;;
+          *)
+            printf '%s: unknown command: %s\n\n' "$CLI_NAME" "$1" >&2
+            usage_main >&2
+            exit 2
+            ;;
+        esac
+      fi
+      ;;
+    setup | doctor | discover | list | check | sync | folders | mount | umount | mounts | cleanup | schedule)
+      "cmd_${command}" "$@"
+      ;;
+    *)
+      printf '%s: unknown command: %s\n\n' "$CLI_NAME" "$command" >&2
+      usage_main >&2
+      exit 2
+      ;;
+  esac
+}
+
+trap release_lock EXIT
+main "$@"
