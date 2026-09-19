@@ -1,0 +1,17 @@
+# Credentials and local overrides
+.env
+config/settings.local.env
+
+# Generated configuration and runtime state
+config/sources.generated.conf
+state/
+
+# Logs and atomic-write debris
+*.log
+*.tmp.*
+
+# OS and editor debris
+.DS_Store
+._*
+*.swp
+*~
