@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Compatibility shim for automation that still calls scripts/sync.sh:
 # installed launchd agents that point at the old path, plus local scripts
 # or habits referencing it.
@@ -20,10 +20,7 @@ for arg in "$@"; do
 done
 
 run() {
-  if [[ "${#args[@]}" -gt 0 ]]; then
-    exec "$PROJECT_DIR/bin/sciebo" "$1" "${args[@]}"
-  fi
-  exec "$PROJECT_DIR/bin/sciebo" "$1"
+  exec "$PROJECT_DIR/bin/sciebo" "$1" "${args[@]}"
 }
 
 if [[ "$list" == true ]]; then

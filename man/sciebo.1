@@ -1,0 +1,2194 @@
+.\" Man page for the sciebo CLI.
+.TH SCIEBO 1 "2026-09-20" "rclone-sciebo" "User Commands"
+.SH NAME
+sciebo \- synchronize local directories with a sciebo (Nextcloud/WebDAV) remote
+.SH SYNOPSIS
+.B sciebo
+.RI [ global\-options ]
+.I command
+.RI [ options ]
+.RI [ arguments ]
+.br
+.B sciebo help
+.RI [ command ]
+.br
+.B sciebo
+.I command
+.B \-\-help
+.SH DESCRIPTION
+.B sciebo
+synchronizes local directories with a sciebo (Nextcloud/WebDAV) account
+through
+.BR rclone (1).
+Sources are declared in
+.IR config/sources.conf ,
+.IR config/folders.conf ,
+and
+.IR config/sources.generated.conf ;
+each source is a pair of a local directory and a remote subdirectory below
+.IR <RCLONE_REMOTE>:<REMOTE_BASE>/ .
+.PP
+Transfers and deletions happen only through
+.B sciebo sync
+and
+.BR "sciebo cleanup \-\-apply" .
+Every other command is read-only with respect to the remote unless its
+description says otherwise. A failed command returns a non-zero status;
+usage errors print the command usage to standard error.
+.PP
+Profiles provide independent accounts. Each profile keeps its own manifest,
+filter, and state tree under
+.I config/profiles/<name>/
+and
+.IR state/profiles/<name>/ .
+Select one per run with the global
+.B \-\-profile
+option or by exporting
+.BR SCIEBO_PROFILE .
+The default profile is the project-wide layout.
+.SH GLOBAL OPTIONS
+Global options may appear before or after the command, but they are consumed
+before the command runs.
+.TP
+.BI \-\-profile " NAME"
+Use the named profile.
+.TP
+.B \-\-trust
+Accept invalid TLS certificates (rclone gets
+.BR \-\-no\-check\-certificate ,
+curl gets
+.BR \-\-insecure ).
+.TP
+.B \-\-non\-interactive
+Never prompt; fail or skip instead.
+.TP
+.B \-\-debug
+Verbose rclone and HTTP output.
+.TP
+.BI \-\-log\-file " FILE"
+Write the rclone log to
+.IR FILE ;
+.B \-
+means standard output.
+.TP
+.BI \-\-confdir " DIR"
+Read configuration and state from
+.IR DIR :
+settings, manifests, filters, and the default state tree move below it.
+The shipped
+.I settings.env
+stays the fallback when
+.I DIR
+has no settings file.
+.TP
+.BI \-\-log\-dir " DIR"
+Write run logs to
+.I DIR
+instead of
+.IR <state>/logs .
+.TP
+.BI \-\-log\-expire " HOURS"
+Delete logs older than
+.I HOURS
+in
+.BR "sciebo cleanup \-\-logs" ,
+overriding
+.BR LOG_RETENTION_DAYS .
+.TP
+.BR \-V ", " \-\-version
+Print the version and exit.
+.TP
+.BR \-h ", " \-\-help
+Print the main usage text and exit.
+.SH COMMANDS
+Run
+.B sciebo help
+.I command
+or
+.IB command " \-\-help"
+for the same usage text that documents the options below.
+.SS "sciebo setup [\-\-login] [\-\-url URL] [\-\-no\-keychain] [\-\-rotate] [\-\-proxy URL] [\-\-crypt]"
+Create or update the rclone remote named by
+.B RCLONE_REMOTE
+as a Nextcloud WebDAV backend and validate it.
+.TP
+.B \-\-login
+Authenticate with the Nextcloud Login Flow v2, which opens a browser and
+returns a fresh app password.
+.TP
+.BI \-\-url " URL"
+Base URL for
+.BR \-\-login .
+.TP
+.B \-\-rotate
+Fetch a fresh app password for the already-configured remote; cannot be
+combined with
+.B \-\-login
+or
+.BR \-\-url .
+.TP
+.BI \-\-proxy " URL"
+Use
+.I URL
+as the proxy for this setup run only; settings files are not written.
+.TP
+.B \-\-crypt
+Create the crypt remote named by
+.B CRYPT_REMOTE
+(default
+.IR <RCLONE_REMOTE>\-crypt )
+wrapping the WebDAV remote with fresh randomly generated passwords; cannot
+be combined with
+.BR \-\-login ,
+.BR \-\-rotate ,
+or
+.BR \-\-url .
+.TP
+.B \-\-no\-keychain
+Store the obscured password in the rclone config for this run instead of the
+macOS Keychain.
+.SS "sciebo doctor [\-\-offline] [\-\-json]"
+Run preflight checks and print PASS/WARN/FAIL lines plus a summary. Exits 1
+if any check fails. The policy checks cover the active desktop-parity
+settings: a compact
+.B policies
+line, local case-only clashes with
+.BR CASE_CLASH_POLICY ,
+end-to-end encrypted folders with
+.BR E2EE_POLICY ,
+mounted external storages with
+.BR EXTERNAL_STORAGE_POLICY ,
+the delete guard
+.RB ( ASK_DELETE ,
+.BR DELETE_FILES_THRESHOLD ,
+.BR MAX_DELETE ),
+and sources over
+.B BIG_FOLDER_SIZE
+with
+.BR BIG_FOLDER_EXISTING_POLICY .
+When
+.B QUOTA_WARN_PERCENT
+is above 0 it also reads the server quota once and reports WARN at or above
+the threshold (PASS below, WARN when the probe fails; offline it reports the
+threshold only).
+.TP
+.B \-\-offline
+Skip network checks; the encrypted-folder, external-storage, and big-folder
+scans report the policy only.
+.TP
+.B \-\-json
+Print only a JSON document instead of the text report. Besides
+.B ok
+and
+.BR checks ,
+the document carries the policy objects
+.BR policies ,
+.BR name_hygiene ,
+.BR case_clashes ,
+.BR e2ee ,
+.BR external ,
+.BR delete_guard ,
+and
+.BR big_folders .
+.SS "sciebo discover [\-\-write]"
+Scan the roots in
+.I config/roots.conf
+for git repositories and emit manifest lines.
+.TP
+.B \-\-write
+Atomically write
+.IR config/sources.generated.conf .
+.SS "sciebo list [\-\-json]"
+List the parsed sources with mode, name, local path, remote path, and filter,
+including invalid entries with their error.
+.TP
+.B \-\-json
+Print the valid entries as
+.RB ( {"sources":[...]} )
+with their origin (manual, folders, or generated); invalid lines keep going
+to standard error.
+.SS "sciebo check [options]"
+Dry run of every source. Accepts the same options as
+.BR "sciebo sync" ;
+transfers stay disabled.
+.SS "sciebo sync [options]"
+Apply the sync, pull, and bisync entries of all configured sources.
+.TP
+.B \-\-apply
+Transfer data (default for
+.BR sync ).
+.TP
+.B \-\-dry\-run
+Explicit dry run (default for
+.BR check ).
+.TP
+.BI \-\-only " NAME"
+Run only the entry whose sanitized name is
+.IR NAME .
+.TP
+.B \-\-resync
+Allow
+.B rclone bisync \-\-resync
+(first-time initialization). A resync can copy or delete files in both
+directions; review a dry run with
+.B \-\-resync
+first.
+.TP
+.B \-\-yes
+Download pull/bisync sources even when they exceed
+.BR MAX_DOWNLOAD_SIZE ,
+and disable the delete guard for this run.
+.TP
+.B \-\-metered\-ok
+Run even when the connection is metered, overriding
+.BR METERED_POLICY=skip
+or
+.B ask
+for this run.
+.TP
+.B \-\-quiet
+Only print failures, warnings, and the final summary.
+.TP
+.B \-\-no\-lock
+Do not take the run lock.
+.TP
+.B \-\-force
+Run even while paused (the global pause marker or a per-pair
+.B folders pause
+flag).
+.PP
+Desktop-parity policies apply per entry. With
+.BR INVALID_NAME_POLICY=exclude
+(the default) non-portable names are excluded; with
+.BR CASE_CLASH_POLICY=exclude
+(the default) the later name of a local case-only collision is excluded, and
+.B rename
+quarantines it as
+.IR "<name> (case conflict)<ext>" .
+.BR E2EE_POLICY=exclude
+excludes end-to-end encrypted subfolders from pull/bisync and skips an entry
+whose remote root is encrypted;
+.BR EXTERNAL_STORAGE_POLICY=ask
+asks once on a terminal before a remote root on mounted external storage;
+.BR BIG_FOLDER_EXISTING_POLICY=warn
+warns about configured sources over
+.BR BIG_FOLDER_SIZE .
+.BR MOVE_TO_TRASH=1
+moves deleted or overwritten pull/bisync files into
+.B LOCAL_TRASH_DIR
+(default
+.IR <state>/trash )
+instead of deleting them;
+.BR CHECKSUM=1
+compares by checksum.
+.B SYMLINK_POLICY
+selects skip, follow, or translate. The upload chunk size is clamped to
+.B MIN_CHUNK_SIZE
+and
+.BR MAX_CHUNK_SIZE ;
+.B PROXY_TYPE
+is validated and reported while the flags come from
+.B PROXY
+and
+.BR PROXY_DIRECT .
+.PP
+The delete guard: with
+.BR ASK_DELETE=1
+(the default) and an unlimited
+.BR MAX_DELETE ,
+each apply passes
+.B \-\-max\-delete
+.BR DELETE_FILES_THRESHOLD .
+When rclone stops because the threshold was reached, a terminal asks once to
+continue without the cap; a non-interactive run fails the entry with a
+message to re-run with
+.BR \-\-yes .
+An explicit
+.B MAX_DELETE
+of 0 or more overrides the guard.
+.PP
+With
+.B QUOTA_WARN_PERCENT
+above 0 the server quota is probed once before the entries (the same cached
+probe
+.B doctor
+uses) and a
+.B quota guard:
+warning names the floor percentage used and the threshold. A probe error only
+warns, and the check never fails a run.
+.SS "sciebo verify [options]"
+Check that every configured source matches its destination with
+.BR "rclone check" .
+Never transfers, deletes, writes logs, or takes the run lock.
+.TP
+.BI \-\-only " NAME"
+Check only the source with this sanitized name.
+.TP
+.B \-\-download
+Download remote files and hash them (slow; catches server-side corruption).
+.TP
+.B \-\-size\-only
+Compare sizes only, skip hashes.
+.TP
+.B \-\-quiet
+Only print failures and the summary.
+.SS "sciebo status [options]"
+Show the pause state and the last recorded run per configured source.
+Read-only.
+.TP
+.BI \-\-only " NAME"
+Show only the source with this sanitized name.
+.TP
+.BI \-\-history " [N]"
+After each row, print its last N (default 10) recorded runs.
+.TP
+.B \-\-json
+Print the pause state and one row per source as a single JSON document;
+cannot be combined with
+.BR \-\-watch .
+.TP
+.BI \-\-watch " [N]"
+Refresh the report every N seconds (default 5) until interrupted with
+INT/TERM.
+.TP
+.B \-\-quiet
+Only print rows that need attention, plus the summary.
+.SS "sciebo pause [\-\-for DURATION]"
+Skip sync and check runs until
+.BR "sciebo resume" .
+Without
+.B \-\-for
+the pause is indefinite; an expired marker is removed automatically.
+.TP
+.BI \-\-for " DURATION"
+Pause for
+.IR N [smhd]
+(90m, 24h, 1d; a bare number means minutes).
+.SS "sciebo resume"
+Clear the pause marker so scheduled and manual runs continue.
+.SS "sciebo folders [subcommand] [options]"
+Choose sciebo folders to pair with local directories, Nextcloud-client
+style. With no subcommand,
+.B choose
+runs. Only
+.I config/folders.conf
+and pair filter files under
+.I config/filters/
+are written; no data is transferred.
+.TP
+.B choose
+Browse the remote and pick folders. Options:
+.BR \-\-depth " N,"
+.BR \-\-local\-root " DIR,"
+.BR \-\-mode " MODE"
+(sync, pull, or bisync),
+.BR \-\-select ,
+.BR \-\-no\-fzf ,
+.BR \-\-no\-dry\-run .
+Before a proposed pair is accepted,
+.B BIG_FOLDER_POLICY
+(default ask),
+.B EXTERNAL_STORAGE_POLICY
+(default ask), and
+.B E2EE_POLICY
+(default exclude) are applied in that order: ask confirms on a terminal and
+skips otherwise, warn warns and proceeds, skip/exclude drop the pair, and
+allow proceeds silently.
+.TP
+.BI "add \-\-remote " SUB " [options]"
+Add a single pair without browsing; the remote subfolder is required.
+Options:
+.BR \-\-local " PATH,"
+.BR \-\-mode " MODE,"
+.BR \-\-select ,
+.BR \-\-include " SUB"
+(repeatable),
+.BR \-\-exclude " SUB"
+(repeatable),
+.BR \-\-local\-root " DIR."
+.TP
+.B import FILE
+Add a pair from a nextcloudcmd
+.B \-\-unsyncedfolders
+list (one remote-relative folder per line). Options:
+.BR \-\-remote " SUB,"
+.BR \-\-local " PATH,"
+.BR \-\-mode " MODE,"
+.BR \-\-local\-root " DIR,"
+.BR \-\-select .
+.TP
+.BI "edit " "NAME [options]"
+Rewrite a wizard-managed pair's local path, remote subfolder, filter, or
+mode.
+.I NAME
+is the sanitized entry name from
+.BR "folders list" .
+At least one option is required. Options:
+.BR \-\-local " PATH"
+(replaces the local folder),
+.BR \-\-remote " SUB"
+(replaces the remote subfolder; an empty value or
+.B /
+means the remote base, stored as
+.BR . ,
+and the pair and its filter are renamed after the new remote),
+.BR \-\-force
+(allow a
+.B \-\-remote
+change even though initialized bisync state no longer matches the new path;
+without it the change is refused, and the stale state is kept so a
+.B "sync \-\-resync"
+is needed),
+.BR \-\-include " SUB"
+(repeatable; every other immediate child is excluded),
+.BR \-\-exclude " SUB"
+(repeatable),
+.BR \-\-mode " MODE,"
+.BR \-\-select ,
+.BR \-\-clear .
+.TP
+.B list [\-\-json]
+Table of all configured pairs, including the per-pair
+.B PAUSED
+and
+.B HIDDEN
+flags; with
+.B \-\-json
+the same rows as
+.RB ( {"pairs":[...]} )
+plus boolean
+.B paused
+and
+.B hidden
+fields.
+.TP
+.BI pause " NAME"
+Set the pair's per-pair paused flag so
+.B sync
+and
+.B check
+skip it (reported as skipped, not failed).
+.I NAME
+is the sanitized name from
+.BR "folders list" .
+The flag is stored as
+.I paused=1
+in a mode-600 file under
+.B PAIR_FLAGS_DIR
+(default
+.IR <STATE_DIR>/pairs );
+.B sync \-\-force
+runs a paused pair anyway.
+.TP
+.BI resume " NAME"
+Clear the pair's paused flag.
+.TP
+.BI remove " NAME [\-\-purge]"
+Remove a wizard-managed pair from
+.IR config/folders.conf .
+.B \-\-purge
+also deletes the pair's bisync workdir, run record, history file, blacklist
+record, pair filter, and pair flag file; local data directories are never
+touched.
+.SS "sciebo mount [options]"
+Mount the configured remote as a local filesystem with
+.B rclone nfsmount
+(no macFUSE needed). Mounts are created and removed only when the command is
+run; nothing is scheduled automatically.
+.TP
+.BI \-\-folder " SUB"
+Remote subfolder below the remote base.
+.TP
+.BI \-\-mountpoint " PATH"
+Local mountpoint (default:
+.B MOUNT_ROOT
+or
+.IR MOUNT_ROOT/<name> ).
+.TP
+.B \-\-ro
+Read-only mount, no VFS cache.
+.TP
+.B \-\-foreground
+Run rclone in the foreground (Ctrl-C to unmount).
+.TP
+.B \-\-sudo
+Run rclone as root; macOS NFS mounts usually need this.
+.SS "sciebo umount ([\-\-folder SUB | \-\-mountpoint PATH | \-\-all]) [\-\-sudo]"
+Unmount a recorded mount and remove its state.
+.TP
+.BI \-\-folder " SUB"
+Unmount the mount recorded for this remote subfolder.
+.TP
+.BI \-\-mountpoint " PATH"
+Unmount the mount recorded for this local mountpoint.
+.TP
+.B \-\-all
+Unmount every recorded mount.
+.TP
+.B \-\-sudo
+Run umount as root.
+.SS "sciebo mounts [\-\-folder SUB] [\-\-check] [\-\-prune] [\-\-json]"
+Show recorded mounts with mount visibility, rclone pid, and pid liveness.
+.TP
+.BI \-\-folder " SUB"
+Only show the mount recorded for this remote subfolder.
+.TP
+.B \-\-check
+Exit 1 when a recorded mount is not visible or its rclone is gone.
+.TP
+.B \-\-prune
+Remove state records for mounts whose mountpoint is not mounted and whose
+pid is not alive.
+.TP
+.B \-\-json
+Print the mounts as
+.RB ( {"mounts":[{...}]} )
+instead of the table; a pid is null when unknown.
+.SS "sciebo cleanup (\-\-logs | \-\-uploads | \-\-state | \-\-junk | \-\-cache | \-\-support) [\-\-apply]"
+Housekeeping for the tooling. Dry run by default: nothing is deleted unless
+.B \-\-apply
+is given. At least one of the category options is required. Refuses to run
+while the local sync lock is held.
+.TP
+.B \-\-logs
+Delete log files older than
+.B LOG_RETENTION_DAYS
+(or
+.B LOG_EXPIRE_HOURS
+when set) and rotate logs larger than
+.B LOG_MAX_BYTES
+to
+.IR <file>.1 .
+.TP
+.B \-\-uploads
+Delete stale chunk uploads under
+.I /remote.php/dav/uploads/
+older than
+.BR CHUNK_CLEANUP_MIN_AGE .
+.TP
+.B \-\-state
+Delete stale bisync workdirs, lock leftovers, atomic-write temp files, and
+orphaned mount records older than
+.BR STATE_CLEANUP_MIN_AGE .
+.TP
+.B \-\-junk
+Delete files matching a glob in
+.I config/filters/fleeting.txt
+below every manifest source and older than
+.BR JUNK_CLEANUP_MIN_AGE .
+.TP
+.B \-\-cache
+Delete files under
+.B MOUNT_CACHE_DIR
+older than
+.BR STATE_CLEANUP_MIN_AGE .
+.TP
+.B \-\-support
+Keep the newest
+.I support\-*.tar.gz
+archives under
+.B STATE_DIR
+and delete the older ones.
+.TP
+.BI \-\-keep " N"
+Archives to keep for
+.B \-\-support
+(default 5).
+.TP
+.B \-\-apply
+Actually delete (default is a dry run).
+.SS "sciebo logs [list] | show NAME [\-\-lines N] | tail NAME [\-\-lines N] | path [NAME]"
+List, print, or follow the per-source sync logs in
+.BR LOG_DIR .
+Sources come from the manifest, the run records under
+.IR state/last/ ,
+and the per-source
+.I *.log
+files in
+.BR LOG_DIR .
+Read-only: no run lock, no state writes, and no network.
+.TP
+.B list [\-\-json]
+Table of NAME, MODE, PATH, SIZE, MTIME, and the last recorded STATUS;
+with
+.B \-\-json
+the same rows as
+.RB ( {"logs":[...]} ).
+.TP
+.BI "show " NAME
+Print the last
+.B \-\-lines
+lines (default 50) of NAME's log. The recorded last-run log is preferred,
+otherwise the newest normal log, falling back to a dry-run log with a note
+on standard error.
+.TP
+.BI "tail " NAME
+Like
+.BR show ,
+but follow the file with
+.BR "tail \-f" .
+.TP
+.B path [NAME]
+Print the resolved log path as
+.IR name<TAB>path ,
+or one line per known source.
+.TP
+.BI \-\-lines " N"
+Trailing lines printed by
+.B show
+and
+.BR tail ;
+a missing, zero, or non-numeric value is a usage error.
+.TP
+.B \-\-json
+List as
+.RB ( {"logs":[...]} ).
+.PP
+An unknown name exits 1 with the known names; a source without a log exits
+1 for
+.BR show ,
+.BR tail ,
+and
+.BR path .
+.SS "sciebo schedule install|uninstall|status"
+Manage the per-user scheduler agent (launchd on macOS, systemd --user on
+Linux) that runs
+.B sciebo sync \-\-apply \-\-quiet
+on the schedule configured in
+.I config/settings.env
+(daily at
+.BR SCHEDULE_HOUR : SCHEDULE_MINUTE ,
+every
+.B SCHEDULE_INTERVAL
+seconds, or when
+.B SCHEDULE_WATCH_PATH
+changes).
+.B SCHEDULE_JITTER
+adds a random delay before each run.
+.TP
+.B install
+Render the unit(s) and start the agent/timer.
+.TP
+.B uninstall
+Stop the agent/timer and remove the unit(s).
+.TP
+.B status
+Show whether the agent/timer is installed and loaded.
+.TP
+.B \-\-at\-login
+Install only: start the agent at login/boot, overriding
+.BR SCHEDULE_AT_LOGIN .
+.TP
+.BI \-\-profiles " LIST"
+Install only: render one extra agent per profile, labelled
+.IR <LAUNCHD_LABEL>.<profile> ,
+each running with
+.BR \-\-profile
+(comma or space separated).
+.SS "sciebo trash [subcommand] [options]"
+List or clean up the Nextcloud trashbin. The listing is read-only; IDs are
+the last path segment printed by the listing.
+.TP
+.B list
+List trashed items (default).
+.TP
+.B restore ID...
+Restore items into their original location.
+.B \-\-all
+restores every listed item after one confirmation.
+.TP
+.B rm ID...
+Permanently delete items. Asks once on a terminal unless
+.B \-\-yes
+is given; a non-interactive run deletes them as before.
+.TP
+.B empty
+Permanently delete the whole trashbin after one confirmation.
+.TP
+.B \-\-yes
+Skip the
+.BR restore \-\-all ,
+.BR rm ,
+or
+.B empty
+confirmation.
+.SS "sciebo versions SUB [options]"
+List the Nextcloud versions of a remote path below the remote base
+(read-only by default).
+.TP
+.BI \-\-download " VERSION"
+Save the version (default target
+.IR ./<name>.<VERSION> ).
+.TP
+.BI \-\-output " FILE"
+Write the
+.B \-\-download
+body to
+.IR FILE .
+.TP
+.B \-\-stdout
+Stream the
+.B \-\-download
+body to standard output.
+.TP
+.BI \-\-restore " VERSION"
+Restore the version after confirmation.
+.TP
+.BI \-\-delete " VERSION"
+Delete the version after confirmation.
+.TP
+.B \-\-yes
+Skip the
+.B \-\-restore
+and
+.B \-\-delete
+confirmation.
+.SS "sciebo share subcommand [options]"
+Manage Nextcloud shares through the OCS sharing API.
+.I SUB
+is a remote path below the remote base; permissions are letters (r, w, d, c,
+s) or a numeric mask. Link shares default to read-only (1), user and group
+shares to all (31). The create subcommands
+.RB ( link ,
+.BR copy\-link ,
+.BR user ,
+.BR group ,
+.BR email ,
+.BR guest ,
+.BR circle ,
+.BR talk ,
+.BR deck ,
+.BR remote )
+accept
+.BR \-\-json :
+they print
+.RB ( {"id","type","url","permissions"} )
+instead of the text line, omitting
+.B url
+when the server returned none;
+.B copy\-link \-\-json
+fails when the server returned no public link.
+.TP
+.BI "link " SUB
+Create a public link share. Options:
+.BR \-\-password " P,"
+.BR \-\-expire " YYYY\-MM\-DD,"
+.BR \-\-note " TEXT,"
+.BR \-\-permissions " LETTERS,"
+.BR \-\-label " LABEL,"
+.BR \-\-download " 0|1"
+(0 hides the download button; on Nextcloud 30+ this is the
+.B attributes
+array element, and the legacy
+.RB ( {"download":0} )
+object is used on older or unknown servers),
+.B \-\-file\-drop
+(upload-only link; unless
+.B \-\-permissions
+overrides it, this sets permission 4),
+.B \-\-file\-request
+(mark the link as a file request),
+.BR \-\-json .
+.TP
+.BI "user " "SUB USER"
+Share with a Nextcloud user. Options:
+.BR \-\-permissions " LETTERS,"
+.BR \-\-note " TEXT,"
+.BR \-\-send\-mail .
+.TP
+.BI "group " "SUB GROUP"
+Share with a Nextcloud group. Same options as
+.BR user .
+.TP
+.BI "email " "SUB ADDRESS"
+Share with an email address. Like
+.BR user ,
+plus
+.BR \-\-password " P,"
+.BR \-\-expire " DATE,"
+.BR \-\-send\-mail ,
+and
+.B \-\-send\-password\-by\-talk
+(password through Talk; needs
+.BR \-\-password ).
+.TP
+.BI "guest " "SUB GUEST"
+Share with a guest account (share type 8). Same options as
+.BR user .
+.TP
+.BI "circle " "SUB CIRCLE_ID"
+Share with a circle. Same options as
+.BR user .
+.TP
+.BI "talk " "SUB ROOM_TOKEN"
+Share with a Talk conversation. Same options as
+.BR user .
+.TP
+.BI "deck " "SUB CARD_ID"
+Share with a Deck board. Same options as
+.BR user .
+.TP
+.BI "remote " "SUB [USER@]SERVER"
+Share with a federated cloud id. Same options as
+.BR user .
+.TP
+.BI "list [" SUB "] [\-\-reshares] [\-\-json]"
+List shares, optionally only for
+.IR SUB .
+.B \-\-reshares
+asks the server for reshares only, and
+.B \-\-json
+prints the rows as
+.RB ( {"shares":[...]} ).
+.TP
+.BI "info " ID
+Show one share.
+.TP
+.BI "update " ID
+Change a share. Options:
+.BR \-\-password " P"
+or
+.BR \-\-remove\-password ,
+.BR \-\-expire " DATE"
+or
+.BR \-\-remove\-expire ,
+.BR \-\-note " TEXT"
+or
+.BR \-\-remove\-note ,
+.BR \-\-permissions " LETTERS,"
+.BR \-\-label " LABEL,"
+.BR \-\-download " 0|1,"
+.B \-\-send\-mail .
+.TP
+.BI "remove " "ID [\-\-yes]"
+Delete a share. Asks on a terminal unless
+.B \-\-yes
+is given; a non-interactive run proceeds as before.
+.TP
+.BI "leave " "ID [\-\-yes]"
+Leave a share shared with you. Asks on a terminal unless
+.B \-\-yes
+is given; a non-interactive run proceeds as before.
+.TP
+.BI "pending [" "\-\-local|\-\-remote] [\-\-json]"
+List shares waiting for your acceptance; the two selectors are mutually
+exclusive and
+.B \-\-json
+prints
+.RB ( {"pending":[...]} ).
+.TP
+.BI "accept " "ID [\-\-remote]"
+Accept a pending share;
+.B \-\-remote
+forces the federated pending list.
+.B "accept \-\-all [\-\-remote]"
+accepts every pending share in the selected list(s) and cannot be combined
+with an id.
+.TP
+.BI "decline " "ID [\-\-remote] [\-\-yes]"
+Decline a pending share. Asks on a terminal unless
+.B \-\-yes
+is given, and a non-interactive run requires
+.B \-\-yes
+because a declined share can be lost.
+.B "decline \-\-all [\-\-remote] [\-\-yes]"
+declines every pending share in the selected list(s) after the same
+confirmation, and cannot be combined with an id.
+.TP
+.BI "send\-email " ID
+Ask the server to email an existing share to its recipient
+.RB ( POST " /shares/{id}/send-email" ).
+.TP
+.B "remote\-list [\-\-json]"
+List the accepted federated shares as an
+.IR ID / Type / Owner / Target
+table, or as
+.RB ( {"remote_shares":[...]} )
+with
+.BR \-\-json .
+.TP
+.BI "search " QUERY
+Find sharees: users, groups, email, federated, circles, guests, and Talk
+rooms (a server that rejects the extra types is retried with users and
+groups only). Results are labelled with the sharee type.
+.TP
+.BI "copy\-link " SUB
+Create or reuse a public link and copy it to the clipboard.
+.TP
+.BI "copy\-internal " SUB
+Copy a direct internal link for
+.IR SUB .
+.TP
+.B incoming [\-\-json]
+List shares shared with you;
+.B \-\-json
+prints them as JSON.
+.SS "sciebo notifications [options]"
+List the Nextcloud notifications of the configured remote, newest first.
+.B \-\-app
+and
+.B \-\-type
+are exact, case-sensitive allowlists whose values are comma, space, or colon
+separated; when they are absent the
+.B NOTIFY_APPS
+and
+.B NOTIFY_TYPES
+settings apply as defaults (empty means all).
+.B \-\-limit
+and the allowlists apply before
+.B \-\-notify
+sends anything.
+.TP
+.BI \-\-limit " N"
+Print and notify at most N notifications after filtering.
+.TP
+.BI \-\-app " LIST"
+Only notifications from these apps.
+.TP
+.BI \-\-type " LIST"
+Only notifications with these object types.
+.TP
+.B \-\-unseen
+Only notifications not yet recorded in the seen cache; listing with
+.B \-\-unseen
+does not write the cache.
+.TP
+.BI \-\-action " ID LABEL"
+Run the action labelled
+.I LABEL
+(case-insensitive) on notification
+.IR ID ,
+using the action's POST, DELETE, or PUT method. Cannot be combined with
+.B \-\-delete
+or
+.BR \-\-delete\-all .
+.TP
+.BI \-\-delete " ID"
+Delete one notification. Mutually exclusive with
+.BR \-\-delete\-all .
+.TP
+.B \-\-delete\-all
+Delete every notification after confirmation; needs
+.B \-\-yes
+when not running interactively.
+.TP
+.B \-\-notify
+Send a desktop notification for each not-yet-seen notification.
+.TP
+.B \-\-json
+Print the filtered notifications as one JSON document (with a
+.B seen
+flag per notification). Cannot be combined with
+.BR \-\-watch .
+.TP
+.BI \-\-watch " [N]"
+Poll every N seconds (default
+.BR NOTIFY_WATCH_INTERVAL ),
+print and record new notifications, and continue until interrupted. Cannot
+be combined with
+.BR \-\-delete ,
+.BR \-\-delete\-all ,
+.BR \-\-action ,
+or
+.BR \-\-json .
+.TP
+.B \-\-quiet
+Print no notification rows.
+.TP
+.B \-\-yes
+Skip the
+.B \-\-delete\-all
+confirmation.
+.SS "sciebo activity [options]"
+Show the Nextcloud activity stream of the configured remote, newest first.
+.TP
+.BI \-\-limit " N"
+Print and notify at most N activities (default 20, maximum 100).
+.TP
+.BI \-\-since " DURATION"
+Only activities newer than
+.IR N [smhd]
+(e.g. 90m, 24h, 7d; a bare number means minutes). Because the API cursor is
+an activity id, the command walks it backwards in pages of 50 until a page
+crosses the cutoff, the stream ends, or 10 pages were fetched; hitting that
+cap warns that older entries were not fetched.
+.B \-\-notify
+is bounded by the same window.
+.TP
+.B \-\-notify
+Send a desktop notification for each not-yet-seen activity.
+.TP
+.B \-\-quiet
+Print no activity rows.
+.SS "sciebo presence [show | set STATUS | clear]"
+Show, set, or clear the Nextcloud user status. With no subcommand,
+.B show
+runs.
+.B set
+accepts online, away, dnd, or offline plus the options below.
+.TP
+.BI \-\-message " TEXT"
+Publish a custom message.
+.TP
+.BI \-\-emoji " EMOJI"
+Publish a status emoji.
+.TP
+.BI \-\-clear\-after " DUR"
+Expire the message after
+.IR N [smhd]
+(a bare number means minutes;
+.B \-\-clear\-after 0
+clears the message).
+.SS "sciebo lock SUB"
+Lock a remote file below the remote base with a WebDAV LOCK carrying the
+Nextcloud
+.B X\-User\-Lock: 1
+header. The lock token is recorded locally so
+.B sciebo unlock
+can release it.
+.SS "sciebo unlock SUB"
+Release a manual WebDAV lock on
+.IR SUB .
+The token is taken from the record written by
+.BR "sciebo lock" ;
+without one it is looked up on the server through PROPFIND.
+.TP
+.B \-\-all
+Release every lock recorded under
+.I state/remote-locks/
+and drop the records whose UNLOCK succeeded (printing
+.BR "unlocked PATH" );
+confirms first and needs
+.B \-\-yes
+in a non-interactive run. Takes no
+.IR SUB .
+.TP
+.B \-\-yes
+Skip the
+.B \-\-all
+confirmation. A record whose UNLOCK fails is warned about and kept.
+.SS "sciebo locks [\-\-prune | \-\-unlock\-all] [\-\-yes]"
+List the locks recorded by
+.B sciebo lock
+as NAME, PATH, and TOKEN.
+.TP
+.B \-\-prune
+Check every recorded path and forget records whose lock-token is gone.
+.TP
+.B \-\-unlock\-all
+Release every recorded lock the same way as
+.BR "unlock \-\-all" ;
+asks for confirmation and needs
+.B \-\-yes
+in a non-interactive run.
+.TP
+.B \-\-yes
+Skip the
+.B \-\-unlock\-all
+confirmation.
+.SS "sciebo quota [\-\-json]"
+Print the quota usage reported by
+.B rclone about
+.IR <remote> .
+.TP
+.B \-\-json
+Print rclone's JSON document instead of the plain table.
+.SS "sciebo open [SUB] [\-\-print] [\-\-web]"
+Open the local folder for
+.IR SUB ;
+the first manifest entry whose remote subdir, local path, or entry name
+equals
+.I SUB
+wins. Without a match
+.I SUB
+is resolved below
+.B FOLDERS_LOCAL_ROOT
+(the root itself when
+.I SUB
+is omitted).
+.TP
+.B \-\-web
+Open the Nextcloud Files app at
+.I /<REMOTE_BASE>[/SUB]
+in the browser instead of the local folder.
+.TP
+.B \-\-print
+Print the resolved path or URL instead of opening it.
+.SS "sciebo conflicts [options]"
+Find local conflict files below every configured source. The scan is
+read-only and purely local; two kinds are listed: conflict copies matching
+.B CONFLICT_PATTERN
+(default
+.IR "conflicted copy" )
+and case-clash quarantines renamed to
+.IR "<name> (case conflict)<ext>" .
+Remote-side case clashes are not detected here; run
+.B sciebo sync \-\-dry\-run
+to see them.
+.TP
+.BI \-\-resolve " MODE"
+Resolve conflict files instead of listing them;
+.I MODE
+is
+.BR keep\-local
+(move the file over the original),
+.BR keep\-remote
+(delete the file, keeping the original),
+.BR keep\-newest ,
+.BR keep\-oldest ,
+or
+.B keep\-both
+(rename the file to
+.IR "<name> (local copy)<ext>" ).
+Without
+.B \-\-apply
+this is a dry run.
+.TP
+.BI \-\-only " NAME"
+Scan or resolve only the source with this sanitized name.
+.TP
+.BI \-\-kind " KIND"
+Scan or resolve only one conflict kind:
+.BR copy ,
+.BR case ,
+or
+.B all
+(default).
+.TP
+.B \-\-remote
+List case clashes on the server (read-only) instead of local files. Cannot be
+combined with
+.BR \-\-resolve ,
+.BR \-\-apply ,
+.BR \-\-yes ,
+or
+.BR \-\-open .
+.TP
+.B \-\-open
+List, then open each containing directory of a match once with the platform
+opener. Read-only and unconfirmed; exits 0 and prints
+.I no conflicts
+when there is nothing to open. Cannot be combined with
+.BR \-\-resolve ,
+.BR \-\-apply ,
+.BR \-\-yes ,
+or
+.BR \-\-json .
+.TP
+.B \-\-apply
+Carry out the planned actions; destructive, so a terminal run asks once and
+a non-interactive run needs
+.BR \-\-yes .
+.TP
+.B \-\-yes
+Skip the
+.B \-\-apply
+confirmation.
+.TP
+.B \-\-json
+Print the resolve result as JSON (each item carries a
+.B kind
+field); requires
+.BR \-\-resolve .
+.TP
+.B \-\-quiet
+Print nothing; exit 1 when conflict files exist (except with
+.BR \-\-open ).
+.SS "sciebo retry [NAME [PATH]] [\-\-list] [\-\-all]"
+Clear failure-blacklist entries so the next sync tries those paths again.
+Without options,
+.I NAME
+clears every blacklisted path of that source;
+.I NAME PATH
+clears a single path.
+.TP
+.B \-\-list
+Show all blacklist records and exit.
+.TP
+.B \-\-all
+Clear every source's records.
+.SS "sciebo account list|add|import|remove|use|info|avatar|status"
+Manage profiles, each an independent account with its own manifests,
+filters, remote settings, and state.
+.TP
+.B list
+Show every profile.
+.TP
+.BI "add " "NAME [\-\-remote R] [\-\-base B]"
+Create a profile.
+.TP
+.B import [options]
+Import accounts and folder pairs from the Nextcloud desktop client's
+.IR nextcloud.cfg .
+Options:
+.BI \-\-nextcloud\-cfg " FILE"
+(also the
+.B NEXTCLOUD_CFG
+environment variable; the defaults are the macOS app container, the macOS
+legacy path, Linux, and
+.IR %APPDATA%/Nextcloud/nextcloud.cfg ),
+.BI \-\-profile " NAME"
+(select one account by 0-based index, user id, or target profile name; the
+global
+.B \-\-profile
+flag is reused),
+.BR \-\-dry\-run ,
+.BR \-\-yes
+(merge into an existing profile or manifest without asking), and
+.BR \-\-json .
+Account 0 becomes the default profile; other accounts become a profile named
+after their user id when safe, else
+.IR account<N> .
+The
+.B [General]
+values with a sciebo equivalent map into the profile's
+.IR settings.local.env ,
+folder pairs are added as bisync pairs, and passwords are never imported:
+run
+.B setup \-\-login
+or
+.B setup \-\-rotate
+for every imported profile afterwards. Without
+.B \-\-yes
+a terminal run asks once before merging into an existing profile; a
+non-interactive run refuses (exit 2).
+.TP
+.BI "remove " "NAME [\-\-yes]"
+Delete a profile's config and state.
+.TP
+.BI "use " NAME
+Show how to activate a profile.
+.TP
+.B info [\-\-json]
+Show the account on the server;
+.B \-\-json
+prints the info as JSON.
+.TP
+.BI "avatar [\-\-output " FILE "] [\-\-size " N "]"
+Download the account avatar (default
+.IR ./avatar\-<user>.png ,
+size
+.B AVATAR_SIZE
+or 128).
+.TP
+.B status [\-\-json]
+Show the remote, server, cache, and keychain state;
+.B \-\-json
+prints the same facts as JSON and still exits 1 when the server is
+unreachable.
+.SS "sciebo provision \-\-userid USER (\-\-apppassword PASS | \-\-apppassword\-fd N) \-\-serverurl URL [\-\-localdirpath PATH] [\-\-remotedirpath PATH] [\-\-isvfsenabled 0|1] [\-\-profile NAME]"
+Create an account profile and configure its rclone remote without any
+prompt, the way the desktop client's provisioning flags do. The rclone
+remote is named after the profile; without
+.B \-\-profile
+the profile is
+.IR provision\-<sanitized\ userid> .
+Creating is create-or-update, so the command can be re-run. A folder pair
+is only added when
+.B \-\-localdirpath
+is given; the pair is a regular two-way
+.RB ( bisync )
+sync, because there are no virtual files.
+.TP
+.BI \-\-userid " USER"
+Nextcloud user id (required).
+.TP
+.BI \-\-apppassword " PASS"
+App password (required unless
+.B \-\-apppassword\-fd
+is used; never printed). The value is visible in the process list.
+.TP
+.BI \-\-apppassword\-fd " N"
+Read the app password from the already-open file descriptor N, keeping it out
+of the process list.
+.TP
+.BI \-\-serverurl " URL"
+Server base URL (required). A URL that already looks like a WebDAV path
+fails; plain
+.B http://
+warns.
+.TP
+.BI \-\-localdirpath " PATH"
+Local folder to pair (optional; without it only the account is created).
+.TP
+.BI \-\-remotedirpath " PATH"
+Remote folder below the remote base (default
+.IR / ,
+the base itself).
+.TP
+.BI \-\-isvfsenabled " 0|1"
+Desktop compatibility flag; 1 warns and is ignored, any other value is a
+usage error.
+.TP
+.BI \-\-profile " NAME"
+Profile to create or update.
+.PP
+The pair is validated before anything is written. An existing source name
+or remote folder in the profile fails rather than merging. The app password
+goes to the platform keychain when
+.B KEYCHAIN
+is enabled, otherwise it is stored obscured in the rclone config. The
+remote is validated with
+.BR "rclone lsd" ;
+a failed validation exits 1.
+.SS "sciebo logout [\-\-revoke] [\-\-yes]"
+Remove the rclone remote entry and both Keychain items for the active remote
+(the plaintext
+.IB <remote>#plain
+slot and a legacy obscured slot). Manifests, state, and synced files are left
+alone.
+.TP
+.B \-\-revoke
+Revoke the app password on the server first with an OCS
+.B DELETE
+to
+.IR /ocs/v2.php/core/apppassword .
+The revoke runs before the local credentials are removed, so the stored secret
+is still available; a failed revoke only warns and the local logout still
+runs. Non-interactive runs need
+.BR \-\-yes .
+.TP
+.B \-\-yes
+Do not ask for confirmation.
+.SS "sciebo config list|get|check|edit"
+Inspect the effective settings and where each value comes from. The layered
+files
+.RB ( config/settings.env ,
+the environment,
+.IR config/settings.local.env ,
+and the active profile) are read without contacting a remote.
+.TP
+.B list [\-\-json] [\-\-all]
+Print every setting as
+.IR KEY=VALUE<TAB>source .
+Without
+.BR \-\-all ,
+settings with an empty value are hidden. Credential-like values (password,
+secret, token, apikey, proxy) print as REDACTED.
+.TP
+.B get KEY [\-\-json]
+Print the effective value of one setting.
+.TP
+.B check [\-\-json]
+Check the settings and required files as PASS/WARN/FAIL lines; exits 1 on
+any FAIL.
+.TP
+.B edit
+Create
+.I config/settings.local.env
+from the shipped example when missing and open it in
+.BR $EDITOR .
+.TP
+.B \-\-json
+Print the result as JSON (list, get, check).
+.TP
+.B \-\-all
+List: also show settings whose value is empty.
+.SS "sciebo support [\-\-output FILE] [\-\-no\-network] [\-\-json]"
+Build a redacted debug archive for bug reports: the version banner, the
+doctor report, redacted settings and rclone config, state listings, the
+newest logs (last 200 lines each), capabilities, and the scheduler/mount
+status. Passwords, secrets, tokens, and proxy values are replaced with
+REDACTED; the doctor always runs offline.
+.TP
+.BI \-\-output " FILE"
+Archive path (default
+.IR state/support\-<YYYYmmdd\-HHMMSS>.tar.gz ).
+.TP
+.B \-\-no\-network
+Accepted for nextcloudcmd-style callers; the doctor is offline.
+.TP
+.B \-\-json
+Print
+.RB ( {"archive":"...","files":N,"bytes":N} ).
+.SS "sciebo nextcloudcmd [OPTIONS] SOURCEDIR NEXTCLOUDURL"
+Run one two-way sync between
+.I SOURCEDIR
+and
+.I NEXTCLOUDURL
+with nextcloudcmd's option names. The WebDAV folder is
+.IR <url>/remote.php/dav/files/<user>/<--path> ;
+the first run initializes the rclone bisync state automatically.
+.TP
+.BI \-\-path " SUB"
+Remote folder below the user root.
+.TP
+.BI \-\-confdir " DIR"
+Configuration base for this run (ignored when
+.B SCIEBO_CONFDIR
+is already set).
+.TP
+.BR \-\-user " USER, " \-u " USER"
+User name.
+.TP
+.BR \-\-password " PASS, " \-p " PASS"
+Password (an app password is recommended). The value is visible in the
+process list; prefer
+.BR \-\-password\-fd .
+.TP
+.BI \-\-password\-fd " N"
+Read the password from the already-open file descriptor
+.I N
+instead, keeping it out of the process list. Cannot be combined with
+.BR \-\-password .
+.TP
+.B \-n
+Read credentials from
+.IR ~/.netrc .
+.TP
+.B \-\-non\-interactive
+Never prompt.
+.TP
+.BR \-\-silent ", " \-s
+Errors only.
+.TP
+.B \-\-trust
+Accept invalid TLS certificates.
+.TP
+.BI \-\-httpproxy " URL"
+HTTP proxy URL.
+.TP
+.BI \-\-exclude " FILE"
+Read exclude patterns from
+.IR FILE .
+.TP
+.BI \-\-exclude\-anchored " FILE"
+Read patterns from
+.I FILE
+and anchor each at the sync root; blank lines and
+.B #
+comments are ignored and a missing file fails.
+.TP
+.BI \-\-unsyncedfolders " FILE"
+Exclude every folder listed in
+.IR FILE .
+.TP
+.BI \-\-max\-sync\-retries " N"
+Retry the whole sync up to N times: after a successful run a dry-run probe
+is repeated while it still reports remaining changes, and every following
+full run counts toward N.
+.TP
+.BI \-\-uplimit " RATE"
+Upload bandwidth cap (rclone size suffix).
+.TP
+.BI \-\-downlimit " RATE"
+Download bandwidth cap.
+.TP
+.BR \-\-logdebug ", " \-\-verbose
+Debug-level logging.
+.TP
+.BR \-\-progress ", " \-P
+Show rclone's transfer progress. Terminal only, and suppressed by
+.B \-\-silent
+and by the internal
+.B \-\-max\-sync\-retries
+dry-run probe.
+.TP
+.BR \-v ", " \-\-version
+Print the version and exit.
+.TP
+.B \-h
+Sync hidden files (no
+.B .*
+exclusion).
+.TP
+.B \-\-dry\-run
+Report what would change, change nothing.
+.SS "sciebo watch [options]"
+Watch the local directories of the configured sources and run
+.B sciebo sync \-\-apply \-\-quiet \-\-only NAME
+when one changes. One watcher per profile is tracked in
+.IR state/watch/ .
+A source whose local directory is missing is skipped with a warning, and
+runs are skipped while
+.B sciebo pause
+is active.
+.TP
+.BI \-\-interval " N"
+Poll interval and minimum seconds between two runs of the same source
+(default
+.BR WATCH_INTERVAL ).
+.TP
+.BI \-\-debounce " N"
+Coalesce change events for N seconds (default
+.BR WATCH_DEBOUNCE ).
+.TP
+.BI \-\-only " NAME"
+Watch only this source; repeatable.
+.TP
+.BI \-\-remote\-interval " N"
+Check the remote every N seconds and notify when it differs; 0 disables
+(default
+.BR WATCH_REMOTE_INTERVAL ).
+.TP
+.BI \-\-backend " BACKEND"
+Change-detection backend:
+.BR auto ,
+.BR fswatch ,
+.BR inotify ,
+or
+.BR poll
+(default
+.BR WATCH_BACKEND ).
+.TP
+.B \-\-once
+Run one detection cycle, sync affected sources, exit.
+.TP
+.B \-\-notify
+Allow desktop notifications (overrides
+.BR NOTIFY ).
+Mutually exclusive with
+.BR \-\-no\-notify .
+.TP
+.B \-\-no\-notify
+Disable desktop notifications even when
+.BR NOTIFY=1 .
+Mutually exclusive with
+.BR \-\-notify .
+.TP
+.B \-\-quiet
+Only warnings and errors.
+.SS "sciebo edit SUB [options]"
+Download one remote file on demand, open it in an editor, and upload it
+again when it changed.
+.I SUB
+is resolved through the manifest only: the first valid entry whose remote
+subdir equals
+.I SUB
+or is a parent of
+.I SUB
+wins, and the local copy lives at that entry's local path. There is no
+.B FOLDERS_LOCAL_ROOT
+fallback, and
+.I SUB
+must name a file, not a directory. The run lock is held for the whole
+operation.
+.TP
+.BI \-\-editor " CMD"
+Editor command, possibly with arguments; the file path is appended last.
+Without any editor the platform opener is used and the upload is skipped.
+.TP
+.B \-\-no\-upload
+Download and edit, but never upload.
+.TP
+.B \-\-lock
+Take a WebDAV lock
+.RB ( sciebo
+.BR lock )
+while editing and release it afterwards; a failed release only warns.
+.PP
+The editor is
+.BR \-\-editor ,
+then
+.BR $EDITOR ,
+then
+.BR $VISUAL .
+Change detection compares file modification time and size before and after
+the editor exits; the command prints whether the file was uploaded,
+unchanged, or (with
+.BR \-\-no\-upload )
+changed but not uploaded. A failed download, a missing or directory remote
+path, an editor that removed the local file, and a failed upload exit 1.
+.SS "sciebo limit [options]"
+Cap rclone bandwidth for later
+.B sciebo sync
+runs. The limit is stored as a local marker (no server contact) and applies
+until it expires or
+.B sciebo unlimited
+removes it. An active marker takes precedence over
+.B BW_SCHEDULE
+and
+.BR BW_LIMIT_UP / BW_LIMIT_DOWN .
+.TP
+.BI \-\-up " RATE"
+Upload cap (rclone size suffix, e.g. 2M;
+.B off
+lifts it).
+.TP
+.BI \-\-down " RATE"
+Download cap (e.g. 5M).
+.TP
+.BI \-\-until " DUR"
+Expire after
+.IR N [smhd] ;
+a bare number means minutes and 0 means no expiry (default).
+.TP
+.B \-\-show
+Print the current limit without changing it.
+.TP
+.B \-\-clear
+Remove the marker (same as
+.BR "sciebo unlimited" ).
+.TP
+.B \-\-json
+Print the state as JSON.
+At least one of
+.BR \-\-up ,
+.BR \-\-down ,
+.BR \-\-until ,
+.BR \-\-show ,
+or
+.B \-\-clear
+is required.
+.SS "sciebo unlimited"
+Remove the bandwidth marker written by
+.B sciebo limit
+so later sync runs are uncapped again (unless
+.B BW_SCHEDULE
+or
+.BR BW_LIMIT_UP / BW_LIMIT_DOWN
+is configured). Prints
+.IR unlimited .
+.SS "sciebo network [\-\-json]"
+Show the active network interface and Wi-Fi name, whether the connection is
+metered (OS report,
+.BR METERED_SSIDS ,
+or a hotspot-looking SSID), the
+.B METERED_POLICY
+in effect, and the proxy mode for rclone and curl: the configured
+.BR PROXY ,
+.B direct
+when
+.BR PROXY_DIRECT=1 ,
+or the environment.
+.TP
+.B \-\-json
+Print the state as JSON.
+.SS "sciebo filters sync|list|show|check"
+Manage the rclone filter files in
+.BR FILTER_DIR .
+.B filters sync
+replaces the cache and the generated server filter atomically and takes no
+run lock.
+.TP
+.B sync [\-\-json]
+Fetch the server's
+.IR sync\-exclude.lst ,
+cache the raw body, and regenerate the server filter file.
+.TP
+.B list [\-\-json]
+Table of
+.I *.txt
+filter files plus the age and staleness of the server cache.
+.TP
+.BI "show " NAME
+Print one filter file (bare file name).
+.TP
+.B check
+Validate every
+.I *.txt
+filter with rclone's parser.
+.SS "sciebo ignored [SUB] [options]"
+List the local files that
+.B sync
+would not transfer. Each entry's local directory is listed twice, once
+unfiltered and once with sync's filter layering, and the difference is
+reported. The layering mirrors sync: the server-exclude filter, clutter and
+pair filters, the conflict-pattern exclusion, hidden files, the
+failure-blacklist excludes, and
+.I .nosync
+markers for sync/pull entries. Read-only: no run lock, no state writes, and
+no remote contact.
+.TP
+.B SUB
+Restrict the result to files under one local, local-relative, or
+remote-relative path prefix.
+.TP
+.BI \-\-source " NAME"
+Restrict the scan to one configured source; an unknown name exits 1.
+.TP
+.B \-\-json
+Print
+.RB ( {"ignored":[{"source","local","path"}]} ).
+.PP
+A missing local directory is skipped with a warning and does not fail the
+run; an
+.B rclone lsf
+failure for one entry warns and the command exits 1.
+.SS "sciebo file subcommand [options]"
+Show details for a remote path below
+.IR <RCLONE_REMOTE>:<REMOTE_BASE>/ .
+.TP
+.B info SUB [\-\-json]
+Show WebDAV metadata for
+.IR SUB .
+.TP
+.B activity SUB [\-\-limit N] [\-\-json]
+Show the activity stream of
+.IR SUB ;
+.B \-\-limit
+defaults to
+.BR FILE_ACTIVITY_LIMIT .
+.TP
+.B shares SUB [\-\-json]
+List the shares of
+.IR SUB
+(same as
+.BR "share list SUB" );
+.B \-\-json
+forwards to
+.BR "share list SUB \-\-json" .
+.SS "sciebo search TERM [\-\-limit N] [\-\-json] [\-\-open]"
+Search files on the server with Nextcloud's unified search.
+.I TERM
+is a single argument (quote it to search for spaces). Results are printed
+as
+.IR TITLE<TAB>SUBLINE<TAB>RESOURCEURL ,
+or
+.IR "no matches" .
+.TP
+.BI \-\-limit " N"
+Ask the server for at most N results (default
+.BR SEARCH_LIMIT ).
+.TP
+.B \-\-json
+Print the results as JSON.
+.TP
+.B \-\-open
+Open the first result with the platform opener.
+.SS "sciebo recent [\-\-since DUR] [\-\-limit N] [\-\-json]"
+List recently modified files below
+.IR <RCLONE_REMOTE>:<REMOTE_BASE>/ ,
+newest first, as
+.IR MODIFIED<TAB>SIZE<TAB>PATH .
+.TP
+.BI \-\-since " DURATION"
+Only files modified within
+.IR N [smhd]
+(e.g. 90m, 24h, 7d).
+.TP
+.BI \-\-limit " N"
+Print at most N files (default
+.BR RECENT_LIMIT ).
+.TP
+.B \-\-json
+Print the files as JSON.
+.SS "sciebo comments SUB [list] | SUB add MESSAGE | SUB delete ID"
+List, add, or delete comments on the remote path
+.I SUB
+below
+.IR <RCLONE_REMOTE>:<REMOTE_BASE>/
+(Nextcloud comments app).
+.B list
+is the default and prints the comment id, actor, creation time, verb, and
+message.
+.TP
+.B SUB [list] [\-\-json]
+List the comments of
+.IR SUB .
+.TP
+.BI "SUB add " MESSAGE
+Post a new comment.
+.TP
+.BI "SUB delete " "ID [\-\-yes]"
+Delete one comment after confirmation; needs
+.B \-\-yes
+when not running interactively.
+.TP
+.BI \-\-limit " N"
+List at most
+.I N
+comments (default: the
+.B COMMENTS_LIMIT
+setting, 50).
+.SS "sciebo favorites [list] | add SUB | remove SUB"
+List the server-side favorites of the configured remote, or mark
+.I SUB
+as a favorite.
+.B list
+is the default and prints the path, size, and last-modified time.
+.TP
+.B [list] [\-\-json]
+List the favorites.
+.TP
+.BI "add " SUB
+Mark
+.I SUB
+as a favorite.
+.TP
+.BI "remove " SUB
+Clear the favorite flag of
+.IR SUB .
+.SS "sciebo tags list|create|assign|clear"
+Manage Nextcloud system tags.
+.TP
+.B [list] [\-\-json]
+List the id, display name, and the user-visible/user-assignable flags.
+.TP
+.BI "create " NAME
+Create a user-visible, user-assignable tag.
+.TP
+.BI "assign " "SUB ID[,ID...]"
+Replace the tags of
+.I SUB
+with a comma-separated id list.
+.TP
+.BI "clear " SUB
+Remove every tag from
+.IR SUB .
+.SS "sciebo server info|capabilities|status"
+Inspect the configured Nextcloud server or check that it answers.
+.TP
+.B info [\-\-json]
+Server URL, user, and capability facts.
+.TP
+.B capabilities [\-\-raw]
+Parsed capabilities summary;
+.B \-\-raw
+prints the cached raw OCS response.
+.TP
+.B status
+Reachability check with
+.B rclone lsd
+(PASS/FAIL).
+.SS "sciebo hydrate SUB [options]"
+Download a remote path below the remote base on demand.
+.I SUB
+is copied with the same filter layering as sync: the server-exclude filter
+(when
+.BR FILTER_SERVER_SYNC=1 ),
+.IR clutter.txt ,
+the matching manifest entry's filter file, the conflict-pattern exclusion
+(unless
+.BR CONFLICT_UPLOAD=1 ),
+hidden files (when
+.BR SKIP_HIDDEN=1 ),
+the failure-blacklist excludes, and
+.I .nosync
+markers. The destination is the local directory of the first manifest entry
+whose remote subdir equals
+.I SUB
+or is a parent of
+.IR SUB ,
+with the remaining relative path appended; without a match it is
+.IR FOLDERS_LOCAL_ROOT/SUB .
+With
+.B \-\-dest
+the contents of
+.I SUB
+are copied into the given directory instead.
+.TP
+.BI \-\-dest " DIR"
+Copy the contents of
+.I SUB
+into
+.I DIR
+instead of the resolved destination.
+.TP
+.B \-\-dry\-run
+Report what would be copied; changes nothing.
+.TP
+.B \-\-quiet
+Do not print the success line.
+.TP
+.B \-\-json
+Print
+.RB ( {"path","dest","dry_run"} )
+instead of the text line.
+.TP
+.B \-\-progress
+Show rclone's transfer progress
+.RB ( \-P ).
+Terminal only, and suppressed by
+.B \-\-quiet
+and
+.BR \-\-json .
+.SS "sciebo announcements [options]"
+List the Nextcloud announcements of the configured server, newest first
+(the announcementcenter app must be installed and enabled; when it is
+absent or disabled the command prints
+.B "announcements app not available"
+and exits 0).
+.TP
+.BI \-\-limit " N"
+Print at most
+.I N
+announcements (default 20, max 100).
+.TP
+.B \-\-no\-dismiss
+Accepted for compatibility; announcements are not dismissed yet.
+.TP
+.B \-\-json
+Print the announcements as a JSON document.
+.SS "sciebo preview SUB [options]"
+Download a preview image of the remote file
+.I SUB
+below the configured remote base.
+.TP
+.BI \-\-output " FILE"
+Write the image to
+.I FILE
+(default
+.BR DEFAULT_PREVIEW_FILE ,
+.IR ./preview );
+.B \-
+writes to standard output.
+.TP
+.BI \-\-size " N"
+Preview edge size in pixels (default
+.BR PREVIEW_SIZE ,
+256).
+.SS "sciebo download SUB [DEST] [options]"
+Download a remote file or directory below
+.IR <RCLONE_REMOTE>:<REMOTE_BASE>/ .
+A single file is fetched over WebDAV to
+.I DEST
+(default: the basename under the current directory, or below
+.B DOWNLOAD_DIR
+when set); a directory is copied with rclone using the same filter layering
+as
+.BR "sciebo hydrate" .
+.TP
+.B \-\-dry\-run
+Report what would be transferred; change nothing.
+.TP
+.B \-\-force
+Download even when the destination already matches the remote size.
+.TP
+.B \-\-resume
+Continue a partial destination with a range request (alias
+.BR \-\-continue ).
+.TP
+.B \-\-quiet
+Do not print the success line.
+.TP
+.B \-\-json
+Print a structured summary.
+.TP
+.B \-\-progress
+Show rclone's transfer progress
+.RB ( \-P )
+for rclone transfers. Terminal only, and suppressed by
+.B \-\-quiet
+and
+.BR \-\-json .
+.SS "sciebo update [--check] [--json]"
+Update the local checkout from its git upstream. With
+.B \-\-check
+the upstream is fetched and the local revision compared with it without
+changing the working tree; a source tarball or a branch without an upstream
+is reported and exits 0. Without
+.B \-\-check
+the checkout is updated with
+.BR "git pull \-\-ff\-only" .
+The user's configuration is never modified.
+.TP
+.B \-\-check
+Only report the local vs upstream state.
+.TP
+.B \-\-json
+Print the report as JSON.
+.SH FILES
+.TP
+.B config/settings.env
+Shipped default settings. Override values in
+.I config/settings.local.env
+(not committed) or in the environment instead of editing this file.
+.TP
+.B config/settings.local.env
+Local setting overrides; plain assignments win over the environment.
+.TP
+.B config/sources.conf
+Manual source manifest; one
+.I mode | local_path | remote_subdir [| filter_file]
+line per source.
+.TP
+.B config/folders.conf
+Wizard-managed folder pairs in the same format; written by
+.BR "sciebo folders choose" ,
+.BR add ,
+and
+.BR import .
+.TP
+.B config/sources.generated.conf
+Manifest generated by
+.BR "sciebo discover \-\-write" .
+.TP
+.B config/roots.conf
+Roots scanned by
+.BR "sciebo discover" .
+.TP
+.B config/filters/
+rclone filter files referenced by manifest entries, plus
+.IR clutter.txt ,
+.IR fleeting.txt ,
+and the generated
+.I server\-exclude.txt
+(written by
+.BR "sciebo filters sync" ).
+.TP
+.B config/profiles/<name>/
+Per-profile settings, manifests, and filters.
+.TP
+.B state/
+Run state: logs (
+.IR logs/ ),
+run locks (
+.IR locks/ ),
+bisync workdirs (
+.IR bisync/ ),
+mount records (
+.IR mounts/ ),
+mount cache (
+.IR mount-cache/ ),
+last-run records (
+.IR last/ ),
+failure blacklists (
+.IR blacklist/ ),
+history (
+.IR history/ ),
+remote lock records (
+.IR remote-locks/ ),
+seen markers (
+.IR notifications\-seen ,
+.IR activity\-seen ),
+the pause marker (
+.IR paused ),
+the watch pid records (
+.IR watch/ ),
+the bandwidth marker (
+.IR bwlimit ),
+cached server sync-exclude list (
+.IR sync\-exclude.lst ),
+support archives (
+.IR support\-*.tar.gz ),
+and cached capabilities (
+.IR capabilities.env ,
+.IR capabilities.json ).
+.TP
+.B state/profiles/<name>/
+Per-profile state with the same layout.
+.TP
+.B ${RCLONE_CONFIG} (default ~/.config/rclone/rclone.conf)
+rclone configuration written by
+.BR "sciebo setup" .
+.SH "EXIT STATUS"
+.TP
+.B 0
+Success.
+.TP
+.B 1
+Operational failure, including failing checks, failed transfers, and
+conflict copies found by
+.BR "sciebo conflicts \-\-quiet" .
+.TP
+.B 2
+Usage error; the command usage text is printed to standard error.
+.SH ENVIRONMENT
+.TP
+.B SCIEBO_PROFILE
+Active profile; equivalent to the global
+.B \-\-profile
+option.
+.TP
+.B RCLONE_REMOTE
+Name of the rclone remote (default
+.BR sciebo ).
+.TP
+.B KEYCHAIN
+Store the plaintext app password in the platform keychain
+.RB ( KEYCHAIN=1 ,
+account
+.IR <remote>#plain )
+instead of the obscured value in the rclone config. A legacy obscured keychain
+item is migrated once; with
+.B KEYCHAIN=0
+the obscured value stays in the rclone config and is still revealed with
+.BR "rclone reveal" .
+.TP
+.B TLS_INSECURE
+Accept invalid TLS certificates; equivalent to the global
+.B \-\-trust
+option.
+.TP
+.B CLIENT_CERT
+PEM client certificate for mutual TLS
+.RB ( rclone " \-\-client\-cert,"
+curl
+.BR \-\-cert );
+must be a readable file when set.
+.TP
+.B CLIENT_KEY
+PEM private key for
+.BR CLIENT_CERT
+.RB ( rclone " \-\-client\-key,"
+curl
+.BR \-\-key ).
+.TP
+.B CLIENT_KEY_PASSWORD
+Plaintext passphrase for an encrypted
+.BR CLIENT_KEY ;
+rclone receives it obscured
+.RB ( \-\-client\-pass ),
+curl through a mode-600
+.B \-\-config
+file so it stays out of the argv.
+.TP
+.B CA_CERT
+PEM CA bundle used instead of the system trust store
+.RB ( rclone " \-\-ca\-cert,"
+curl
+.BR \-\-cacert ).
+.TP
+.B USER_AGENT
+Override the HTTP User-Agent
+.RB ( rclone " \-\-user\-agent,"
+curl
+.BR \-A ).
+.TP
+.B SCIEBO_NON_INTERACTIVE
+Never prompt; equivalent to the global
+.B \-\-non\-interactive
+option.
+.TP
+.B SCIEBO_DEBUG
+Verbose rclone and HTTP output; equivalent to the global
+.B \-\-debug
+option.
+.TP
+.B SCIEBO_LOG_FILE
+Path of the rclone log, or
+.B \-
+for standard output; equivalent to the global
+.B \-\-log\-file
+option.
+.TP
+.B SCIEBO_CONFDIR
+Configuration and state base; equivalent to the global
+.B \-\-confdir
+option.
+.TP
+.B SCIEBO_LOG_DIR
+Directory for run logs; equivalent to the global
+.B \-\-log\-dir
+option.
+.TP
+.B SCIEBO_LOG_EXPIRE_HOURS
+Delete logs older than this many hours in
+.BR "sciebo cleanup \-\-logs" ;
+equivalent to the global
+.B \-\-log\-expire
+option.
+.PP
+The nextcloudcmd and desktop-client
+.B OWNCLOUD_*
+variables are accepted as aliases when the matching setting is not
+exported directly:
+.BR OWNCLOUD_CHUNK_SIZE " (CHUNK_SIZE),"
+.BR OWNCLOUD_TIMEOUT " (TIMEOUT, seconds),"
+.BR OWNCLOUD_MAX_PARALLEL " (MAX_PARALLEL_SOURCES),"
+.BR OWNCLOUD_CRITICAL_FREE_SPACE_BYTES " (MIN_FREE_SPACE),"
+.BR OWNCLOUD_FREE_SPACE_BYTES " (FREE_SPACE_DOWNLOAD),"
+.BR OWNCLOUD_BLACKLIST_TIME_MIN
+and
+.BR OWNCLOUD_BLACKLIST_TIME_MAX " (BLACKLIST_TIME_MIN/MAX),"
+.BR OWNCLOUD_UPLOAD_CONFLICT_FILES " (CONFLICT_UPLOAD),"
+and
+.BR OWNCLOUD_HTTP2_ENABLED " (HTTP2_ENABLED)."
+.SH "SEE ALSO"
+.BR rclone (1)
+.PP
+The project README documents the manifest format, the settings precedence,
+and the full configuration reference:
+.I README.md
+in the rclone-sciebo project tree.

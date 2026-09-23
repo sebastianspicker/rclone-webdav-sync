@@ -6,26 +6,18 @@
   <string>@LABEL@</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/bin/bash</string>
-    <string>@PROJECT_DIR@/bin/sciebo</string>
-    <string>sync</string>
-    <string>--apply</string>
-    <string>--quiet</string>
+    <string>@BASH@</string>
+    <string>-c</string>
+    <string>@COMMAND@</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
     <string>@RCLONE_DIR@:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
-  <key>StartCalendarInterval</key>
-  <dict>
-    <key>Hour</key>
-    <integer>0</integer>
-    <key>Minute</key>
-    <integer>0</integer>
-  </dict>
-  <key>RunAtLoad</key>
-  <false/>
+@SCHEDULE@
+@WATCH_PATHS@
+  @RUN_AT_LOAD@
   <key>StandardOutPath</key>
   <string>@LOG_DIR@/launchd.out.log</string>
   <key>StandardErrorPath</key>
