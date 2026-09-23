@@ -1,20 +1,28 @@
 # Filters
 
-rclone filter files in `--filter-from` syntax: `- pattern` excludes,
-`+ pattern` includes, `#` starts a comment. See
-https://rclone.org/filtering/ for the pattern language. `sciebo doctor`
-validates every `*.txt` file in this directory by asking rclone to parse
-it with `--filter-from`.
+These are [rclone filter files](https://rclone.org/filtering/), one rule per
+line: `- pattern` excludes, `+ pattern` includes, and `#` starts a comment.
+`sciebo doctor` runs every `*.txt` file in this directory through rclone's
+`--filter-from` parser, so a typo fails preflight instead of a sync.
 
-- `clutter.txt` - global excludes applied to every source. Extend it,
-  or reference per-source files from `config/sources.conf`.
-- `pair-<name>.txt` - per-pair excludes written by `sciebo folders`;
-  referenced from `config/folders.conf`.
+Three kinds of files live here:
 
-Debug the effective rules of a run with:
+- `clutter.txt` — the global excludes that apply to every source (`.DS_Store`,
+  `*.swp`, ...), mirroring the Nextcloud desktop client's exclude list. Add
+  your own rules here, or keep per-source files and point to them from
+  `config/sources.conf`.
+- `fleeting.txt` — file-name globs that `sciebo cleanup --junk` may delete
+  locally (partial downloads and similar regenerable debris). It is not a
+  sync filter.
+- `pair-<name>.txt` — excludes written by `sciebo folders` for one pair, for
+  example to skip `node_modules/`. Referenced from `config/folders.conf`.
 
-    rclone --config ~/.config/rclone/rclone.conf \
-      sync /tmp/example sciebo:backup/example \
-      --filter-from config/filters/clutter.txt \
-      --exclude-if-present .nosync \
-      -vv --dump filters
+To see which rules a run would actually apply:
+
+```sh
+rclone --config ~/.config/rclone/rclone.conf \
+  sync /tmp/example sciebo:backup/example \
+  --filter-from config/filters/clutter.txt \
+  --exclude-if-present .nosync \
+  -vv --dump filters
+```

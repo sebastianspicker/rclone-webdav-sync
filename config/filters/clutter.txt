@@ -4,30 +4,73 @@
 # applied top to bottom; a path matching no rule is included. Only
 # exclusions here, so everything else is synced.
 #
+# The list mirrors the Nextcloud desktop client's sync-exclude.lst
+# (without its `]` fleeting-metadata marker; `cleanup --junk` handles the
+# files that are safe to delete locally). Add the optional groups at the
+# bottom when you want them.
+#
 # Directories containing a file named .nosync are skipped entirely by
 # sync/pull runs (--exclude-if-present .nosync).
 
+# --- Office / editor lock and temporary files ----------------------------
+- *~
+- ~$*
+- .~lock.*
+- ~*.tmp
+- *.idlk
+- *.prlock
+- *.dwl
+- *.dwl2
+- *~lock~
+- *.kate-swp
+- *.gnucash.tmp-*
+
 # --- OS / desktop metadata ------------------------------------------------
+- *.~*
 - .DS_Store
+- .ds_store
+- *.textClipping
 - ._*
-- .Spotlight-V100/
-- .Trashes/
-- .fseventsd/
 - Thumbs.db
-- desktop.ini
+- photothumb.db
+- System Volume Information
+- .TemporaryItems/
+- .Trashes/
+- .DocumentRevisions-V100/
+- .Trash-*
+- .fseventd
+- .apdisk
+- .Spotlight-V100/
 - .directory
+- My Saved Places.
+- *.sb-*
 
 # --- Editor / tool temporary files ---------------------------------------
 - *.swp
 - *.swo
 - *.swx
-- *~
+- .*.sw?
+- .*.*sw?
 - .#*
 - \#*\#
 - 4913
 - *.tmp
 - *.temp
-- .*.swp
+
+# --- Partial downloads and sync-tool residue -----------------------------
+- *.part
+- *.filepart
+- *.crdownload
+- .synkron.*
+- .sync.ffs_db
+- .symform
+- .symform-store
+- .fuse_hidden*
+- *.unison
+- .nfs*
+- .stfolder
+- .stignore
+- .stversions
 
 # --- Optional: development clutter ---------------------------------------
 # Uncomment the groups you want. node_modules/__pycache__/etc. are often

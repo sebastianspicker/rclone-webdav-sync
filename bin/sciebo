@@ -1,8 +1,11 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # sciebo - single entrypoint for the rclone-sciebo tooling.
 #
-# Interpreter is /bin/bash on purpose: launchd runs bash 3.2 on macOS and
-# every module must stay compatible with it.
+# Requires Bash 5.3 or newer: modules use associative arrays, mapfile, namerefs,
+# case conversion, forkless command substitution, and BASH_MONOSECONDS. macOS
+# ships an older bash as /bin/bash, so install a newer bash (e.g.
+# `brew install bash`) and make sure it is first on PATH; the guard below fails
+# fast with a clear message.
 #
 # Contracts:
 #   - Command functions return a status; only die/usage_error exit.
@@ -14,43 +17,224 @@
 set -euo pipefail
 umask 077
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if ! ((BASH_VERSINFO[0] > 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] >= 3))); then
+  printf 'sciebo requires Bash 5.3 or newer; found %s.\n' "${BASH_VERSION:-unknown}" >&2
+  printf 'Install a newer bash (macOS: brew install bash) and put it first on PATH.\n' >&2
+  exit 1
+fi
 
-# shellcheck source=../lib/core.sh
-source "${SCRIPT_DIR}/../lib/core.sh"
-# shellcheck source=../lib/rclone.sh
-source "${SCRIPT_DIR}/../lib/rclone.sh"
-# shellcheck source=../lib/settings.sh
-source "${SCRIPT_DIR}/../lib/settings.sh"
-# shellcheck source=../lib/lock.sh
-source "${SCRIPT_DIR}/../lib/lock.sh"
-# shellcheck source=../lib/manifest.sh
-source "${SCRIPT_DIR}/../lib/manifest.sh"
-# shellcheck source=../lib/ui.sh
-source "${SCRIPT_DIR}/../lib/ui.sh"
-# shellcheck source=../lib/commands/setup.sh
-source "${SCRIPT_DIR}/../lib/commands/setup.sh"
-# shellcheck source=../lib/commands/doctor.sh
-source "${SCRIPT_DIR}/../lib/commands/doctor.sh"
-# shellcheck source=../lib/commands/discover.sh
-source "${SCRIPT_DIR}/../lib/commands/discover.sh"
-# shellcheck source=../lib/commands/sync.sh
-source "${SCRIPT_DIR}/../lib/commands/sync.sh"
-# shellcheck source=../lib/commands/folders.sh
-source "${SCRIPT_DIR}/../lib/commands/folders.sh"
-# shellcheck source=../lib/commands/folders_choose.sh
-source "${SCRIPT_DIR}/../lib/commands/folders_choose.sh"
-# shellcheck source=../lib/commands/mount.sh
-source "${SCRIPT_DIR}/../lib/commands/mount.sh"
-# shellcheck source=../lib/commands/cleanup.sh
-source "${SCRIPT_DIR}/../lib/commands/cleanup.sh"
-# shellcheck source=../lib/commands/schedule.sh
-source "${SCRIPT_DIR}/../lib/commands/schedule.sh"
+# Resolve this script's directory without a dirname(1) exec, mirroring
+# LIB_DIR in lib/core.sh: a BASH_SOURCE without a "/" is prefixed with "./"
+# so ${...%/*} yields ".". Plain pwd (logical) is kept deliberately — the old
+# `cd "$(dirname ...)" && pwd` was logical too, and core.sh's LIB_DIR comment
+# relies on both staying in step, so a checkout reached through symlinks
+# resolves exactly as before.
+_self="${BASH_SOURCE[0]}"
+[[ $_self == */* ]] || _self="./$_self"
+SCRIPT_DIR="$(cd "${_self%/*}" && pwd)"
+unset _self
 
-COMMANDS="setup doctor discover list check sync folders mount umount mounts cleanup schedule"
+# Global options are described once, in _SCIEBO_GLOBAL_SPECS, and consumed by
+# _sciebo_consume_globals. Each record is
+#   <flag>[,<alias>...]|<env-var>|<kind>|<early>
+# where kind is:
+#   value    consume the next argument, or the --flag=VALUE form
+#   flag     set ENV_VAR=1 and take no argument
+#   version  print the version and exit
+# early=1 marks an option that must be consumed before lib/settings.sh loads:
+# it derives every config/state path when it is sourced, so --confdir/--log-dir/
+# --log-expire are exported by the scan below and never reach a command parser
+# (global options may appear anywhere).
+_SCIEBO_GLOBAL_SPECS=(
+  '--profile|SCIEBO_PROFILE|value|0'
+  '--trust|TLS_INSECURE|flag|0'
+  '--non-interactive|SCIEBO_NON_INTERACTIVE|flag|0'
+  '--debug|SCIEBO_DEBUG|flag|0'
+  '--log-file|SCIEBO_LOG_FILE|value|0'
+  '--confdir|SCIEBO_CONFDIR|value|1'
+  '--log-dir|SCIEBO_LOG_DIR|value|1'
+  '--log-expire|SCIEBO_LOG_EXPIRE_HOURS|value|1'
+  '--version,-V|-|version|0'
+)
+
+# _SCIEBO_GLOBAL_BY_FLAG maps every flag and alias to "<env>|<kind>|<early>".
+# It is built once here so the argument walk below is a single associative
+# lookup instead of re-splitting every spec on every iteration.
+declare -gA _SCIEBO_GLOBAL_BY_FLAG=()
+for _sciebo_spec in "${_SCIEBO_GLOBAL_SPECS[@]}"; do
+  IFS='|' read -r _sciebo_flags_csv _sciebo_env _sciebo_kind _sciebo_early <<<"$_sciebo_spec"
+  IFS=',' read -r -a _sciebo_names <<<"$_sciebo_flags_csv"
+  for _sciebo_flag in "${_sciebo_names[@]}"; do
+    _SCIEBO_GLOBAL_BY_FLAG["$_sciebo_flag"]="$_sciebo_env|$_sciebo_kind|$_sciebo_early"
+  done
+done
+unset _sciebo_spec _sciebo_flags_csv _sciebo_env _sciebo_kind _sciebo_early _sciebo_names _sciebo_flag
+
+# _sciebo_version_string - the trimmed contents of the top-level VERSION file,
+# or "unknown" when it is missing. Reads the file directly because this runs
+# before lib/core.sh defines SCIEBO_VERSION.
+_sciebo_version_string() {
+  local version=""
+  if [[ -r "${SCRIPT_DIR}/../VERSION" ]]; then
+    # Read the file without forking ($(<file)) and strip the whitespace
+    # with a parameter expansion instead of tr -d; an unreadable file is
+    # tolerated exactly like the old `tr ... || true`.
+    version="$(<"${SCRIPT_DIR}/../VERSION")" || version=""
+  fi
+  version="${version//[[:space:]]/}"
+  printf '%s' "${version:-unknown}"
+}
+
+# _sciebo_classify_arg ARG - split ARG into its flag and value halves for the
+# global walkers: sets _SCIEBO_ARG_FLAG to the text before the first '=' (ARG
+# itself when there is none) and _SCIEBO_ARG_HAS_VALUE to 1 when the =value
+# form was used. Writes globals instead of printing so each walker reads the
+# result without a command-substitution fork.
+_sciebo_classify_arg() {
+  _SCIEBO_ARG_FLAG="${1:-}"
+  _SCIEBO_ARG_HAS_VALUE=0
+  case "$_SCIEBO_ARG_FLAG" in
+    *=*)
+      _SCIEBO_ARG_HAS_VALUE=1
+      _SCIEBO_ARG_FLAG="${_SCIEBO_ARG_FLAG%%=*}"
+      ;;
+  esac
+  return 0
+}
+
+# _sciebo_maybe_print_version ARGS... - print "sciebo VERSION" and exit 0 when
+# a bare --version/-V flag is present, so the common version query does not pay
+# for loading the whole lib/ tree. The walk mirrors _sciebo_consume_globals: a
+# value-kind global consumes the following argument, so the flag works in any
+# position and next to other globals, while `--profile --version` stays a
+# profile named "--version" instead of a version request, and `--version=x` is
+# an unmatched argument as before. Nothing prints when no version flag is
+# found, so every other global keeps its behavior.
+_sciebo_maybe_print_version() {
+  local arg="" flag="" entry="" kind=""
+  while [[ $# -gt 0 ]]; do
+    arg="$1"
+    _sciebo_classify_arg "$arg"
+    flag="$_SCIEBO_ARG_FLAG"
+    entry="${_SCIEBO_GLOBAL_BY_FLAG[$flag]:-}"
+    if [[ -z "$entry" ]]; then
+      shift
+      continue
+    fi
+    kind="${entry#*|}"
+    kind="${kind%%|*}"
+    if [[ "$kind" == "version" && "$_SCIEBO_ARG_HAS_VALUE" -eq 0 ]]; then
+      printf 'sciebo %s\n' "$(_sciebo_version_string)"
+      exit 0
+    fi
+    # A value-kind flag written without --flag=value consumes the next arg.
+    if [[ "$kind" == "value" && "$_SCIEBO_ARG_HAS_VALUE" -eq 0 && $# -gt 1 ]]; then
+      shift
+    fi
+    shift
+  done
+}
+_sciebo_maybe_print_version "$@"
+
+# _sciebo_consume_globals NAME MODE TARGET ARGS... - walk ARGS and consume the
+# globals in _SCIEBO_GLOBAL_BY_FLAG. MODE "early" consumes only the early=1
+# options; MODE "all" consumes every one. Unconsumed arguments are appended,
+# in order, to the array named by TARGET. NAME labels value errors.
+_sciebo_consume_globals() {
+  local name="$1" mode="$2" target="$3"
+  shift 3
+  local -n _out="$target"
+  local arg="" flag="" value="" entry="" env="" kind="" early=""
+  local has_value=0
+  _out=()
+  while [[ $# -gt 0 ]]; do
+    arg="$1"
+    value=""
+    _sciebo_classify_arg "$arg"
+    flag="$_SCIEBO_ARG_FLAG"
+    has_value=$_SCIEBO_ARG_HAS_VALUE
+    if [[ "$has_value" -eq 1 ]]; then
+      value="${arg#*=}"
+    fi
+    entry="${_SCIEBO_GLOBAL_BY_FLAG[$flag]:-}"
+    if [[ -z "$entry" ]]; then
+      _out[${#_out[@]}]="$arg"
+      shift
+      continue
+    fi
+    IFS='|' read -r env kind early <<<"$entry"
+    if [[ "$mode" == "early" && "$early" != "1" ]]; then
+      _out[${#_out[@]}]="$arg"
+      shift
+      continue
+    fi
+    # Only value-kind options accept the --flag=value form; for flag/version
+    # kinds it is an unmatched argument, exactly as before.
+    if [[ "$has_value" -eq 1 && "$kind" != "value" ]]; then
+      _out[${#_out[@]}]="$arg"
+      shift
+      continue
+    fi
+    case "$kind" in
+      version)
+        printf '%s %s\n' "$name" "${SCIEBO_VERSION:-unknown}"
+        exit 0
+        ;;
+      flag)
+        declare -gx "$env=1"
+        ;;
+      value)
+        if [[ "$has_value" -eq 1 ]]; then
+          declare -gx "$env=$value"
+        else
+          if [[ -z "${2:-}" ]]; then
+            printf '%s: %s requires a value\n' "$name" "$flag" >&2
+            exit 2
+          fi
+          declare -gx "$env=$2"
+          shift
+        fi
+        ;;
+    esac
+    shift
+  done
+}
+
+# Early scan: the path-affecting globals must be exported before
+# lib/settings.sh derives the config/state layout.
+_sciebo_early=()
+_sciebo_consume_globals "sciebo" early _sciebo_early "$@"
+if [[ "${#_sciebo_early[@]}" -gt 0 ]]; then
+  set -- "${_sciebo_early[@]}"
+else
+  set --
+fi
+unset _sciebo_early
+
+# COMMANDS is the single source of truth for dispatch and the help listing.
+# It is defined before the eager libraries so a bare `help` can print
+# usage_main without loading them; command modules themselves stay lazy, so an
+# invocation only parses the dispatched command's module (and the modules it
+# pulls in via sciebo_require_module) instead of the whole lib/commands tree.
+COMMANDS="setup doctor discover list check sync verify status pause resume folders mount umount mounts cleanup schedule trash versions share notifications activity presence lock unlock locks quota open conflicts retry account logout config support nextcloudcmd watch limit unlimited network filters file search recent comments favorites tags server hydrate provision logs edit ignored announcements preview download update"
+
+# is_command NAME - true when NAME is one of the COMMANDS entries. The
+# dispatch and the help lookup share this list, so they cannot drift apart.
+is_command() {
+  case " $COMMANDS " in
+    *" $1 "*) return 0 ;;
+  esac
+  return 1
+}
 
 usage_main() {
-  cat <<'EOF'
+  # Inline usage emitter: usage_main runs before lib/core.sh is sourced (the
+  # bare-help fast path below), so it cannot use core.sh's usage_emit. The
+  # heredoc feeds `read -d ''` (slurps to EOF, no NUL present ⇒ rc 1, hence
+  # `|| true` under errexit) instead of forking `cat`; printf replays the
+  # captured text byte for byte.
+  local _h=""
+  IFS= read -r -d '' _h <<'EOF' || true
 Usage: sciebo <command> [options]
 
 Sync local directories with a sciebo (Nextcloud/WebDAV) remote via rclone.
@@ -63,17 +247,183 @@ Commands:
   list                      list configured sources (mode, name, paths, filter)
   check                     dry run of all sources (no changes)
   sync [options]            apply sync/pull/bisync for all sources
+  verify [options]          check that sources match their destinations
+  status [options]          last run per source, plus the pause state
+  pause [--for DURATION]    skip sync/check runs until resumed
+  resume                    clear the pause marker
   folders <subcommand>      choose/add/list/remove folder pairs
   mount [options]           mount the remote on demand (nfsmount)
   umount <selector>         unmount a recorded mount
   mounts [--folder SUB]     show recorded mounts
   cleanup [options]         old logs / stale chunk-upload housekeeping
   schedule <subcommand>     install/uninstall/status of the launchd agent
+  trash [subcommand]        list/restore/remove/empty the Nextcloud trashbin
+  versions SUB [options]    list/download/restore/delete file versions
+  share <subcommand>        create, list, update, or remove Nextcloud shares
+  notifications             list or delete Nextcloud notifications
+  activity                  show the Nextcloud activity stream
+  presence [set ...]        show or set your Nextcloud user status
+  lock SUB / unlock SUB     lock or unlock a remote file (WebDAV)
+  locks [options]           list locks recorded by `sciebo lock`
+  quota                     show server quota usage
+  open [SUB]                open a local sync folder (--web opens the browser)
+  conflicts [options]       find or resolve local conflict copies
+  retry [NAME [PATH]]       clear failure-blacklist entries
+  account <subcommand>      manage profiles (list/add/remove/use/info/avatar)
+  logout [--yes]            remove credentials for the active remote
+  config <subcommand>       show effective settings and their source
+  support [options]         build a redacted debug archive
+  nextcloudcmd [options]    nextcloudcmd-compatible single sync run
+  watch [options]           run sync when local files change
+  limit / unlimited         cap or lift bandwidth for later runs
+  network [--json]          show the active network and metered state
+  filters <subcommand>      manage filter files (sync fetches the server list)
+  file <subcommand>         file details, activity, and shares
+  search TERM [options]     unified search on the server
+  recent [options]          recently modified remote files
+  comments <subcommand>     file comments (Nextcloud comments app)
+  favorites [options]       list or toggle server-side favorites
+  tags <subcommand>         list system tags and assign them
+  server <subcommand>       server information and capabilities
+  hydrate SUB               download a remote path on demand
+  provision [options]       non-interactive account and folder setup
+  logs [subcommand]         list, show, or tail per-source sync logs
+  edit SUB [options]        download, edit, and upload one remote file
+  ignored [SUB]             list files excluded from syncing
+  announcements [options]   list server announcements
+  preview SUB [options]     download a preview image for a remote file
+  download SUB [DEST]       download a remote file or directory
+  update [--check]          update the local checkout from git
+
+Global options (before the command): --profile NAME, --trust,
+--non-interactive, --debug, --log-file FILE, --log-dir DIR,
+--log-expire HOURS, --confdir DIR, --version.
 
 Run `sciebo help <command>` or `<command> --help` for command options.
 EOF
+  printf '%s' "$_h"
 }
 
+# Fast paths: a bare `sciebo` (no arguments at all) and `help`, `-h`, and
+# `--help` with no following command argument print the main usage and exit 0
+# without sourcing any library — the same output main() produces
+# afterwards, just without paying for the loads. Globals are stripped first so
+# `--profile x help`, `--debug help`, `--profile=x help`, and an invocation
+# carrying only globals (`sciebo --profile foo`) take the fast path too.
+# `help <command>` and `help <unknown>` keep the normal path (they need the
+# command module, or must report the unknown command), as does
+# `<command> --help`.
+_sciebo_help_args=()
+_sciebo_consume_globals "sciebo" all _sciebo_help_args "$@"
+if [[ "${#_sciebo_help_args[@]}" -eq 0 ]]; then
+  usage_main
+  exit 0
+fi
+if [[ "${#_sciebo_help_args[@]}" -eq 1 ]]; then
+  case "${_sciebo_help_args[0]}" in
+    help | -h | --help)
+      usage_main
+      exit 0
+      ;;
+  esac
+fi
+unset _sciebo_help_args
+
+# Only five libraries are eager; everything else (http, nc_api, bigfolder,
+# capabilities, policy, and the small state/helper libs below) loads on
+# demand through sciebo_require_module, in the function that uses it:
+#   core      loader (sciebo_require_module), die/usage_error, opt parsers —
+#             everything above and below depends on it
+#   output    output_mode_set/output_json_* are called by nearly every
+#             command (~570 call sites), so lazy loading would add a require
+#             everywhere for no win on any path
+#   duration  now_epoch/epoch_to_stamp/duration_seconds have ~40 call sites
+#             across a dozen command modules and five libs (~20 of them
+#             self-require it already); it is 120 lines of pure bash —
+#             keeping it eager is cheaper than require churn
+#   rclone    load_settings discovers the rclone binary through find_rclone
+#   settings  load_settings runs (usually right after opt_guard) in every
+#             command that touches configuration or the remote
+# bw, keychain (with platform), notify, runstate, pause, migrate, lock,
+# manifest, ui, and version are de-eagered: each call site's owning function
+# requires its module first, so `--help` and config-only commands never
+# parse them.
+# shellcheck source=../lib/core.sh
+source "${SCRIPT_DIR}/../lib/core.sh"
+# shellcheck source=../lib/output.sh
+source "${SCRIPT_DIR}/../lib/output.sh"
+# shellcheck source=../lib/duration.sh
+source "${SCRIPT_DIR}/../lib/duration.sh"
+# shellcheck source=../lib/rclone.sh
+source "${SCRIPT_DIR}/../lib/rclone.sh"
+# shellcheck source=../lib/settings.sh
+source "${SCRIPT_DIR}/../lib/settings.sh"
+
+# Command modules whose file is not named after the command. Every other
+# COMMANDS entry resolves to lib/commands/<command>.sh. The specs are built
+# once below so dispatch is one associative lookup instead of a grep over the
+# whole command tree; _sciebo_module_path keeps the old content scan as a
+# fallback for a stale table. guards.sh checks every mapping against
+# lib/commands/.
+_SCIEBO_COMMAND_MODULE_SPECS=(
+  'check|sync.sh'
+  'sync|sync.sh'
+  'pause|pause.sh'
+  'resume|pause.sh'
+  'mount|mount.sh'
+  'umount|mount.sh'
+  'mounts|mount.sh'
+  'lock|lock.sh'
+  'unlock|lock.sh'
+  'locks|lock.sh'
+  'limit|limit.sh'
+  'unlimited|limit.sh'
+)
+declare -gA _SCIEBO_COMMAND_MODULE_BY_NAME=()
+for _sciebo_cmd_spec in "${_SCIEBO_COMMAND_MODULE_SPECS[@]}"; do
+  IFS='|' read -r _sciebo_cmd_name _sciebo_cmd_file <<<"$_sciebo_cmd_spec"
+  _SCIEBO_COMMAND_MODULE_BY_NAME["$_sciebo_cmd_name"]="$_sciebo_cmd_file"
+done
+unset _sciebo_cmd_spec _sciebo_cmd_name _sciebo_cmd_file
+
+# Global options that may precede any command. They are extracted before
+# dispatch and exported as settings; command parsers never see them.
+GLOBAL_ARGS=()
+
+# extract_global_flags "$@" - pull global options out of the command line and
+# leave the remaining arguments in GLOBAL_ARGS. _SCIEBO_GLOBAL_SPECS is the
+# single source of truth; the early scan already consumed the path-affecting
+# ones, but they are accepted here too so direct callers keep working.
+extract_global_flags() {
+  _sciebo_consume_globals "$CLI_NAME" all GLOBAL_ARGS "$@"
+}
+
+# _sciebo_module_path COMMAND - print the absolute command module that defines
+# cmd_COMMAND (or usage_COMMAND), or nothing when it is already loaded. The
+# file comes from the static mapping above (lib/commands/<command>.sh, or a
+# _SCIEBO_COMMAND_MODULE_SPECS override for a multi-command module), so
+# dispatch no longer greps the whole command tree. COMMANDS already gated the
+# dispatch; a mapped file that is missing (a stale table) falls back to the
+# original content scan, and a truly undefined command is an internal error.
+_sciebo_module_path() {
+  local command="$1" mod="" file=""
+  have_function "cmd_${command}" && return 0
+  have_function "usage_${command}" && return 0
+  file="${_SCIEBO_COMMAND_MODULE_BY_NAME[$command]:-${command}.sh}"
+  mod="${SCRIPT_DIR}/../lib/commands/${file}"
+  if [[ -r "$mod" ]]; then
+    printf '%s' "$mod"
+    return 0
+  fi
+  mod="$(LC_ALL=C grep -l -e "^cmd_${command}()" -e "^usage_${command}()" \
+    "${SCRIPT_DIR}/../lib/commands/"*.sh 2>/dev/null | head -n 1 || true)"
+  [[ -n "$mod" ]] || die "internal error: no module defines command '${command}'"
+  printf '%s' "$mod"
+}
+
+# main COMMAND ARGS... - dispatch an already-resolved command. The global
+# options are consumed and the command module is sourced (at global scope)
+# before this runs, so it only routes to cmd_/usage_.
 main() {
   local command="${1:-help}"
   [[ $# -eq 0 ]] || shift
@@ -81,27 +431,82 @@ main() {
     help | -h | --help)
       if [[ $# -eq 0 ]]; then
         usage_main
+      elif is_command "$1"; then
+        "usage_$1"
       else
-        case " $COMMANDS " in
-          *" $1 "*) "usage_$1" ;;
-          *)
-            printf '%s: unknown command: %s\n\n' "$CLI_NAME" "$1" >&2
-            usage_main >&2
-            exit 2
-            ;;
-        esac
+        printf '%s: unknown command: %s\n\n' "$CLI_NAME" "$1" >&2
+        usage_main >&2
+        exit 2
       fi
       ;;
-    setup | doctor | discover | list | check | sync | folders | mount | umount | mounts | cleanup | schedule)
-      "cmd_${command}" "$@"
-      ;;
     *)
-      printf '%s: unknown command: %s\n\n' "$CLI_NAME" "$command" >&2
-      usage_main >&2
-      exit 2
+      if is_command "$command"; then
+        "cmd_${command}" "$@"
+      else
+        printf '%s: unknown command: %s\n\n' "$CLI_NAME" "$command" >&2
+        usage_main >&2
+        exit 2
+      fi
       ;;
   esac
 }
 
-trap release_lock EXIT
-main "$@"
+# _sciebo_on_signal SIGNAL - INT/TERM handler: release the run lock and
+# exit with the conventional 128+SIGNAL status (130 for INT, 143 for TERM)
+# so `kill` on the sciebo pid surfaces the signal instead of a clean 0.
+# lock.sh loads lazily, so release_lock is probed first: commands that can
+# acquire a lock require it before acquiring, and when nothing ever could
+# there is nothing to release. release_lock is idempotent, so the EXIT trap
+# running again is harmless.
+_sciebo_on_signal() {
+  local status=130
+  [[ "$1" != "TERM" ]] || status=143
+  type release_lock >/dev/null 2>&1 && release_lock || true
+  exit "$status"
+}
+
+# _sciebo_on_exit - release the run lock (when lock.sh was loaded; see
+# _sciebo_on_signal) and remove any registered temp file (the curl netrc
+# that carries the app password, response bodies).
+_sciebo_on_exit() {
+  type release_lock >/dev/null 2>&1 && release_lock || true
+  sciebo_temp_cleanup || true
+}
+
+trap '_sciebo_on_signal INT' INT
+trap '_sciebo_on_signal TERM' TERM
+trap _sciebo_on_exit EXIT
+
+# Resolve the global options and the dispatched command, then source the
+# command module at global scope: sourcing inside a function would scope the
+# module's top-level `declare -A`/`declare -g` declarations to that function
+# and drop them when it returns. --version/-V is consumed by
+# extract_global_flags and exits before any command module is read.
+extract_global_flags "$@"
+if [[ "${#GLOBAL_ARGS[@]}" -gt 0 ]]; then
+  set -- "${GLOBAL_ARGS[@]}"
+else
+  set --
+fi
+_sciebo_command="${1:-help}"
+[[ $# -eq 0 ]] || shift
+
+_sciebo_command_module=""
+if [[ "$_sciebo_command" == "help" || "$_sciebo_command" == "-h" || "$_sciebo_command" == "--help" ]]; then
+  if [[ $# -gt 0 ]] && is_command "$1"; then
+    # Bash 5.3 forkless command substitution: no subshell per dispatch;
+    # _sciebo_module_path keeps its print-to-stdout contract (a `die` inside
+    # it exits the script just as the old failing assignment did under
+    # `set -e`).
+    _sciebo_command_module=${ _sciebo_module_path "$1";}
+  fi
+elif is_command "$_sciebo_command"; then
+  _sciebo_command_module=${ _sciebo_module_path "$_sciebo_command";}
+fi
+if [[ -n "$_sciebo_command_module" ]]; then
+  # shellcheck source=/dev/null  # runtime path relative to SCRIPT_DIR
+  source "$_sciebo_command_module"
+fi
+unset _sciebo_command_module
+
+main "$_sciebo_command" "$@"

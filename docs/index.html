@@ -1,0 +1,352 @@
+<!doctype html>
+<!-- GitHub Pages demo for rclone-sciebo-webdav.
+     Serve this folder with Pages: Settings -> Pages -> Deploy from a branch
+     -> main -> /docs. Screenshots are real CLI output; run `make screenshots`
+     to regenerate them. TODO: add the repository URL once it is public. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rclone-sciebo-webdav — folders and git repos to sciebo, without the mess</title>
+<meta name="description" content="Mirror local folders and git repositories to sciebo (Nextcloud) with rclone. Per-source direction, dry-run first, a folder wizard, filters, scheduling, and on-demand mounts.">
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-soft: #161b22;
+    --border: #30363d;
+    --fg: #c9d1d9;
+    --muted: #8b949e;
+    --bright: #f0f6fc;
+    --green: #3fb950;
+    --blue: #58a6ff;
+    --amber: #d29922;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 0 24px; }
+
+  header.hero {
+    border-bottom: 1px solid var(--border);
+    background:
+      radial-gradient(1000px 300px at 50% -120px, rgba(88, 166, 255, .12), transparent),
+      var(--bg);
+    padding: 72px 0 56px;
+    text-align: center;
+  }
+  .kicker {
+    font: 600 13px/1 var(--mono);
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 18px;
+  }
+  h1 {
+    margin: 0;
+    font-size: clamp(30px, 5vw, 46px);
+    letter-spacing: -0.02em;
+    color: var(--bright);
+  }
+  .tagline {
+    max-width: 720px;
+    margin: 18px auto 0;
+    font-size: clamp(16px, 2.2vw, 19px);
+    color: var(--fg);
+  }
+  .badges { margin: 26px 0 0; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .badges span {
+    font: 500 12.5px/1 var(--mono);
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 12px;
+    background: var(--bg-soft);
+  }
+  .actions { margin-top: 30px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-block;
+    padding: 10px 18px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    color: var(--fg);
+    font-weight: 600;
+    background: var(--bg-soft);
+  }
+  .btn:hover { border-color: var(--muted); text-decoration: none; }
+  .btn.primary { background: #238636; border-color: #2ea043; color: #fff; }
+  .btn.primary:hover { background: #2ea043; }
+
+  section { padding: 56px 0; border-bottom: 1px solid var(--border); }
+  section:last-of-type { border-bottom: 0; }
+  h2 { font-size: 24px; color: var(--bright); margin: 0 0 8px; letter-spacing: -0.01em; }
+  .lede { color: var(--muted); margin: 0 0 28px; max-width: 760px; }
+  h3 { font-size: 17px; color: var(--bright); margin: 28px 0 8px; }
+
+  .shots { display: grid; gap: 22px; }
+  figure.shot { margin: 0; }
+  figure.shot img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 10px;
+  }
+  figure.shot figcaption { margin-top: 10px; color: var(--muted); font-size: 14px; }
+  figure.shot figcaption code { color: var(--fg); }
+  .shots.two { grid-template-columns: 1fr 1fr; }
+  @media (max-width: 760px) { .shots.two { grid-template-columns: 1fr; } }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+  .card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-soft);
+    padding: 18px 20px;
+  }
+  .card h3 { margin: 0 0 6px; font-size: 16px; }
+  .card p { margin: 0; color: var(--muted); font-size: 14.5px; }
+
+  pre {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    overflow-x: auto;
+    font: 13.5px/1.7 var(--mono);
+    color: var(--fg);
+  }
+  pre .c { color: var(--muted); }
+  code { font-family: var(--mono); font-size: .92em; }
+  p code, li code, td code { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { text-align: left; padding: 9px 14px 9px 0; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; }
+  td code { white-space: nowrap; }
+
+  ul.checks { list-style: none; margin: 0; padding: 0; }
+  ul.checks li { padding: 7px 0 7px 28px; position: relative; color: var(--fg); }
+  ul.checks li::before { content: "→"; position: absolute; left: 0; color: var(--green); font-family: var(--mono); }
+  .warn { color: var(--amber); }
+  .note {
+    border-left: 3px solid var(--amber);
+    background: rgba(210, 153, 34, .08);
+    border-radius: 0 8px 8px 0;
+    padding: 14px 18px;
+    color: var(--fg);
+    font-size: 14.5px;
+    margin: 20px 0 0;
+  }
+
+  footer { padding: 40px 0 56px; color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="kicker">rclone · sciebo · Nextcloud · macOS | Linux</p>
+    <h1>rclone-sciebo-webdav</h1>
+    <p class="tagline">
+      Mirror local folders and git repositories to sciebo without clutter or
+      leftover temporary files. Dry-run first, apply when it looks right.
+    </p>
+    <div class="badges">
+      <span>MIT</span>
+      <span>macOS | Linux</span>
+      <span>bash 5.3+</span>
+      <span>rclone &ge; 1.69</span>
+      <span>no build step</span>
+    </div>
+    <div class="actions">
+      <a class="btn primary" href="#quick-start">Quick start</a>
+      <a class="btn" href="#tour">Screenshot tour</a>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<section id="tour">
+  <div class="wrap">
+    <h2>Screenshot tour</h2>
+    <p class="lede">
+      Every image below is real CLI output, captured against a temporary local
+      rclone remote and rendered to SVG. Regenerate it any time with
+      <code>make screenshots</code>.
+    </p>
+    <div class="shots">
+      <figure class="shot">
+        <img src="assets/screenshots/help.svg" alt="bin/sciebo help output listing all commands" loading="lazy">
+        <figcaption><code>sciebo help</code> — one entrypoint, every job on one screen.</figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="assets/screenshots/doctor.svg" alt="bin/sciebo doctor --offline output with PASS lines and one launchd WARN" loading="lazy">
+        <figcaption><code>sciebo doctor --offline</code> — preflight checks before anything talks to the network.</figcaption>
+      </figure>
+      <div class="shots two">
+        <figure class="shot">
+          <img src="assets/screenshots/list.svg" alt="bin/sciebo list showing sync, bisync, and pull sources" loading="lazy">
+          <figcaption><code>sciebo list</code> — mode, name, local path, remote path, filter.</figcaption>
+        </figure>
+        <figure class="shot">
+          <img src="assets/screenshots/check.svg" alt="bin/sciebo check dry run with plan lines, OK entries, and a summary" loading="lazy">
+          <figcaption><code>sciebo check</code> — the whole plan as a dry run, with a <code>plan:</code> line per source.</figcaption>
+        </figure>
+      </div>
+      <figure class="shot">
+        <img src="assets/screenshots/sync.svg" alt="bin/sciebo sync applying all sources with OK lines and a summary" loading="lazy">
+        <figcaption><code>sciebo sync</code> — the same run, applied. Transfers go to rclone log files per source.</figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="assets/screenshots/status.svg" alt="bin/sciebo status listing last-run state per source and the pause state" loading="lazy">
+        <figcaption><code>sciebo status</code> — last run per source, plus the pause state.</figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="assets/screenshots/folders.svg" alt="bin/sciebo folders choose wizard with numbered menu, direction prompt, and exclude question" loading="lazy">
+        <figcaption><code>sciebo folders choose</code> — a Nextcloud-client-style picker, with per-pair filters (excludes or include-style selective sync).</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <h2>What it does</h2>
+    <p class="lede">Small, careful, and boring in the ways that matter for a backup tool.</p>
+    <div class="cards">
+      <div class="card">
+        <h3>One direction per source</h3>
+        <p>Upload, download, or two-way (<code>sync</code> / <code>pull</code> / <code>bisync</code>), set in a plain-text manifest or through the wizard.</p>
+      </div>
+      <div class="card">
+        <h3>Safe by default</h3>
+        <p><code>check</code> changes nothing; transfers only happen through <code>sync</code> and <code>cleanup --apply</code>, one run at a time via a lock. <code>verify</code> compares both sides without changing them.</p>
+      </div>
+      <div class="card">
+        <h3>Login flow and key storage</h3>
+        <p><code>setup --login</code> authenticates through the Nextcloud Login Flow in the browser; the app password goes to the platform key store by default (macOS Keychain, Linux <code>secret-tool</code> or <code>pass</code>), with the obscured rclone-config password as fallback.</p>
+      </div>
+      <div class="card">
+        <h3>Status and notifications</h3>
+        <p><code>sciebo status</code> shows the last run per source, <code>pause</code>/<code>resume</code> skip runs, and desktop notifications flag failures and conflict copies (macOS <code>osascript</code>, Linux <code>notify-send</code>).</p>
+      </div>
+      <div class="card">
+        <h3>Folder wizard</h3>
+        <p>Browse the remote, multi-select folders, apply per-pair filters — exclude subfolders like <code>node_modules/</code> or pick which ones to sync — and preview each new pair with a dry run.</p>
+      </div>
+      <div class="card">
+        <h3>Git-repo discovery</h3>
+        <p>Scan <code>~/Projects</code> for repositories, collapse nested ones, and write a generated manifest you can review.</p>
+      </div>
+      <div class="card">
+        <h3>Filters and <code>.nosync</code></h3>
+        <p>Global clutter rules plus per-pair filters, all validated by rclone's parser. A <code>.nosync</code> file skips a directory entirely.</p>
+      </div>
+      <div class="card">
+        <h3>Scheduling and mounts</h3>
+        <p>A launchd agent (macOS) or systemd <code>--user</code> agent (Linux) runs a quiet sync daily, on an interval, with jitter, or when a watched path changes. On demand, <code>sciebo mount</code> exposes the remote as a filesystem via <code>nfsmount</code> — no macFUSE on macOS, and the kernel NFS client on Linux (usually root).</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="quick-start">
+  <div class="wrap">
+    <h2>Quick start</h2>
+    <p class="lede">You need macOS or Linux, Bash 5.3 or newer (macOS ships 3.2 as <code>/bin/bash</code>, so <code>brew install bash</code> and put it first on <code>PATH</code>), <a href="https://rclone.org/downloads/">rclone 1.69 or newer</a>, curl, and a sciebo account.</p>
+<pre><span class="c"># 1. Get the code</span>
+git clone &lt;your-fork-url&gt; rclone-sciebo-webdav &amp;&amp; cd rclone-sciebo-webdav
+
+<span class="c"># 2. Connect your account — Login Flow in the browser, Keychain by default</span>
+bin/sciebo setup --login    <span class="c"># or: cp .env.example .env, then bin/sciebo setup</span>
+
+<span class="c"># 3. Pick what to sync — edit config/sources.conf or browse the remote</span>
+bin/sciebo folders choose
+
+<span class="c"># 4. Look first, then apply</span>
+bin/sciebo doctor           <span class="c"># preflight checks (--offline skips the network)</span>
+bin/sciebo list             <span class="c"># parsed sources at a glance</span>
+bin/sciebo check            <span class="c"># dry run, with a plan: line per source</span>
+bin/sciebo sync             <span class="c"># apply</span>
+bin/sciebo status           <span class="c"># last run per source</span>
+</pre>
+    <div class="note">
+      <strong>First bisync run:</strong> initialize each two-way source once with
+      <code>bin/sciebo sync --resync --apply</code>. A resync can copy or delete files in
+      BOTH directions, so review a dry run with <code>--resync</code> first.
+    </div>
+  </div>
+</section>
+
+<section id="commands">
+  <div class="wrap">
+    <h2>Commands</h2>
+    <p class="lede">Common commands have a matching <code>make</code> target; <code>make help</code> lists them. The CLI is the full interface. Settings in <code>config/settings.env</code> and <code>config/settings.local.env</code> drive the safe-by-default policies, bandwidth caps, scheduling, and mounts.</p>
+    <table>
+      <thead><tr><th>Command</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><code>sciebo setup [--login]</code></td><td>create or update the sciebo rclone remote (Login Flow optional)</td></tr>
+        <tr><td><code>sciebo provision</code></td><td>non-interactive account and folder setup (desktop provisioning flags)</td></tr>
+        <tr><td><code>sciebo doctor [--offline]</code></td><td>preflight checks with a PASS/WARN/FAIL report, including the parity policies</td></tr>
+        <tr><td><code>sciebo discover [--write]</code></td><td>find git repositories under <code>roots.conf</code></td></tr>
+        <tr><td><code>sciebo list</code></td><td>list configured sources</td></tr>
+        <tr><td><code>sciebo check</code></td><td>dry run of all sources, with a <code>plan:</code> line each</td></tr>
+        <tr><td><code>sciebo sync [options]</code></td><td>apply sync/pull/bisync for all sources</td></tr>
+        <tr><td><code>sciebo verify [options]</code></td><td>compare sources with destinations (<code>rclone check</code>)</td></tr>
+        <tr><td><code>sciebo status</code> · <code>pause</code> · <code>resume</code></td><td>last run per source; pause or resume sync/check runs</td></tr>
+        <tr><td><code>sciebo folders</code></td><td>choose / add / list / remove folder pairs</td></tr>
+        <tr><td><code>sciebo mount</code> · <code>umount</code> · <code>mounts</code></td><td>on-demand mounts via <code>rclone nfsmount</code></td></tr>
+        <tr><td><code>sciebo edit SUB</code> · <code>hydrate SUB</code></td><td>download, edit, and upload one file; pre-download a remote path</td></tr>
+        <tr><td><code>sciebo ignored</code> · <code>logs</code></td><td>list what sync leaves out ("Not synced"); show per-source sync logs</td></tr>
+        <tr><td><code>sciebo cleanup</code></td><td>old logs, stale chunk uploads, orphaned state (dry run by default)</td></tr>
+        <tr><td><code>sciebo schedule</code></td><td>install / uninstall / status of the launchd or systemd --user agent</td></tr>
+        <tr><td><code>sciebo watch</code></td><td>sync sources when they change (foreground, not a daemon)</td></tr>
+        <tr><td><code>sciebo limit</code> · <code>unlimited</code> · <code>network</code></td><td>runtime bandwidth caps; active interface, metered state, proxy mode</td></tr>
+        <tr><td><code>sciebo locks</code> · <code>quota</code> · <code>conflicts</code> · <code>config</code></td><td>WebDAV locks, account quota, conflict review, effective settings</td></tr>
+        <tr><td><code>sciebo announcements</code> · <code>preview</code> · <code>download</code> · <code>update</code></td><td>server news, thumbnails, resumable downloads, self-update</td></tr>
+        <tr><td><code>sciebo trash</code> · <code>versions SUB</code></td><td>Nextcloud trashbin (list/restore/rm/empty) and file versions (download/restore/delete)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="safety">
+  <div class="wrap">
+    <h2>Before you point it at anything important</h2>
+    <ul class="checks">
+      <li>Git is not special-cased: <code>.git/</code> is synced as files, so avoid syncing a repo while git is rewriting objects.</li>
+      <li>Don't run <code>bisync</code> on repositories you are actively working on.</li>
+      <li><code>pull</code> deletions are permanent locally, and <code>--resync</code> can delete in both directions.</li>
+      <li>Bisync conflict copies stay local by default (<code>CONFLICT_UPLOAD=0</code>); <code>conflicts --resolve</code> reviews and resolves them, and <code>keep-both</code> renames a copy so the next run uploads it.</li>
+      <li>Safe-by-default policies exclude non-portable names, local case-only collisions, and E2EE folders, and gate external storages and big folders; an apply that would delete more than <code>DELETE_FILES_THRESHOLD</code> files stops unless <code>sync --yes</code> is given.</li>
+      <li>Multi-account setups are supported through profiles (<code>--profile</code>, <code>account import</code>). Not implemented: Nextcloud E2EE, a native file-provider/virtual-files overlay, and a background daemon or notify_push.</li>
+      <li>sciebo does not officially support WebDAV and offers no support for related issues. Keep backups.</li>
+    </ul>
+    <p class="lede" style="margin-top:24px">
+      The repository's README is the full reference: configuration precedence,
+      manifest format, scheduling, mounts, housekeeping, and the compatibility
+      shim for the old <code>scripts/sync.sh</code> entrypoint.
+    </p>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>MIT licensed. Built for sciebo; works with any Nextcloud instance.</span>
+    <span>Screenshots: <code>make screenshots</code></span>
+  </div>
+</footer>
+
+</body>
+</html>

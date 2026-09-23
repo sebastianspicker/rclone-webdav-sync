@@ -1,0 +1,1091 @@
+#compdef sciebo
+#
+# zsh completion for the sciebo CLI. Put this file on $fpath as `_sciebo`;
+# compinit then picks it up automatically. The command list mirrors
+# COMMANDS in bin/sciebo; the option lists mirror the usage_* functions in
+# lib/commands/*.sh.
+
+typeset -ga _sciebo_global_specs
+_sciebo_global_specs=(
+  '(-h --help)'{-h,--help}'[show help]'
+  '--profile=[select a profile]:profile:_sciebo_profiles'
+  '--trust[accept invalid TLS certificates]'
+  '--non-interactive[never prompt; fail or skip instead]'
+  '--debug[verbose rclone/HTTP output]'
+  '--log-file=[write the rclone log here]:file:_files'
+  '--confdir=[configuration and state directory]:directory:_directories'
+  '--log-dir=[write run logs here]:directory:_directories'
+  '--log-expire=[delete logs older than this many hours]:hours:'
+  '(-V --version)'{-V,--version}'[show the version]'
+)
+
+typeset -ga _sciebo_commands
+_sciebo_commands=(
+  'setup:create/update the sciebo rclone remote'
+  'doctor:preflight checks (PASS/WARN/FAIL report)'
+  'discover:find git repositories under roots.conf'
+  'list:list configured sources'
+  'check:dry run of all sources'
+  'sync:apply sync/pull/bisync for all sources'
+  'verify:check that sources match their destinations'
+  'status:last run per source, plus the pause state'
+  'pause:skip sync/check runs until resumed'
+  'resume:clear the pause marker'
+  'folders:choose/add/list/edit/remove folder pairs'
+  'mount:mount the remote on demand (nfsmount)'
+  'umount:unmount a recorded mount'
+  'mounts:show recorded mounts'
+  'cleanup:old logs / stale chunk-upload housekeeping'
+  'schedule:install/uninstall/status of the launchd agent'
+  'trash:list/restore/remove/empty the Nextcloud trashbin'
+  'versions:list/download/restore/delete file versions'
+  'share:create, list, update, or remove Nextcloud shares'
+  'notifications:list or delete Nextcloud notifications'
+  'activity:show the Nextcloud activity stream'
+  'presence:show or set your Nextcloud user status'
+  'lock:lock a remote file (WebDAV)'
+  'unlock:unlock a remote file (WebDAV)'
+  'locks:list locks recorded by sciebo lock'
+  'quota:show server quota usage'
+  'open:open a local sync folder'
+  'conflicts:find local conflict copies'
+  'retry:clear failure-blacklist entries'
+  'account:manage profiles (list/add/remove/use/info/avatar)'
+  'logout:remove credentials for the active remote'
+  'config:show effective settings and their source'
+  'support:build a redacted debug archive'
+  'nextcloudcmd:nextcloudcmd-compatible single sync run'
+  'watch:run sync when local files change'
+  'limit:cap bandwidth for later runs'
+  'unlimited:lift the bandwidth cap'
+  'network:show the active network and metered state'
+  'filters:manage filter files (sync/list/show/check)'
+  'file:file details, activity, and shares'
+  'search:unified search on the server'
+  'recent:recently modified remote files'
+  'comments:file comments (Nextcloud comments app)'
+  'favorites:list or toggle server-side favorites'
+  'tags:list system tags and assign them'
+  'server:server information and capabilities'
+  'hydrate:download a remote path on demand'
+  'provision:non-interactive account and folder setup'
+  'logs:list, show, or tail per-source sync logs'
+  'edit:download, edit, and upload one remote file'
+  'ignored:list files excluded from syncing'
+  'announcements:list server announcements'
+  'preview:download a preview image for a remote file'
+  'download:download a remote file or directory'
+  'update:update the local checkout from git'
+  'help:show help for a command'
+)
+
+_sciebo_project_root() {
+  local dir=${${(%):-%x}:A:h:h}
+  [[ -d $dir/config ]] && print -r -- $dir
+}
+
+_sciebo_profiles() {
+  local root
+  local -a profiles names
+  profiles=(default)
+  root=$(_sciebo_project_root)
+  if [[ -n $root && -d $root/config/profiles ]]; then
+    names=(${(f)"$(command ls -1 $root/config/profiles 2>/dev/null)"})
+    profiles+=(${names:#})
+  fi
+  _describe -t profiles 'profile' profiles
+}
+
+_sciebo_folders() {
+  local state
+  typeset -A opt_args
+  _arguments -C ${_sciebo_global_specs[@]} \
+    '1:subcommand:->sub' \
+    '*::argument:->args' && return 0
+  case $state in
+    sub)
+      local -a subs
+      subs=(
+        'choose:browse the remote and pick folders (default)'
+        'add:add a single pair without browsing'
+        'import:add a pair from a nextcloudcmd --unsyncedfolders list'
+        'edit:rewrite a wizard pair subfolder filter or mode'
+        'list:table of all configured pairs'
+        'pause:skip a pair in sync/check'
+        'resume:clear a pair paused flag'
+        'remove:remove a wizard-managed pair from folders.conf'
+      )
+      _describe -t commands 'folders subcommand' subs
+      ;;
+    args)
+      case $words[1] in
+        choose)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--depth=[remote scan depth]:depth:' \
+            '--local-root=[local root for default destinations]:directory:_directories' \
+            '--mode=[fix the direction for all picks]:mode:(sync pull bisync)' \
+            '--select[pick which subfolders to sync]' \
+            '--no-fzf[always use the numbered menu]' \
+            '--no-dry-run[do not offer a dry run after adding pairs]'
+          ;;
+        add)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--remote=[remote subfolder below the remote base]:remote subfolder:' \
+            '--local=[local path]:path:_files' \
+            '--mode=[direction]:mode:(sync pull bisync)' \
+            '--select[interactively pick subfolders to sync]' \
+            '*--include=[sync only this subfolder below --remote]:subfolder:' \
+            '*--exclude=[exclude this subfolder]:subfolder:' \
+            '--local-root=[local root for the default destination]:directory:_directories'
+          ;;
+        import)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:FILE:_files' \
+            '--remote=[remote subfolder below the remote base]:remote subfolder:' \
+            '--local=[local path]:path:_files' \
+            '--mode=[direction]:mode:(sync pull bisync)' \
+            '--local-root=[local root for the default destination]:directory:_directories' \
+            '--select[sync only the listed folders]'
+          ;;
+        edit)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:NAME:' \
+            '--local=[replace the local folder]:path:_files' \
+            '--remote=[replace the remote subfolder]:remote subfolder:' \
+            '--force[allow a remote change with stale bisync state]' \
+            '*--include=[sync only these immediate subfolders]:subfolder:' \
+            '*--exclude=[exclude this subfolder]:subfolder:' \
+            '--mode=[change the direction]:mode:(sync pull bisync)' \
+            '--select[interactively pick subfolders to sync]' \
+            '--clear[remove the pair filter (no rules)]'
+          ;;
+        list)
+          _arguments ${_sciebo_global_specs[@]} '--json[print the pairs as JSON]'
+          ;;
+        pause | resume)
+          _arguments ${_sciebo_global_specs[@]} '1:pair name:'
+          ;;
+        remove)
+          _arguments ${_sciebo_global_specs[@]} '1:NAME:' '--purge[also delete the pair state and filter]'
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_sciebo_logs() {
+  local state
+  typeset -A opt_args
+  _arguments -C ${_sciebo_global_specs[@]} \
+    '--json[print the rows as JSON]' \
+    '1:subcommand:->sub' \
+    '*::argument:->args' && return 0
+  case $state in
+    sub)
+      local -a subs
+      subs=(
+        'list:table of sources and their logs (default)'
+        'show:print the last lines of a source log'
+        'tail:follow a source log with tail -f'
+        'path:print a source log path'
+      )
+      _describe -t commands 'logs subcommand' subs
+      ;;
+    args)
+      case $words[1] in
+        list)
+          _arguments ${_sciebo_global_specs[@]} '--json[print the rows as JSON]'
+          ;;
+        show | tail)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:source name:' \
+            '--lines=[trailing lines to print]:N:'
+          ;;
+        path)
+          _arguments ${_sciebo_global_specs[@]} '::source name:'
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_sciebo_share() {
+  local state
+  typeset -A opt_args
+  _arguments -C ${_sciebo_global_specs[@]} \
+    '1:subcommand:->sub' \
+    '*::argument:->args' && return 0
+  case $state in
+    sub)
+      local -a subs
+      subs=(
+        'link:create a public link share'
+        'user:share with a Nextcloud user'
+        'group:share with a Nextcloud group'
+        'email:share with an email address'
+        'guest:share with a guest account (share type 8)'
+        'circle:share with a circle'
+        'talk:share with a Talk conversation'
+        'deck:share with a Deck board'
+        'remote:share with a federated cloud id'
+        'list:list shares, optionally only for a path'
+        'info:show one share'
+        'update:change password, expiry, note, or permissions'
+        'remove:delete a share (asks on a terminal)'
+        'leave:leave a share shared with you (asks)'
+        'pending:list shares waiting for your acceptance'
+        'accept:accept a pending share (or --all)'
+        'decline:decline a pending share (or --all; asks or --yes)'
+        'send-email:email an existing share to its recipient'
+        'remote-list:list accepted federated shares'
+        'search:find users, groups, and other sharees'
+        'copy-link:create or reuse a public link and copy it'
+        'copy-internal:copy a direct internal link for a path'
+        'incoming:list shares shared with you'
+      )
+      _describe -t commands 'share subcommand' subs
+      ;;
+    args)
+      case $words[1] in
+        link | copy-link)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:remote path:' \
+            '--password=[protect the link with a password]:password:' \
+            '--expire=[expire the link on this date]:date:' \
+            '--note=[attach a note]:text:' \
+            '--permissions=[permission letters or a numeric mask]:permissions:' \
+            '--label=[set a link label]:label:' \
+            '--download=[allow downloads: 0 hides them]:(0 1)' \
+            '--file-drop[upload-only link (permission 4)]' \
+            '--file-request[mark the link as a file request]' \
+            '--json[print the created share as JSON]'
+          ;;
+        user | group | guest | circle | talk | deck)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:remote path:' \
+            '2:user or group:' \
+            '--permissions=[permission letters or a numeric mask]:permissions:' \
+            '--note=[attach a note]:text:' \
+            '--send-mail[ask the server to email the recipient]' \
+            '--json[print the created share as JSON]'
+          ;;
+        email)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:remote path:' \
+            '2:email address:' \
+            '--permissions=[permission letters or a numeric mask]:permissions:' \
+            '--note=[attach a note]:text:' \
+            '--password=[protect the share with a password]:password:' \
+            '--expire=[expire the share on this date]:date:' \
+            '--send-password-by-talk[share the password through Talk]' \
+            '--send-mail[ask the server to email the recipient]' \
+            '--json[print the created share as JSON]'
+          ;;
+        remote)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:remote path:' \
+            '2:federated cloud id:' \
+            '--permissions=[permission letters or a numeric mask]:permissions:' \
+            '--note=[attach a note]:text:' \
+            '--send-mail[ask the server to email the recipient]' \
+            '--json[print the created share as JSON]'
+          ;;
+        list)
+          _arguments ${_sciebo_global_specs[@]} \
+            '::remote path:' \
+            '--reshares[ask the server for reshares only]' \
+            '--json[print the shares as JSON]'
+          ;;
+        info)
+          _arguments ${_sciebo_global_specs[@]} '1:share id:'
+          ;;
+        update)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:share id:' \
+            '--password=[set the password]:password:' \
+            '--remove-password[remove the password]' \
+            '--expire=[set the expiration date]:date:' \
+            '--remove-expire[remove the expiration date]' \
+            '--note=[attach a note]:text:' \
+            '--remove-note[remove the note]' \
+            '--permissions=[permission letters or a numeric mask]:permissions:' \
+            '--label=[set a link label]:label:' \
+            '--download=[allow downloads: 0 hides them]:(0 1)' \
+            '--send-mail[ask the server to email the recipient]'
+          ;;
+        remove)
+          _arguments ${_sciebo_global_specs[@]} '1:share id:' '--yes[skip the confirmation]'
+          ;;
+        leave)
+          _arguments ${_sciebo_global_specs[@]} '1:share id:' '--yes[skip the confirmation]'
+          ;;
+        pending)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--local[only local pending shares]' \
+            '--remote[only federated pending shares]' \
+            '--json[print the pending shares as JSON]'
+          ;;
+        accept)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:pending share id:' \
+            '--remote[force the federated list]' \
+            '--all[accept every pending share]'
+          ;;
+        decline)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:pending share id:' \
+            '--remote[force the federated list]' \
+            '--yes[skip the confirmation]' \
+            '--all[decline every pending share]'
+          ;;
+        send-email)
+          _arguments ${_sciebo_global_specs[@]} '1:share id:'
+          ;;
+        remote-list)
+          _arguments ${_sciebo_global_specs[@]} '--json[print the remote shares as JSON]'
+          ;;
+        search)
+          _arguments ${_sciebo_global_specs[@]} '1:query:'
+          ;;
+        copy-internal)
+          _arguments ${_sciebo_global_specs[@]} '1:remote path:'
+          ;;
+        incoming)
+          _arguments ${_sciebo_global_specs[@]} '--json[print the shares as JSON]'
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_sciebo_trash() {
+  local state
+  typeset -A opt_args
+  _arguments -C ${_sciebo_global_specs[@]} \
+    '1:subcommand:->sub' \
+    '*::argument:->args' && return 0
+  case $state in
+    sub)
+      local -a subs
+      subs=(
+        'list:list trashed items (default)'
+        'restore:restore items into their original location'
+        'rm:permanently delete items (asks on a terminal)'
+        'empty:permanently delete the whole trashbin'
+      )
+      _describe -t commands 'trash subcommand' subs
+      ;;
+    args)
+      case $words[1] in
+        list)
+          _arguments ${_sciebo_global_specs[@]}
+          ;;
+        restore)
+          _arguments ${_sciebo_global_specs[@]} \
+            '*:trash id:' \
+            '--all[restore every listed item]' \
+            '--yes[skip the confirmation]'
+          ;;
+        rm)
+          _arguments ${_sciebo_global_specs[@]} \
+            '*:trash id:' \
+            '--yes[skip the confirmation]'
+          ;;
+        empty)
+          _arguments ${_sciebo_global_specs[@]} '--yes[skip the confirmation]'
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_sciebo_schedule() {
+  local state
+  typeset -A opt_args
+  _arguments -C ${_sciebo_global_specs[@]} \
+    '1:subcommand:->sub' \
+    '*::argument:->args' && return 0
+  case $state in
+    sub)
+      local -a subs
+      subs=(
+        'install:render the plist and bootstrap the agent'
+        'uninstall:bootout the agent and remove the plist'
+        'status:show whether the agent is installed and loaded'
+      )
+      _describe -t commands 'schedule subcommand' subs
+      ;;
+    args)
+      case $words[1] in
+        install)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--at-login[start the agent at login/boot]' \
+            '--profiles=[render one extra agent per profile]:profiles:'
+          ;;
+        *)
+          _arguments ${_sciebo_global_specs[@]}
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_sciebo_account() {
+  local state
+  typeset -A opt_args
+  _arguments -C ${_sciebo_global_specs[@]} \
+    '1:subcommand:->sub' \
+    '*::argument:->args' && return 0
+  case $state in
+    sub)
+      local -a subs
+      subs=(
+        'list:show every profile'
+        'add:create a profile'
+        'import:import accounts from the Nextcloud desktop client'
+        'remove:delete a profile config and state'
+        'use:show how to activate a profile'
+        'info:show the account on the server'
+        'avatar:download the account avatar'
+        'status:remote, server, cache, and keychain state'
+      )
+      _describe -t commands 'account subcommand' subs
+      ;;
+    args)
+      case $words[1] in
+        list)
+          _arguments ${_sciebo_global_specs[@]}
+          ;;
+        add)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:profile name:' \
+            '--remote=[rclone remote name]:remote:' \
+            '--base=[remote base folder]:base:'
+          ;;
+        import)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--nextcloud-cfg=[read FILE instead of the default nextcloud.cfg]:file:_files' \
+            '--profile=[import only the matching account]:account:' \
+            '--dry-run[print the plan and write nothing]' \
+            '--yes[merge without asking]' \
+            '--json[print the plan as JSON]'
+          ;;
+        remove)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:profile name:_sciebo_profiles' \
+            '--yes[skip the confirmation]'
+          ;;
+        use)
+          _arguments ${_sciebo_global_specs[@]} '1:profile name:_sciebo_profiles'
+          ;;
+        info)
+          _arguments ${_sciebo_global_specs[@]} '--json[print the account info as JSON]'
+          ;;
+        avatar)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--output=[write the avatar to FILE]:file:_files' \
+            '--size=[avatar pixel size]:pixels:'
+          ;;
+        status)
+          _arguments ${_sciebo_global_specs[@]} '--json[print the status as JSON]'
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_sciebo_presence() {
+  local state
+  typeset -A opt_args
+  _arguments -C ${_sciebo_global_specs[@]} \
+    '1:subcommand:->sub' \
+    '*::argument:->args' && return 0
+  case $state in
+    sub)
+      local -a subs
+      subs=(
+        'show:show the current status and message'
+        'set:set the status and an optional message'
+        'clear:clear the custom status message'
+      )
+      _describe -t commands 'presence subcommand' subs
+      ;;
+    args)
+      case $words[1] in
+        show | clear)
+          _arguments ${_sciebo_global_specs[@]}
+          ;;
+        set)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:status:(online away dnd offline)' \
+            '--message=[publish a custom message]:text:' \
+            '--emoji=[publish a status emoji]:emoji:' \
+            '--clear-after=[expire the message after]:duration:'
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_sciebo_config() {
+  local state
+  typeset -A opt_args
+  _arguments -C ${_sciebo_global_specs[@]} \
+    '1:subcommand:->sub' \
+    '*::argument:->args' && return 0
+  case $state in
+    sub)
+      local -a subs
+      subs=(
+        'list:print every setting as KEY=VALUE<TAB>source'
+        'get:print the effective value of one setting'
+        'check:check the settings and required files'
+        'edit:edit config/settings.local.env'
+      )
+      _describe -t commands 'config subcommand' subs
+      ;;
+    args)
+      case $words[1] in
+        list)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--json[print the result as JSON]' \
+            '--all[also show settings whose value is empty]'
+          ;;
+        get)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:KEY:' \
+            '--json[print the result as JSON]'
+          ;;
+        check)
+          _arguments ${_sciebo_global_specs[@]} '--json[print the result as JSON]'
+          ;;
+        edit)
+          _arguments ${_sciebo_global_specs[@]}
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_sciebo_filters() {
+  local state
+  typeset -A opt_args
+  _arguments -C ${_sciebo_global_specs[@]} \
+    '1:subcommand:->sub' \
+    '*::argument:->args' && return 0
+  case $state in
+    sub)
+      local -a subs
+      subs=(
+        'sync:fetch the server sync-exclude list and regenerate the filter'
+        'list:table of filter files and server-cache staleness'
+        'show:print one filter file'
+        'check:validate every filter with rclone'
+      )
+      _describe -t commands 'filters subcommand' subs
+      ;;
+    args)
+      case $words[1] in
+        sync | list)
+          _arguments ${_sciebo_global_specs[@]} '--json[print the result as JSON]'
+          ;;
+        show)
+          _arguments ${_sciebo_global_specs[@]} '1:filter file:'
+          ;;
+        check)
+          _arguments ${_sciebo_global_specs[@]}
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_sciebo_file() {
+  local state
+  typeset -A opt_args
+  _arguments -C ${_sciebo_global_specs[@]} \
+    '1:subcommand:->sub' \
+    '*::argument:->args' && return 0
+  case $state in
+    sub)
+      local -a subs
+      subs=(
+        'info:show WebDAV metadata for a path'
+        'activity:show the activity stream of a path'
+        'shares:list the shares of a path'
+      )
+      _describe -t commands 'file subcommand' subs
+      ;;
+    args)
+      case $words[1] in
+        info)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:remote path:' \
+            '--json[print the metadata as JSON]'
+          ;;
+        activity)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:remote path:' \
+            '--limit=[print at most N entries]:N:' \
+            '--json[print the activity as JSON]'
+          ;;
+        shares)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:remote path:' \
+            '--json[print the shares as JSON]'
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_sciebo_tags() {
+  local state
+  typeset -A opt_args
+  _arguments -C ${_sciebo_global_specs[@]} \
+    '1:subcommand:->sub' \
+    '*::argument:->args' && return 0
+  case $state in
+    sub)
+      local -a subs
+      subs=(
+        'list:list the system tags (default)'
+        'create:create a user-visible, user-assignable tag'
+        'assign:replace the tags of a path with an id list'
+        'clear:remove every tag from a path'
+      )
+      _describe -t commands 'tags subcommand' subs
+      ;;
+    args)
+      case $words[1] in
+        list)
+          _arguments ${_sciebo_global_specs[@]} '--json[print the listing as JSON]'
+          ;;
+        create)
+          _arguments ${_sciebo_global_specs[@]} '1:NAME:'
+          ;;
+        assign)
+          _arguments ${_sciebo_global_specs[@]} '1:remote path:' '2:tag ids:'
+          ;;
+        clear)
+          _arguments ${_sciebo_global_specs[@]} '1:remote path:'
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_sciebo_server() {
+  local state
+  typeset -A opt_args
+  _arguments -C ${_sciebo_global_specs[@]} \
+    '1:subcommand:->sub' \
+    '*::argument:->args' && return 0
+  case $state in
+    sub)
+      local -a subs
+      subs=(
+        'info:server URL, user, and capability facts'
+        'capabilities:parsed capabilities summary'
+        'status:reachability check with rclone lsd'
+      )
+      _describe -t commands 'server subcommand' subs
+      ;;
+    args)
+      case $words[1] in
+        info)
+          _arguments ${_sciebo_global_specs[@]} '--json[print a JSON document]'
+          ;;
+        capabilities)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--raw[print the cached raw OCS response]' \
+            '--json[print the capabilities as JSON]'
+          ;;
+        status)
+          _arguments ${_sciebo_global_specs[@]}
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_sciebo() {
+  local state line context
+  typeset -A opt_args
+  local ret=1
+
+  _arguments -C ${_sciebo_global_specs[@]} \
+    '1:command:->command' \
+    '*::argument:->args' && ret=0
+
+  case $state in
+    command)
+      _describe -t commands 'sciebo command' _sciebo_commands
+      ;;
+    args)
+      case $words[1] in
+        help)
+          _describe -t commands 'sciebo command' _sciebo_commands
+          ;;
+        setup)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--login[authenticate with the Nextcloud Login Flow v2]' \
+            '--url=[base URL for --login]:url:' \
+            '--rotate[fetch a fresh app password for the configured remote]' \
+            '--no-keychain[store the obscured password in the rclone config]' \
+            '--proxy=[proxy URL for this setup run]:url:' \
+            '--crypt[create the crypt remote wrapping the WebDAV remote]'
+          ;;
+        doctor)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--offline[skip network checks]' \
+            '--json[print a JSON document instead of the text report]'
+          ;;
+        discover)
+          _arguments ${_sciebo_global_specs[@]} '--write[write config/sources.generated.conf]'
+          ;;
+        list)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--json[print the valid sources as JSON]'
+          ;;
+        check | sync)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--apply[transfer data]' \
+            '--dry-run[explicit dry run]' \
+            '--only=[run only this source]:source name:' \
+            '--resync[allow rclone bisync --resync]' \
+            '--yes[ignore the MAX_DOWNLOAD_SIZE and delete guards]' \
+            '--metered-ok[run even on a metered connection]' \
+            '--quiet[only print failures, warnings, and the summary]' \
+            '--no-lock[do not take the run lock]' \
+            '--force[run even while paused]'
+          ;;
+        verify)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--only=[check only this source]:source name:' \
+            '--download[download remote files and hash them]' \
+            '--size-only[compare sizes only, skip hashes]' \
+            '--quiet[only print failures and the summary]'
+          ;;
+        status)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--only=[show only this source]:source name:' \
+            '--history=[print the last N recorded runs]:N:' \
+            '--json[print the report as JSON]' \
+            '--watch=[refresh the report every N seconds]:N:' \
+            '--quiet[only print rows that need attention]'
+          ;;
+        pause)
+          _arguments ${_sciebo_global_specs[@]} '--for=[pause for this long]:duration:'
+          ;;
+        resume)
+          _arguments ${_sciebo_global_specs[@]}
+          ;;
+        folders)
+          _sciebo_folders
+          ;;
+        mount)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--folder=[remote subfolder below the remote base]:remote subfolder:' \
+            '--mountpoint=[local mountpoint]:mountpoint:_directories' \
+            '--ro[read-only mount, no VFS cache]' \
+            '--foreground[run rclone in the foreground]' \
+            '--sudo[run rclone as root]'
+          ;;
+        umount)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--folder=[unmount the mount for this remote subfolder]:remote subfolder:' \
+            '--mountpoint=[unmount the mount for this local mountpoint]:mountpoint:_directories' \
+            '--all[unmount every recorded mount]' \
+            '--sudo[run umount as root]'
+          ;;
+        mounts)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--folder=[only show this remote subfolder]:remote subfolder:' \
+            '--check[exit 1 when a recorded mount is not visible]' \
+            '--prune[remove stale mount records]' \
+            '--json[print the mounts as JSON]'
+          ;;
+        cleanup)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--logs[delete old log files and rotate large ones]' \
+            '--uploads[delete stale chunk uploads]' \
+            '--state[delete stale bisync, lock, temp, and mount state]' \
+            '--junk[delete files matching fleeting.txt]' \
+            '--cache[delete stale mount-cache files]' \
+            '--support[keep the newest support archives]' \
+            '--keep=[archives to keep for --support]:N:' \
+            '--apply[actually delete (default is a dry run)]'
+          ;;
+        schedule)
+          _sciebo_schedule
+          ;;
+        trash)
+          _sciebo_trash
+          ;;
+        versions)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:remote path:' \
+            '--download=[save this version]:version:' \
+            '--output=[write the --download body to FILE]:file:_files' \
+            '--stdout[stream the --download body to standard output]' \
+            '--restore=[restore this version]:version:' \
+            '--delete=[delete this version]:version:' \
+            '--yes[skip the --restore/--delete confirmation]'
+          ;;
+        share)
+          _sciebo_share
+          ;;
+        notifications)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--limit=[print and notify at most N notifications]:N:' \
+            '--app=[only notifications from these apps]:list:' \
+            '--type=[only notifications with these object types]:list:' \
+            '--unseen[only notifications not yet in the seen cache]' \
+            '--action=[run an action on a notification]:id label:' \
+            '--delete=[delete one notification]:id:' \
+            '--delete-all[delete every notification]' \
+            '--notify[send a notification per new notification]' \
+            '--json[print the filtered notifications as JSON]' \
+            '--watch=[poll every N seconds]:seconds:' \
+            '--quiet[print no notification rows]' \
+            '--yes[skip the --delete-all confirmation]'
+          ;;
+        activity)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--limit=[print and notify at most N activities]:N:' \
+            '--since=[only activities newer than DURATION (paged)]:duration:' \
+            '--notify[send a notification per new activity]' \
+            '--quiet[print no activity rows]'
+          ;;
+        presence)
+          _sciebo_presence
+          ;;
+        lock)
+          _arguments ${_sciebo_global_specs[@]} '1:remote file:'
+          ;;
+        unlock)
+          _arguments ${_sciebo_global_specs[@]} \
+            '::remote file:' \
+            '--all[release every recorded lock]' \
+            '--yes[skip the --all confirmation]'
+          ;;
+        locks)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--prune[forget records whose lock-token is gone]' \
+            '--unlock-all[release every recorded lock]' \
+            '--yes[skip the --unlock-all confirmation]'
+          ;;
+        quota)
+          _arguments ${_sciebo_global_specs[@]} '--json[print rclone JSON output]'
+          ;;
+        open)
+          _arguments ${_sciebo_global_specs[@]} \
+            '::remote path, local path, or name:_files' \
+            '--print[print the resolved path or URL instead of opening it]' \
+            '--web[open the folder in the Nextcloud web UI]'
+          ;;
+        conflicts)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--resolve=[resolve conflict files instead of listing]:mode:(keep-local keep-remote keep-newest keep-oldest keep-both)' \
+            '--only=[scan or resolve only this source]:source name:' \
+            '--kind=[scan or resolve only one conflict kind]:kind:(copy case all)' \
+            '--open[open the conflict directories with the platform opener]' \
+            '--apply[carry out the planned actions]' \
+            '--yes[skip the --apply confirmation]' \
+            '--json[print the resolve result as JSON]' \
+            '--quiet[print nothing; exit 1 when conflict files exist]'
+          ;;
+        retry)
+          _arguments ${_sciebo_global_specs[@]} \
+            '::source name:' \
+            '::path:' \
+            '--list[show all blacklist records and exit]' \
+            '--all[clear every source records]'
+          ;;
+        account)
+          _sciebo_account
+          ;;
+        logout)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--revoke[revoke the app password on the server first]' \
+            '--yes[do not ask for confirmation]'
+          ;;
+        config)
+          _sciebo_config
+          ;;
+        support)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--output=[archive path]:file:_files' \
+            '--no-network[accepted for compatibility; doctor runs offline]' \
+            '--json[print the archive summary as JSON]'
+          ;;
+        nextcloudcmd)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:SOURCEDIR:_directories' \
+            '2:NEXTCLOUDURL:' \
+            '--path=[remote folder below the user root]:subfolder:' \
+            '--confdir=[configuration base for this run]:directory:_directories' \
+            '--user=[user name]:user:' \
+            '-u[user name]:user:' \
+            '--password=[password]:password:' \
+            '-p[password]:password:' \
+            '--password-fd=[read the password from an already-open file descriptor]:fd:' \
+            '-n[read credentials from ~/.netrc]' \
+            '--silent[errors only]' \
+            '-s[errors only]' \
+            '--httpproxy=[HTTP proxy URL]:url:' \
+            '--exclude=[read exclude patterns from FILE]:file:_files' \
+            '--exclude-anchored=[read sync-root patterns from FILE]:file:_files' \
+            '--unsyncedfolders=[exclude every folder listed in FILE]:file:_files' \
+            '--max-sync-retries=[retry the whole sync up to N times]:N:' \
+            '--uplimit=[upload bandwidth cap]:rate:' \
+            '--downlimit=[download bandwidth cap]:rate:' \
+            '--logdebug[debug-level logging]' \
+            '--verbose[debug-level logging]' \
+            '--progress[show rclone transfer progress (terminal only)]' \
+            '-P[show rclone transfer progress (terminal only)]' \
+            '-v[print the version and exit]' \
+            '--version[print the version and exit]' \
+            '-h[sync hidden files]' \
+            '--dry-run[report what would change, change nothing]'
+          ;;
+        watch)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--interval=[poll interval in seconds]:seconds:' \
+            '--debounce=[coalesce change events for N seconds]:seconds:' \
+            '*--only=[watch only this source]:source name:' \
+            '--remote-interval=[check the remote every N seconds]:seconds:' \
+            '--backend=[change-detection backend]:backend:(auto fswatch inotify poll)' \
+            '--once[run one detection cycle and exit]' \
+            '--notify[allow desktop notifications]' \
+            '--no-notify[disable desktop notifications even when NOTIFY=1]' \
+            '--quiet[only warnings and errors]'
+          ;;
+        limit)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--up=[upload cap, e.g. 2M]:rate:' \
+            '--down=[download cap, e.g. 5M]:rate:' \
+            '--until=[expire after this long]:duration:' \
+            '--show[print the current limit]' \
+            '--clear[remove the marker]' \
+            '--json[print the state as JSON]'
+          ;;
+        unlimited)
+          _arguments ${_sciebo_global_specs[@]}
+          ;;
+        network)
+          _arguments ${_sciebo_global_specs[@]} '--json[print the state as JSON]'
+          ;;
+        filters)
+          _sciebo_filters
+          ;;
+        file)
+          _sciebo_file
+          ;;
+        search)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:TERM:' \
+            '--limit=[ask the server for at most N results]:N:' \
+            '--json[print the results as JSON]' \
+            '--open[open the first result with the platform opener]'
+          ;;
+        recent)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--since=[only files modified within DURATION]:duration:' \
+            '--limit=[print at most N files]:N:' \
+            '--json[print the files as JSON]'
+          ;;
+        comments)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:remote path:' \
+            '2:action:(list add delete)' \
+            '3:argument:' \
+            '--json[print the listing as JSON]' \
+            '--yes[skip the delete confirmation]'
+          ;;
+        favorites)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:subcommand:(list add remove)' \
+            '2:remote path:' \
+            '--json[print the listing as JSON]'
+          ;;
+        tags)
+          _sciebo_tags
+          ;;
+        server)
+          _sciebo_server
+          ;;
+        hydrate)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:remote path:' \
+            '--dest=[copy into DIR instead of the resolved destination]:directory:_directories' \
+            '--dry-run[report what would be copied; changes nothing]' \
+            '--quiet[do not print the success line]' \
+            '--json[print the result as JSON]' \
+            '--progress[show rclone transfer progress (terminal only)]'
+          ;;
+        provision)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--userid=[Nextcloud user id]:user id:' \
+            '--apppassword=[app password]:password:' \
+            '--apppassword-fd=[read the app password from this open file descriptor]:fd:' \
+            '--serverurl=[server base URL]:url:' \
+            '--localdirpath=[local folder to pair]:directory:_directories' \
+            '--remotedirpath=[remote folder below the remote base]:remote subfolder:' \
+            '--isvfsenabled=[desktop compatibility flag; 1 warns and is ignored]:(0 1)' \
+            '--profile=[profile to create or update]:profile:_sciebo_profiles'
+          ;;
+        logs)
+          _sciebo_logs
+          ;;
+        edit)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:remote file:' \
+            '--editor=[editor command, possibly with arguments]:command:' \
+            '--no-upload[do not upload after editing]' \
+            '--lock[take a WebDAV lock while editing]'
+          ;;
+        ignored)
+          _arguments ${_sciebo_global_specs[@]} \
+            '::local, local-relative, or remote-relative prefix:' \
+            '--source=[restrict the scan to one source]:source name:' \
+            '--json[print the ignored files as JSON]'
+          ;;
+        announcements)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--limit=[print at most N announcements]:N:' \
+            '--no-dismiss[accepted for compatibility]' \
+            '--json[print the announcements as JSON]'
+          ;;
+        preview)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:remote file:' \
+            '--output=[write the image to FILE]:file:_files' \
+            '--size=[preview edge size in pixels]:pixels:'
+          ;;
+        download)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:remote path:' \
+            '2:destination:' \
+            '--dry-run[report what would be transferred; change nothing]' \
+            '--force[download even when the destination matches]' \
+            '--resume[continue a partial file]' \
+            '--continue[continue a partial file]' \
+            '--quiet[do not print the success line]' \
+            '--json[print a structured summary]' \
+            '--progress[show rclone transfer progress (terminal only)]'
+          ;;
+        update)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--check[only report the local vs upstream state]' \
+            '--json[print the report as JSON]'
+          ;;
+      esac
+      ;;
+  esac
+
+  return ret
+}
+
+_sciebo "$@"

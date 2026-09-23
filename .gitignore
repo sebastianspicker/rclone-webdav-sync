@@ -1,5 +1,7 @@
-# Credentials and local overrides
+# Credentials and local overrides (never commit these)
 .env
+.env.*
+!.env.example
 config/settings.local.env
 
 # Generated configuration and runtime state
@@ -9,9 +11,17 @@ state/
 # Logs and atomic-write debris
 *.log
 *.tmp.*
+*.bak
+*.orig
+
+# Python bytecode from `make lint` / `make screenshots`
+__pycache__/
+*.pyc
 
 # OS and editor debris
 .DS_Store
 ._*
 *.swp
 *~
+.idea/
+.vscode/

@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="912" height="557" viewBox="0 0 912 557" role="img" aria-label="bin/sciebo folders choose">
+<title>bin/sciebo folders choose</title>
+<defs><clipPath id="win"><rect x="0.5" y="0.5" width="911" height="556" rx="10"/></clipPath></defs>
+<g clip-path="url(#win)">
+<rect x="0.5" y="0.5" width="911" height="556" rx="10" fill="#0d1117" stroke="#30363d"/>
+<rect x="0.5" y="0.5" width="911" height="36" fill="#161b22"/>
+<line x1="0.5" y1="36.5" x2="911.5" y2="36.5" stroke="#30363d"/>
+<circle cx="20.0" cy="18.5" r="6" fill="#ff5f56"/>
+<circle cx="40.0" cy="18.5" r="6" fill="#ffbd2e"/>
+<circle cx="60.0" cy="18.5" r="6" fill="#27c93f"/>
+<text x="456.0" y="23" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12.5" fill="#8b949e">bin/sciebo folders choose</text>
+<text x="22.0" y="66.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#3fb950" font-weight="600" xml:space="preserve">$ </text>
+<text x="39.4" y="66.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#f0f6fc" font-weight="600" xml:space="preserve">bin/sciebo folders choose</text>
+<text x="22.0" y="87.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">skip notes (already configured)</text>
+<text x="22.0" y="108.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">skip repos/thesis (already configured)</text>
+<text x="22.0" y="129.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">skip repos/website (already configured)</text>
+<text x="22.0" y="150.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">skip shared (already configured)</text>
+<text x="22.0" y="171.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">   1) papers</text>
+<text x="22.0" y="192.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">   2) photos</text>
+<text x="22.0" y="213.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">   3) photos/raw</text>
+<text x="22.0" y="234.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">   4) repos</text>
+<text x="22.0" y="255.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">Select folders (e.g. "1 3 5-7", "all", empty to abort): 2</text>
+<text x="22.0" y="276.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">Local path [~/sciebo/photos]: </text>
+<text x="22.0" y="297.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">Direction for 'photos': 1) bisync (two-way) 2) pull (download) 3) sync (upload)</text>
+<text x="22.0" y="318.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">Choose [1-3, default 1]: </text>
+<text x="22.0" y="339.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">Exclude subfolders of 'photos'? [y/N]: y</text>
+<text x="22.0" y="360.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">   1) raw</text>
+<text x="22.0" y="381.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">Select subfolders to exclude (empty for none): 1</text>
+<text x="22.0" y="402.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">Pairs to add:</text>
+<text x="22.0" y="423.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  bisync photos                   ~/sciebo/photos &lt;-&gt; sciebo:backup/photos [filter: pair-photos.txt]</text>
+<text x="22.0" y="444.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">Add these 1 pair(s) to ~/sciebo-demo/folders.conf? [y/N]: y</text>
+<text x="22.0" y="465.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">Added bisync pair 'photos': ~/sciebo/photos &lt;-&gt; sciebo:backup/photos</text>
+<text x="22.0" y="486.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#8b949e" xml:space="preserve">Next: make check (dry run), then make sync</text>
+<text x="22.0" y="507.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#8b949e" xml:space="preserve">First run: sciebo sync --resync --apply (or make bisync-resync)</text>
+<text x="22.0" y="528.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">Run a dry run for the new pairs now? [Y/n]: n</text>
+</g></svg>

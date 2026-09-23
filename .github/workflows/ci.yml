@@ -1,0 +1,132 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install tools
+        run: brew install bash shellcheck shfmt rclone
+
+      - name: Bash version
+        run: bash --version | head -1
+
+      - name: Version consistency
+        run: |
+          test -f VERSION
+          expected="$(cat VERSION)"
+          actual="$(bin/sciebo --version | awk '{print $2}')"
+          test "$expected" = "$actual"
+          bin/sciebo --version
+
+      - name: Lint
+        run: make lint
+
+      - name: Test
+        run: make test
+
+      - name: Packaging smoke
+        run: |
+          make install PREFIX="$RUNNER_TEMP/prefix"
+          "$RUNNER_TEMP/prefix/bin/sciebo" --version
+          make dist
+          test -f "dist/rclone-sciebo-$(cat VERSION).tar.gz"
+
+  lint-and-test-linux:
+    # Bash 5.3 on Linux: proves the CLI does not depend on macOS-only bash
+    # behavior. The portable integration suite has its own job below.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Bash 5.3
+        run: |
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)" 2>/dev/null || true
+          brew install bash
+          echo "$(brew --prefix)/bin" >>"$GITHUB_PATH"
+          "$(brew --prefix)/bin/bash" --version | head -1
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          # Install shellcheck and shfmt together: the linter skips a missing
+          # tool, so a partial install would silently drop shfmt on Linux.
+          sudo apt-get install -y shellcheck shfmt rclone
+
+      - name: Version consistency
+        run: |
+          test -f VERSION
+          expected="$(cat VERSION)"
+          actual="$(bin/sciebo --version | awk '{print $2}')"
+          test "$expected" = "$actual"
+          bin/sciebo --version
+
+      - name: Lint
+        run: make lint
+
+      - name: Test (fast)
+        run: make test-fast
+
+  integration-linux:
+    # The integration suite is portable: platform backends are pinned through
+    # the CLI's SCIEBO_* test hooks and stat/mount output has fallbacks.
+    # launchd install/uninstall stays opt-in and is covered by the macOS job.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Bash 5.3
+        run: |
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)" 2>/dev/null || true
+          brew install bash
+          echo "$(brew --prefix)/bin" >>"$GITHUB_PATH"
+          "$(brew --prefix)/bin/bash" --version | head -1
+
+      - name: Install rclone
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bash curl ca-certificates unzip
+          # Ubuntu's packaged rclone is older than the suite's
+          # RCLONE_MIN_VERSION (1.69), so install the current stable release.
+          curl -fsSL https://rclone.org/install.sh | sudo bash
+          rclone version
+
+      - name: Integration
+        run: bash tests/integration.sh
+
+  integration-launchd:
+    # launchd install/uninstall is opt-in because it touches the runner's
+    # GUI session; run it on pushes to main only.
+    if: github.event_name == 'push'
+    runs-on: macos-latest
+    timeout-minutes: 20
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+      INTEGRATION_LAUNCHD: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install rclone
+        run: brew install rclone
+      - name: Integration with launchd install/uninstall
+        run: bash tests/integration.sh
