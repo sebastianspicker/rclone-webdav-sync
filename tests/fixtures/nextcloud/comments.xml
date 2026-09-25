@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<d:multistatus xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
+  <d:response>
+    <d:href>/remote.php/dav/comments/files/44/1</d:href>
+    <d:propstat>
+      <d:prop>
+        <oc:id>1</oc:id>
+        <oc:actorDisplayName>Bob</oc:actorDisplayName>
+        <oc:message>Looks good, thanks!</oc:message>
+        <oc:creationDateTime>Wed, 01 Nov 2023 03:00:00 GMT</oc:creationDateTime>
+        <oc:verb>comment</oc:verb>
+      </d:prop>
+      <d:status>HTTP/1.1 200 OK</d:status>
+    </d:propstat>
+  </d:response>
+  <d:response>
+    <d:href>/remote.php/dav/comments/files/44/2</d:href>
+    <d:propstat>
+      <d:prop>
+        <oc:id>2</oc:id>
+        <oc:actorDisplayName>Alice &amp; Bob</oc:actorDisplayName>
+        <oc:message>Re: Q&amp;A&apos;s notes</oc:message>
+        <oc:creationDateTime>Wed, 01 Nov 2023 03:05:00 GMT</oc:creationDateTime>
+        <oc:verb>comment</oc:verb>
+      </d:prop>
+      <d:status>HTTP/1.1 200 OK</d:status>
+    </d:propstat>
+  </d:response>
+</d:multistatus>

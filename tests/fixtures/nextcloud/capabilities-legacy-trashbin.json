@@ -1,0 +1,1 @@
+{"ocs":{"meta":{"status":"ok","statuscode":100,"message":"OK"},"data":{"version":{"major":10,"minor":13,"micro":2,"string":"10.13.2"},"capabilities":{"core":{"pollinterval":60},"files":{"bigfilechunking":false},"trashbin":{"api_enabled":true},"checksums":{"supportedTypes":["SHA1","MD5"],"preferredUploadType":"SHA1"}}}}}

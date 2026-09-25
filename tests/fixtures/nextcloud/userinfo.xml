@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<ocs>
+  <meta>
+    <status>ok</status>
+    <statuscode>100</statuscode>
+    <message>OK</message>
+  </meta>
+  <data>
+    <id>alice</id>
+    <displayname>Alice Anderson</displayname>
+    <email>alice@cloud.example.test</email>
+    <quota>
+      <free>104857600</free>
+      <used>10485760</used>
+      <total>115343360</total>
+      <relative>9.09</relative>
+      <quota>115343360</quota>
+    </quota>
+  </data>
+</ocs>

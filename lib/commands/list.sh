@@ -11,9 +11,13 @@ usage_list() {
 Usage: sciebo list [--json]
 
 List the parsed sources with mode, name, local path, remote path, and
-filter, including invalid entries with their error. --json prints the
-valid entries as {"sources":[...]} with their origin (manual, folders,
-or generated); invalid lines keep going to stderr.
+filter, including invalid entries with their error. Invalid lines keep
+going to stderr.
+
+Options:
+  --json      print the valid entries as {"sources":[...]} with their
+              origin (manual, folders, or generated)
+  -h, --help  show this help
 EOF
 }
 

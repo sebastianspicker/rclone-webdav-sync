@@ -28,6 +28,9 @@ import time
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CLI = os.path.join(REPO, "bin", "sciebo")
 RCLONE = shutil.which("rclone") or "/opt/homebrew/bin/rclone"
+# The first bash on PATH, like the Makefile: macOS /bin/bash is 3.2 and the
+# CLI needs 5.3+.
+BASH = shutil.which("bash") or "/bin/bash"
 MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace"
 
 # ---------------------------------------------------------------------------
@@ -158,7 +161,7 @@ def base_env(box, *, doctor=False):
 def run_cli(box, argv, *, doctor=False, cwd=None, check=False):
     env = base_env(box, doctor=doctor)
     return subprocess.run(
-        ["/bin/bash", CLI] + argv,
+        [BASH, CLI] + argv,
         cwd=cwd or box["remote"],
         env=env,
         stdout=subprocess.PIPE,
@@ -176,7 +179,7 @@ def run_cli_pty(box, argv, answers, *, timeout=90):
     env = base_env(box)
     master, slave = pty.openpty()
     proc = subprocess.Popen(
-        ["/bin/bash", CLI] + argv,
+        [BASH, CLI] + argv,
         cwd=box["remote"],
         env=env,
         stdin=slave,

@@ -260,9 +260,6 @@ Commands:
   trash [subcommand]        list/restore/remove/empty the Nextcloud trashbin
   versions SUB [options]    list/download/restore/delete file versions
   share <subcommand>        create, list, update, or remove Nextcloud shares
-  notifications             list or delete Nextcloud notifications
-  activity                  show the Nextcloud activity stream
-  presence [set ...]        show or set your Nextcloud user status
   lock SUB / unlock SUB     lock or unlock a remote file (WebDAV)
   locks [options]           list locks recorded by `sciebo lock`
   quota                     show server quota usage
@@ -278,6 +275,18 @@ Commands:
   limit / unlimited         cap or lift bandwidth for later runs
   network [--json]          show the active network and metered state
   filters <subcommand>      manage filter files (sync fetches the server list)
+  hydrate SUB               download a remote path on demand
+  provision [options]       non-interactive account and folder setup
+  logs [subcommand]         list, show, or tail per-source sync logs
+  ignored [SUB]             list files excluded from syncing
+  download SUB [DEST]       download a remote file or directory
+  update [--check]          update the local checkout from git
+
+Extra commands (Nextcloud server features; covered by the isolated test
+suite but not by the real-server contract suite):
+  notifications             list or delete Nextcloud notifications
+  activity                  show the Nextcloud activity stream
+  presence [set ...]        show or set your Nextcloud user status
   file <subcommand>         file details, activity, and shares
   search TERM [options]     unified search on the server
   recent [options]          recently modified remote files
@@ -285,15 +294,9 @@ Commands:
   favorites [options]       list or toggle server-side favorites
   tags <subcommand>         list system tags and assign them
   server <subcommand>       server information and capabilities
-  hydrate SUB               download a remote path on demand
-  provision [options]       non-interactive account and folder setup
-  logs [subcommand]         list, show, or tail per-source sync logs
   edit SUB [options]        download, edit, and upload one remote file
-  ignored [SUB]             list files excluded from syncing
   announcements [options]   list server announcements
   preview SUB [options]     download a preview image for a remote file
-  download SUB [DEST]       download a remote file or directory
-  update [--check]          update the local checkout from git
 
 Global options (before the command): --profile NAME, --trust,
 --non-interactive, --debug, --log-file FILE, --log-dir DIR,

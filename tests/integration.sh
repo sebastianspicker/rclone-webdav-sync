@@ -13,9 +13,18 @@
 # CLI's SCIEBO_* test hooks (osascript, security, launchd), `stat`/`mount`
 # output gets a portable fallback, and checks that cannot run on a platform
 # print a SKIP line instead of failing silently.
+#
+# INTEGRATION_TARGET=real dispatches to tests/contract/real-smoke.sh instead:
+# a tagged command subset run against a real Nextcloud (NC_URL/NC_USER/
+# NC_APPPASS, from tests/contract/nextcloud-up.sh) rather than the `local`
+# rclone remote this file uses below. Default (fake/local) mode is entirely
+# unaffected by this branch.
 set -uo pipefail
 INTEGRATION_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJ="$(cd "${INTEGRATION_DIR}/.." && pwd)"
+if [[ "${INTEGRATION_TARGET:-}" == "real" ]]; then
+  exec bash "${INTEGRATION_DIR}/contract/real-smoke.sh"
+fi
 command -v rclone >/dev/null 2>&1 || {
   echo "SKIP: rclone not installed"
   exit 0

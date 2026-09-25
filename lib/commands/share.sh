@@ -84,9 +84,11 @@ Subcommands:
   leave ID [--yes]            leave a share shared with you (asks)
   pending [--local|--remote] [--json]
                               list shares waiting for your acceptance
-  accept ID [--remote]        accept a pending share
-  decline ID [--remote] [--yes]
-                              decline a pending share (asks on a terminal)
+  accept ID [--remote] [--all]
+                              accept a pending share (or --all)
+  decline ID [--remote] [--yes] [--all]
+                              decline a pending share (or --all; asks on
+                              a terminal, or needs --yes)
   send-email ID               email an existing share to its recipient
   remote-list [--json]        list accepted federated shares
   search QUERY                find users, groups, and other sharees
@@ -118,17 +120,24 @@ Email options:
   --send-mail             ask the server to email the share recipient
 
 Update options:
-  --password P | --remove-password
-  --expire DATE | --remove-expire
-  --note TEXT | --remove-note
-  --permissions LETTERS
-  --label LABEL
-  --download 0|1
-  --send-mail
+  --password P            set the password
+  --remove-password       remove the password
+  --expire DATE           set the expiration date
+  --remove-expire         remove the expiration date
+  --note TEXT             attach a note
+  --remove-note           remove the note
+  --permissions LETTERS   permission letters or a numeric mask
+  --label LABEL           set a link label
+  --download 0|1          set the link download attribute
+  --send-mail             ask the server to email the share recipient
+
+List options:
+  --reshares  ask the server for reshares only
 
 Pending options:
   --local     only local pending shares
   --remote    only federated pending shares (accept/decline: force it)
+  --all       accept/decline: answer every pending share instead of one ID
   --json      print JSON: create results, pending and incoming lists
 
 Confirmation:
@@ -137,6 +146,7 @@ Confirmation:
   without --yes because declining can lose access to the share.
 
 Options:
+  --yes       skip the remove/leave/decline confirmation
   -h, --help  show this help
 EOF
 }

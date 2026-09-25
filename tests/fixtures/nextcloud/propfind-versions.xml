@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<d:multistatus xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns" xmlns:oc="http://owncloud.org/ns" xmlns:nc="http://nextcloud.org/ns">
+  <d:response>
+    <d:href>/remote.php/dav/versions/alice/versions/77/</d:href>
+    <d:propstat>
+      <d:prop>
+        <d:getlastmodified/>
+        <d:getcontentlength/>
+      </d:prop>
+      <d:status>HTTP/1.1 404 Not Found</d:status>
+    </d:propstat>
+  </d:response>
+  <d:response>
+    <d:href>/remote.php/dav/versions/alice/versions/77/1700000700</d:href>
+    <d:propstat>
+      <d:prop>
+        <d:getlastmodified>Wed, 01 Nov 2023 01:00:00 GMT</d:getlastmodified>
+        <d:getcontentlength>4096</d:getcontentlength>
+      </d:prop>
+      <d:status>HTTP/1.1 200 OK</d:status>
+    </d:propstat>
+  </d:response>
+  <d:response>
+    <d:href>/remote.php/dav/versions/alice/versions/77/1700000800</d:href>
+    <d:propstat>
+      <d:prop>
+        <d:getlastmodified>Wed, 01 Nov 2023 02:00:00 GMT</d:getlastmodified>
+        <d:getcontentlength>8192</d:getcontentlength>
+      </d:prop>
+      <d:status>HTTP/1.1 200 OK</d:status>
+    </d:propstat>
+  </d:response>
+</d:multistatus>

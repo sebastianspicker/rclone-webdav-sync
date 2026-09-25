@@ -49,7 +49,30 @@ expect_cli "unlock: rc 0" 0 run_cli_nc unlock notes/plan.txt
 expect_contains "unlock: prints unlocked" "$CLI_OUT" "unlocked notes/plan.txt"
 expect_contains "unlock: sends UNLOCK" "$(stub_calls)" $'UNLOCK\t'
 expect_contains "unlock: sends recorded token" "$(curl_args)" "Lock-Token: files_lock/abc-123"
+expect_contains "unlock: X-User-Lock header (files_lock 500s without it)" "$(curl_args)" "X-User-Lock: 1"
 expect_no_file "unlock: removes record" "$LOCK_RECORD"
+
+# --- lock: Nextcloud files_lock answers without a Lock-Token header ---------
+# A real files_lock LOCK returns 200 with nc:lock/nc:lock-owner in the body
+# and no Lock-Token header; the token is only readable as nc:lock-token.
+stub_reset_routes
+stub_clear_calls
+curl_args_clear
+stub_route LOCK '*/remote.php/dav/files/alice/backup/notes/plan.txt' 200 </dev/null
+stub_route PROPFIND '*/remote.php/dav/files/alice/backup/notes/plan.txt' 207 <<'XML'
+<?xml version="1.0"?>
+<d:multistatus xmlns:d="DAV:" xmlns:nc="http://nextcloud.org/ns">
+  <d:response>
+    <d:href>/remote.php/dav/files/alice/backup/notes/plan.txt</d:href>
+    <d:propstat><d:prop><nc:lock-token>files_lock/nc-body-only</nc:lock-token></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat>
+  </d:response>
+</d:multistatus>
+XML
+
+expect_cli "lock: no Lock-Token header rc 0" 0 run_cli_nc lock notes/plan.txt
+expect_contains "lock: token read back over PROPFIND" "$(stub_calls)" "nc:lock-token"
+expect_contains "lock: records the nc:lock-token" "$(cat "$LOCK_RECORD")" "token=files_lock/nc-body-only"
+rm -f "$LOCK_RECORD"
 
 # --- unlock: PROPFIND fallback when no record exists ------------------------
 stub_reset_routes

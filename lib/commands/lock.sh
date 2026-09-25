@@ -221,7 +221,7 @@ lock_unlock_all() {
         continue
       fi
       url="$(lock_url "$path")"
-      nc_dav_request_allow UNLOCK "$url" "" "" -H "Lock-Token: ${token}"
+      nc_dav_request_allow UNLOCK "$url" "" "" -H 'X-User-Lock: 1' -H "Lock-Token: ${token}"
       case "$HTTP_CODE" in
         200 | 204 | 207)
           rm -f "$file"
@@ -270,7 +270,14 @@ cmd_lock() {
     *) http_die_http_error LOCK "$url" ;;
   esac
   token=${ trim "$(http_header 'Lock-Token')";}
-  [[ -n "$token" ]] || die "LOCK ${url} returned no Lock-Token header"
+  # Nextcloud's files_lock answers LOCK with the lock state as nc:
+  # properties and no Lock-Token header; its token is the nc:lock-token
+  # property, so read it back over PROPFIND.
+  if [[ -z "$token" ]]; then
+    lock_propfind_token "$sub"
+    token="$LOCK_RESOLVED_TOKEN"
+  fi
+  [[ -n "$token" ]] || die "LOCK ${url} returned no lock token (no Lock-Token header or nc:lock-token)"
   lock_token_control_free "$token" ||
     die "LOCK ${url} returned a Lock-Token header with control bytes; refusing to record it"
   printf 'path=%s\ntoken=%s\n' "$sub" "$token" | atomic_write "$file" 600
@@ -312,7 +319,7 @@ cmd_unlock() {
   url="$(lock_url "$sub")"
   lock_token_control_free "$token" ||
     die "refusing to send a Lock-Token with control bytes for '${sub}'"
-  nc_dav_request_allow UNLOCK "$url" "" "" -H "Lock-Token: ${token}"
+  nc_dav_request_allow UNLOCK "$url" "" "" -H 'X-User-Lock: 1' -H "Lock-Token: ${token}"
   case "$HTTP_CODE" in
     200 | 204 | 207) ;;
     *) http_die_http_error UNLOCK "$url" ;;

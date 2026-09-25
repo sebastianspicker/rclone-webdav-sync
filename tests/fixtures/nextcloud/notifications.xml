@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<ocs>
+  <meta>
+    <status>ok</status>
+    <statuscode>100</statuscode>
+    <message>OK</message>
+  </meta>
+  <data>
+    <element>
+      <notification_id>501</notification_id>
+      <app>files_sharing</app>
+      <object_type>share</object_type>
+      <datetime>2023-11-01T02:00:00+00:00</datetime>
+      <subject>Alice shared &quot;Verträge&quot; with you</subject>
+      <message></message>
+      <link>https://cloud.example.test/apps/files/?dir=/Verträge</link>
+      <actions>
+        <element>
+          <label>Accept</label>
+          <link>https://cloud.example.test/ocs/v2.php/apps/files_sharing/api/v1/shares/17</link>
+          <type>POST</type>
+          <primary>true</primary>
+        </element>
+        <element>
+          <label>Decline</label>
+          <link>https://cloud.example.test/ocs/v2.php/apps/files_sharing/api/v1/shares/17</link>
+          <type>DELETE</type>
+          <primary>false</primary>
+        </element>
+      </actions>
+    </element>
+    <element>
+      <id>502</id>
+      <app>comments</app>
+      <object_type>comment</object_type>
+      <datetime>2023-11-01T03:00:00+00:00</datetime>
+      <subject>Bob commented on notes.txt</subject>
+      <message>Looks good, thanks!</message>
+      <link></link>
+      <actions></actions>
+    </element>
+  </data>
+</ocs>

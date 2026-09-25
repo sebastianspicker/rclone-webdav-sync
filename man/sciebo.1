@@ -1,5 +1,5 @@
 .\" Man page for the sciebo CLI.
-.TH SCIEBO 1 "2026-09-20" "rclone-sciebo" "User Commands"
+.TH SCIEBO 1 "2026-09-24" "rclone-sciebo" "User Commands"
 .SH NAME
 sciebo \- synchronize local directories with a sciebo (Nextcloud/WebDAV) remote
 .SH SYNOPSIS
@@ -225,6 +225,11 @@ Explicit dry run (default for
 .BI \-\-only " NAME"
 Run only the entry whose sanitized name is
 .IR NAME .
+.TP
+.B \-\-list
+Print the parsed sources (same as
+.BR "sciebo list" )
+and exit.
 .TP
 .B \-\-resync
 Allow

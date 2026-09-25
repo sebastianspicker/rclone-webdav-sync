@@ -12,6 +12,7 @@ list is intentionally empty, because Bash 5.3 is the newest stable release, so
 the scan is a documented no-op until a post-5.3 construct becomes known.
 
 - [Module map](#module-map)
+- [Global naming and shared state](#global-naming-and-shared-state)
 - [Dispatch and global flags](#dispatch-and-global-flags)
 - [Command conventions](#command-conventions)
 - [Settings and paths](#settings-and-paths)
@@ -37,38 +38,63 @@ the scan is a documented no-op until a post-5.3 construct becomes known.
 bin/sciebo                  entrypoint: shell options, sourcing, dispatch, global
                             flags, signal/EXIT traps
 lib/
-  core.sh                   paths, logging (log/warn/err with a per-second
-                            timestamp cache), die/usage_error (with
-                            unknown_source_prefix for the shared
-                            source-resolution wording), long-option
-                            parser (opt_parse with s/S/b/o kinds, opt_begin,
-                            opt_json_mode, opt_help_guard, opt_guard, opt_reject,
-                            opt_into, opt_require_uint with an optional
-                            custom-message arg,
-                            opt_read_fd_secret for the shared
-                            --password-fd/--apppassword-fd reader),
-                            module loading (sciebo_require_module), pure
-                            helpers (sanitize_name/sanitize_name_into,
-                            safe_*_path, trim/trim_into, comma_ids_valid,
-                            record_split, split_positionals,
-                            split_positionals_into, split_command_args,
-                            href_decode, href_last_segment,
-                            url_redact_userinfo, file_size, size_suffix_bytes,
-                            atomic_write, ...), the shared
-                            UTF-8 control stripper (_AWK_CTRL_LIB with
-                            ctrl_strip, behind sanitize_stream and the HTTP
-                            scrubbers), the netrc/curl client helpers
-                            (netrc_write_into for a mode-600 password file,
-                            curl_client_args_into for the client-cert/CA/
-                            user-agent/--config flags), the
-                            secret temp-file registry (temp_mktemp_into VAR
-                            TEMPLATE; registration happens in the caller's
-                            shell, so it must be called as a command and never
-                            inside a command substitution), and safe_source
-                            (refuse a symlinked or group/other-writable file,
-                            then source the verified file through its open
-                            descriptor, so a swap between check and read
-                            cannot execute different content)
+  core.sh                   owns paths (LIB_DIR/PROJECT_DIR/CONFIG_DIR/
+                            CLI_NAME/SCIEBO_BASH/SCIEBO_VERSION, resolved
+                            once at source time), logging (log/warn/err
+                            with a per-second timestamp cache),
+                            die/usage_error/usage_unknown_sub (the terminal
+                            exits every command routes through), and
+                            module loading (sciebo_require_module). Sources
+                            text.sh, opts.sh, secrets.sh, and fsutil.sh
+                            (below) so `source lib/core.sh` keeps providing
+                            every function it always has - the split is by
+                            responsibility, not by call graph, and no
+                            caller needs to change. Must never itself grow
+                            a new option parser, text helper, secret
+                            writer, or filesystem helper inline; that
+                            belongs in the file that owns the concern.
+  text.sh                   owns pure string/text transforms: trimming,
+                            XML/HTML escaping and stripping, control-byte
+                            and UTF-8 sanitizing (the shared _AWK_CTRL_LIB
+                            behind sanitize_stream and the HTTP scrubbers),
+                            name/size/URL parsing and formatting, and the
+                            positional-argument/record splitters. Every
+                            function is a pure function of its arguments
+                            (config_lines, which reads the file it is
+                            given, is the one exception); must never touch
+                            the network or write a file.
+  opts.sh                   owns the long-option parser: SPEC-driven
+                            opt_parse/opt_begin and the opt_* helpers
+                            (help guard, rejection, uint validation,
+                            positional-count enforcement) commands call
+                            after parsing their own options. Must never
+                            validate what an option's value *means* (a
+                            path, a URL) - only its shape as an option;
+                            semantic validation is the command's job or
+                            fsutil.sh's/text.sh's.
+  secrets.sh                owns keeping credentials out of argv, ps, and
+                            stray files: the netrc and curl-config
+                            writers, the proxy-classification decision
+                            shared by curl and rclone, and the temp-file
+                            registry every secret-holding temp goes
+                            through so bin/sciebo's EXIT trap can remove
+                            it. Must never create a secret-holding file
+                            except through temp_mktemp_into (registered
+                            for exit cleanup) or a caller-owned path - never
+                            a bare mktemp or a $(...) subshell, which would
+                            lose the registration and leak the temp file
+                            on a signal.
+  fsutil.sh                 owns filesystem utilities: one-time
+                            stat-flavor detection and the file_mtime/
+                            file_size/file_mode/file_stamp readers built on
+                            it, local path expansion and safety validation,
+                            atomic_write, safe_source, and the file-backed
+                            "seen id" cache (notifications/activity).
+                            safe_source is the only sanctioned way to
+                            source a settings/profile/.env file - it must
+                            keep re-validating ownership and mode through
+                            the open descriptor (TOCTOU-safe) rather than
+                            trusting an earlier check.
   output.sh                 --json document builders and table-row helpers
                             (output_mode_set, output_json_*, output_rows,
                             escaping)
@@ -97,21 +123,18 @@ lib/
                             `<remote>#plain` (HTTP reads it directly, no
                             `rclone reveal`) plus the legacy obscured slot,
                             migrated once on first use
-  http.sh                   curl plumbing, netrc handling, the unified
-                            single-pass XML walker (the shared _AWK_XML_LIB
-                            prelude behind xml_records/xml_records_top/
-                            xml_fields and xml_wrapper_auto),
-                            json_string_field for compact JSON fields, proxy
-                            and HTTP/2 selection
-  nc_api.sh                 Nextcloud DAV/OCS domain helpers on top of
-                            http.sh: nc_dav_url and
-                            nc_dav_request/nc_dav_request_allow for the
-                            endpoints outside the files root (trashbin,
-                            versions, comments, systemtags, locks), file
-                            ids/info, user info, avatars, comments,
-                            favorites, tags, search, and the memoized
-                            E2EE/external-storage policy probes (one
-                            PROPFIND per property and remote subpath per run)
+  http.sh                   owns curl plumbing (netrc-based auth, proxy and
+                            HTTP/2 selection) and the shared awk-based
+                            XML/JSON parsing every DAV/OCS caller uses
+                            instead of `jq`; see
+                            [HTTP / DAV / OCS layer](#http--dav--ocs-layer).
+                            Must never let a secret reach a curl argv or a
+                            child's plain environment.
+  nc_api.sh                 owns the Nextcloud DAV/OCS domain calls built on
+                            http.sh (file ids/info, user info, avatars,
+                            comments, favorites, tags, search, the E2EE/
+                            external-storage probes); see
+                            [HTTP / DAV / OCS layer](#http--dav--ocs-layer).
   bw.sh                     bandwidth-limit marker read/write and effective
                             limit precedence
   bigfolder.sh              large unconfigured remote folder scan/notify
@@ -128,21 +151,18 @@ lib/
   blacklist.sh              failure-count records for the sync blacklist
   pause.sh                  pause marker shared by sync and pause/resume
   lock.sh                   single-run lock (mkdir + pid + process start time)
-  manifest.sh               manifest format, parsing, index (memoized content
-                            keyed by each file's mtime/size stamp, plus a
-                            pure-bash unique/duplicate split), writers
-                            (manifest_append_pair and the single-atomic-write
-                            manifest_append_pairs batch), and the per-pair
-                            flag store under PAIR_FLAGS_DIR
-                            (paused/hidden, mode 600)
+  manifest.sh               owns the manifest format, parsing, a memoized
+                            name/remote index (keyed by each file's
+                            mtime/size stamp) with its duplicate split,
+                            atomic writers, and the per-pair flag store
+                            under PAIR_FLAGS_DIR (paused/hidden, mode 600);
+                            see [Manifest model](#manifest-model).
   migrate.sh                state layout version and migrations
-  ui.sh                     interactive prompts (ui_ask/ui_confirm,
-                            ui_confirm_default_yes for the [Y/n] dialect,
-                            ui_confirm_tty for the shared TTY/interactive
-                            gate, ui_confirm_mutation for destructive
-                            commands, ui_confirm_proceed for mutations a
-                            non-interactive caller may continue), and
-                            selection parsing
+  ui.sh                     owns interactive prompts and the shared
+                            confirmation gates (a plain yes/no ask, the
+                            [Y/n] default-yes form, the TTY/non-interactive
+                            check every mutating command routes through),
+                            and selection parsing
 lib/commands/
   setup.sh                  setup
   account.sh                account
@@ -194,20 +214,71 @@ lib/commands/
   hydrate.sh                hydrate
 config/                     settings, manifests, filters, profile template
 launchd/                    launchd plist template for schedule
+completions/sciebo.spec     declarative spec (commands, subcommands, options,
+                            positionals) scripts/gen-completions.sh generates
+                            completions/{sciebo.bash,_sciebo,sciebo.fish} from;
+                            edit the spec and run `make gen`, never the three
+                            generated files directly
 scripts/sync.sh             compatibility shim for the old entrypoint
 scripts/nextcloudcmd        compatibility shim forwarding to
                             `sciebo nextcloudcmd`
 scripts/check-bash-min.sh  enforces the Bash 5.3 floor; its post-5.3 construct
                             list is intentionally empty (5.3 is the newest
                             stable release), so the scan is a no-op
+scripts/gen-completions.sh  generates the three completion files from
+                            completions/sciebo.spec; `--check` (part of
+                            `make lint`) diffs the generated output against
+                            the committed files instead of writing them
 scripts/check-drift.sh      checks COMMANDS, require_setting, settings docs and
-                            example, global options, command headings, and
-                            completions drift (warnings for documentation gaps)
+                            example, global options, command headings, man
+                            page coverage, and completions/sciebo.spec against
+                            COMMANDS and the live `--help` output (warnings for
+                            documentation gaps)
 tools/screenshots.py        renders the README/demo SVG screenshots
 tests/fake_server.py        local fake Nextcloud (DAV/OCS) for tests
 tests/fake_env.sh           starts the fake server and points the CLI at it
 tests/                      unit, feature, and integration suites (see below)
 ```
+
+## Global naming and shared state
+
+A variable declared at a `lib/*.sh` or `lib/commands/*.sh` file's top level
+(never inside a function - what a function calls its own `local`s is its own
+business) is either module-private or shared:
+
+- **Module-private** state is prefixed `_<module>_`, where `<module>` is the
+  file's basename without `.sh` (e.g. `_http_secret_cache`, `_manifest_index`
+  would be private to `lib/http.sh`/`lib/manifest.sh`). Nothing outside that
+  file may read or assign it.
+- **Shared** state - read or written by more than one file - is *not* given a
+  misleading module prefix; it is named for what it holds (`HTTP_BASE`,
+  `POLICY_REMOTE_RESULT`, `OPT_EXTRA`) and its owner is documented below.
+
+This inventory predates the rule: most existing globals follow the older,
+narrower per-command conventions instead (`ENTRY_*`, `MNT_*`, `OPT_*`, and so
+on, listed in [Command conventions](#command-conventions)), not the
+`_<module>_` prefix, and this change does not rename them. `make lint`'s
+`scripts/check-drift.sh` only warns (never fails) when a file assigns a
+top-level `_<other>_*` global whose prefix names a *different* module - a real
+naming collision going forward, not a retroactive audit of every existing
+name.
+
+Shared globals (not exhaustive - the established cross-module families):
+
+| Family | Owner | Purpose |
+| --- | --- | --- |
+| `OPT_*`, `OPT_HELP`, `OPT_EXTRA`, `POSITIONAL_ARGS` | `lib/opts.sh` | `opt_parse`/`opt_begin`/`split_positionals` write these; every command reads them after parsing its own options |
+| `_AWK_CTRL_LIB`, `_AWK_HTML_LIB` | `lib/text.sh` | shared awk preludes composed by `sanitize_stream`/`strip_html`; `lib/http.sh`'s `_AWK_XML_LIB` prepends `_AWK_HTML_LIB` for its own HTML-in-XML stripping |
+| `SCIEBO_TEMP_FILES` | `lib/secrets.sh` | the exit-cleanup temp-file registry; `lib/http.sh` and any `atomic_write`/`temp_mktemp_into` caller appends to it |
+| `CLIENT_CERT`, `CLIENT_KEY`, `CA_CERT`, `USER_AGENT` | `lib/settings.sh` | read by `secrets.sh`'s `curl_client_args_into` and `lib/http.sh`'s curl invocations |
+| `CLI_NAME`, `CONFIG_DIR`, `LIB_DIR`, `PROJECT_DIR`, `SCIEBO_BASH`, `SCIEBO_VERSION` | `lib/core.sh` | resolved once at source time; read across nearly every `lib/` and `lib/commands/` file |
+| `HTTP_*` (`HTTP_BASE`, `HTTP_USER`, `HTTP_CODE`, `HTTP_BODY`, ...) | `lib/http.sh` | the request/response state every `http_*`/`ocs_*` call leaves for its caller; read by `lib/nc_api.sh` and the commands that call `http.sh` directly |
+| `OCS_STATUS`, `OCS_STATUSCODE`, `OCS_MESSAGE` | `lib/http.sh` | `ocs_request`'s parsed envelope, read by every OCS-backed command |
+| `CAP_*`, `CAPABILITIES_*` | `lib/capabilities.sh` | the parsed capabilities facts and the run-level chunk-size memo; read by `server`/`account`/`share`/`filters` |
+| `POLICY_REMOTE_*` | `lib/policy.sh` | `policy_remote_paths_apply`'s result state, read by `sync`/`doctor`/the folder wizard |
+| `MANIFEST_DUP_NAMES`, `MANIFEST_DUP_REMOTES`, `MANIFEST_NAMES`, `MANIFEST_MATCH_*` | `lib/manifest.sh` | `manifest_index_load`'s output, read by `doctor`/`watch`/`hydrate` |
+| `CHOOSE_*`, `P_*` | `lib/commands/folders_choose.sh` | the folder-picker's selection state, shared with `lib/commands/folders.sh`, which drives it |
+| `SYNC_QUOTA_*`, `SYNC_REMOTE_SIZE_BYTES` | `lib/commands/sync.sh` | per-run quota/size figures read by `doctor`'s summary |
 
 ## Dispatch and global flags
 
@@ -225,11 +296,13 @@ tests/                      unit, feature, and integration suites (see below)
    any library loads, because `lib/settings.sh` derives every path when it is
    sourced. The remaining arguments are preserved for dispatch.
 4. Sources the five eager libraries — `lib/core.sh` (the loader and
-   foundational helpers), `lib/output.sh` and `lib/duration.sh` (time and
-   JSON/row helpers with call sites in nearly every command), `lib/rclone.sh`
-   (binary discovery for `load_settings`), and `lib/settings.sh` — then
-   lazily sources only the dispatched command module: `_sciebo_module_path`
-   looks the command up in
+   foundational helpers; it in turn sources `lib/text.sh`, `lib/opts.sh`,
+   `lib/secrets.sh`, and `lib/fsutil.sh`, so this one `source` still pulls in
+   everything those five files provide), `lib/output.sh` and `lib/duration.sh`
+   (time and JSON/row helpers with call sites in nearly every command),
+   `lib/rclone.sh` (binary discovery for `load_settings`), and
+   `lib/settings.sh` — then lazily sources only the dispatched command
+   module: `_sciebo_module_path` looks the command up in
    the static `_SCIEBO_COMMAND_MODULE_SPECS` table (the default
    `lib/commands/<command>.sh`, with overrides for the multi-command modules)
    and falls back to a content scan only when a mapped file is missing; the
@@ -256,8 +329,12 @@ tests/                      unit, feature, and integration suites (see below)
 
 The `COMMANDS` list is the single source of truth: dispatch and help lookup
 share it, so they cannot drift apart; `scripts/check-drift.sh` verifies that
-every entry has a matching `usage_<name>`/`cmd_<name>` pair and that the
-completion files list the same commands. Command modules are loaded lazily:
+every entry has a matching `usage_<name>`/`cmd_<name>` pair, a man page
+section, and a `completions/sciebo.spec` row (and, through the spec, that the
+long options `<command> --help` prints are exactly the ones the spec declares
+for that command). The three generated completion files are checked
+separately, by `scripts/gen-completions.sh --check` (part of `make lint`),
+against that same spec. Command modules are loaded lazily:
 the entrypoint resolves the dispatched command to one file through the static
 `_SCIEBO_COMMAND_MODULE_SPECS` table (content scan only as a stale-table
 fallback) and sources it, and a module declares its own dependencies with
@@ -698,8 +775,9 @@ launchd install/uninstall runs only when `INTEGRATION_LAUNCHD=1`. The unit
 suite also exercises the pure helpers directly (the chunk derivation,
 `comma_ids_valid`, `epoch_to_stamp_or_raw`, `remote_is_nextcloud` memoization,
 and the policy/XML parsers). `make lint` (shellcheck + shfmt +
-`scripts/check-bash-min.sh` + `scripts/check-drift.sh`) and `make test` are
-the pre-PR gates; `make test-fast` runs unit + feature without integration.
+`scripts/check-bash-min.sh` + `scripts/check-drift.sh`; a missing linter
+fails unless `LINT_ALLOW_MISSING=1`) and `make test` are the pre-PR gates;
+`make test-fast` runs unit + feature without integration.
 CI runs lint, unit, feature, and integration on both macOS and Linux (the
 Linux jobs run `make lint` + `make test-fast` plus a portable integration
 job).

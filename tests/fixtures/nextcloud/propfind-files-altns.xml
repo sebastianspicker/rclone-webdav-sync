@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<d:multistatus xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
+  <d:response>
+    <d:href>/remote.php/dav/files/alice/Legacy%20File.txt</d:href>
+    <d:propstat>
+      <d:prop>
+        <D:getetag>&quot;legacy-etag-0001&quot;</D:getetag>
+        <fileid>77</fileid>
+        <oc:size>256</oc:size>
+      </d:prop>
+      <d:status>HTTP/1.1 200 OK</d:status>
+    </d:propstat>
+  </d:response>
+</d:multistatus>

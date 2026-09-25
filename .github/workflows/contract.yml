@@ -1,0 +1,56 @@
+name: Contract (real Nextcloud)
+
+# Verifies the CLI against a real Nextcloud server (Docker), not just
+# tests/fake_server.py. Not part of the required PR checks (ci.yml covers
+# those): this is opt-in via workflow_dispatch and runs nightly so a real
+# Nextcloud regression is caught without slowing down every PR.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Bash 5.3
+        run: |
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)" 2>/dev/null || true
+          brew install bash
+          echo "$(brew --prefix)/bin" >>"$GITHUB_PATH"
+          "$(brew --prefix)/bin/bash" --version | head -1
+
+      - name: Install rclone
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl ca-certificates unzip
+          curl -fsSL https://rclone.org/install.sh | sudo bash
+          rclone version
+
+      - name: Start the contract Nextcloud
+        run: |
+          eval "$(bash tests/contract/nextcloud-up.sh)"
+          # Redact the generated app password in every later log line.
+          echo "::add-mask::${NC_APPPASS}"
+          {
+            echo "NC_URL=${NC_URL}"
+            echo "NC_USER=${NC_USER}"
+            echo "NC_APPPASS=${NC_APPPASS}"
+          } >>"$GITHUB_ENV"
+
+      - name: Integration (real)
+        run: INTEGRATION_TARGET=real bash tests/integration.sh
+
+      - name: Stop the contract Nextcloud
+        if: always()
+        run: bash tests/contract/nextcloud-down.sh

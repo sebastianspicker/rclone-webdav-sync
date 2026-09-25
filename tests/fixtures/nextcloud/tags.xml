@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<d:multistatus xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
+  <d:response>
+    <d:href>/remote.php/dav/systemtags/5</d:href>
+    <d:propstat>
+      <d:prop>
+        <oc:id>5</oc:id>
+        <oc:display-name>Important</oc:display-name>
+        <oc:user-visible>true</oc:user-visible>
+        <oc:user-assignable>true</oc:user-assignable>
+      </d:prop>
+      <d:status>HTTP/1.1 200 OK</d:status>
+    </d:propstat>
+  </d:response>
+  <d:response>
+    <d:href>/remote.php/dav/systemtags/6</d:href>
+    <d:propstat>
+      <d:prop>
+        <oc:id>6</oc:id>
+        <oc:display-name>Q&amp;A</oc:display-name>
+        <oc:user-visible>true</oc:user-visible>
+        <oc:user-assignable>false</oc:user-assignable>
+      </d:prop>
+      <d:status>HTTP/1.1 200 OK</d:status>
+    </d:propstat>
+  </d:response>
+</d:multistatus>

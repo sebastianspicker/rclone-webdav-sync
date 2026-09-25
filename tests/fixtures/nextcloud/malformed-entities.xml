@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<d:multistatus xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
+  <d:response>
+    <d:href>/remote.php/dav/files/alice/entities.txt</d:href>
+    <d:propstat>
+      <d:prop>
+        <oc:trashbin-original-filename>Decimal &#39;apostrophe&#39; and hex &#x26; amp</oc:trashbin-original-filename>
+        <d:getetag>Double-escaped &amp;amp; stays literal</d:getetag>
+        <oc:trashbin-original-location><![CDATA[literal CDATA block]]></oc:trashbin-original-location>
+      </d:prop>
+      <d:status>HTTP/1.1 200 OK</d:status>
+    </d:propstat>
+  </d:response>
+</d:multistatus>

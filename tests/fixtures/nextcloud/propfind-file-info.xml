@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<d:multistatus xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns" xmlns:nc="http://nextcloud.org/ns">
+  <d:response>
+    <d:href>/remote.php/dav/files/alice/Q%26A%27s%20notes.txt</d:href>
+    <d:propstat>
+      <d:prop>
+        <d:resourcetype/>
+        <d:getcontentlength>512</d:getcontentlength>
+        <d:getlastmodified>Wed, 01 Nov 2023 02:00:00 GMT</d:getlastmodified>
+        <d:getetag>&quot;65123abc456df2&quot;</d:getetag>
+        <d:owner-id>alice</d:owner-id>
+        <oc:fileid>44</oc:fileid>
+        <oc:size>512</oc:size>
+        <oc:permissions>RGDNVW</oc:permissions>
+        <oc:favorite>1</oc:favorite>
+        <oc:checksums><oc:checksum>SHA1:abc123def456</oc:checksum></oc:checksums>
+      </d:prop>
+      <d:status>HTTP/1.1 200 OK</d:status>
+    </d:propstat>
+    <d:propstat>
+      <d:prop>
+        <d:locktoken/>
+      </d:prop>
+      <d:status>HTTP/1.1 404 Not Found</d:status>
+    </d:propstat>
+  </d:response>
+</d:multistatus>

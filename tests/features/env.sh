@@ -47,6 +47,9 @@ command -v rclone >/dev/null 2>&1 || {
   exit 0
 }
 
+# HTTP_TIMEOUT is 15s (well above the stub curl's near-instant reply) so a
+# forked stub isn't mistaken for a hung request when many feature scripts
+# run concurrently and briefly starve the scheduler.
 export RCLONE_REMOTE=testremote RCLONE_CONFIG="${TMP}/rclone.conf" REMOTE_BASE=backup \
   PROJ="$PROJ" \
   STATE_DIR="${TMP}/state" SETTINGS_LOCAL_FILE="${TMP}/no-local.env" ENV_FILE="${TMP}/no-env.env" \
@@ -54,7 +57,7 @@ export RCLONE_REMOTE=testremote RCLONE_CONFIG="${TMP}/rclone.conf" REMOTE_BASE=b
   ROOTS_FILE="${TMP}/roots.conf" FOLDERS_FILE="${TMP}/folders.conf" FILTER_DIR="${TMP}/filters" \
   PROFILES_DIR="${TMP}/profiles" PROFILES_STATE_DIR="${TMP}/profiles-state" \
   LAUNCHD_LABEL="de.rclone-sciebo.sync.featuretest" \
-  KEYCHAIN=0 NOTIFY=0 HTTP_TIMEOUT=5 HTTP_RETRIES=1 \
+  KEYCHAIN=0 NOTIFY=0 HTTP_TIMEOUT=15 HTTP_RETRIES=1 \
   TRANSFERS=1 RETRIES=1 LOW_LEVEL_RETRIES=1 CONTIMEOUT=1s TIMEOUT=10s
 mkdir -p "$FILTER_DIR"
 : >"$FOLDERS_FILE"

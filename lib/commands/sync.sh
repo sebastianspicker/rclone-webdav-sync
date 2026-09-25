@@ -95,6 +95,7 @@ Options:
   --dry-run      explicit dry run (default for check)
   --only NAME    run only entries whose sanitized name is NAME; `sciebo
                  list` shows the names
+  --list         print the parsed sources (same as `sciebo list`) and exit
   --resync       allow rclone bisync --resync, the first-time
                  initialization. WARNING: resync can copy or delete files
                  in BOTH directions; review a dry run with --resync first

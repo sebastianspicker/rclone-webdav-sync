@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<ocs>
+  <meta>
+    <status>ok</status>
+    <statuscode>100</statuscode>
+    <message>OK</message>
+  </meta>
+  <data>
+    <element>
+      <id>17</id>
+      <share_type>3</share_type>
+      <uid_owner>alice</uid_owner>
+      <displayname_owner>Alice</displayname_owner>
+      <permissions>1</permissions>
+      <share_with></share_with>
+      <token>aBcDeFgHiJkLmNo</token>
+      <expiration></expiration>
+      <note>Q&amp;A for the &apos;launch&apos; review</note>
+      <path>/Verträge</path>
+      <url>https://cloud.example.test/s/aBcDeFgHiJkLmNo</url>
+    </element>
+    <element>
+      <id>18</id>
+      <share_type>0</share_type>
+      <uid_owner>alice</uid_owner>
+      <displayname_owner>Alice</displayname_owner>
+      <permissions>19</permissions>
+      <share_with>bob</share_with>
+      <share_with_displayname>Bob</share_with_displayname>
+      <token></token>
+      <expiration>2024-01-01 00:00:00</expiration>
+      <note></note>
+      <path>/Q&amp;A's notes.txt</path>
+      <url></url>
+    </element>
+  </data>
+</ocs>

@@ -68,10 +68,11 @@ Options:
                           dry-run check reports remaining changes
   --uplimit RATE          upload bandwidth cap (rclone size suffix)
   --downlimit RATE        download bandwidth cap
-  --logdebug, --verbose   debug-level logging
+  --logdebug              debug-level logging (alias: --verbose)
+  --verbose               debug-level logging (alias: --logdebug)
   --progress, -P          show rclone transfer progress (terminal only;
                           suppressed by --silent)
-  -v, --version           print the version and exit
+  --version, -v           print the version and exit
   -h                      sync hidden files (no ".*" exclusion)
   --dry-run               report what would change, change nothing
   --help                  show this help

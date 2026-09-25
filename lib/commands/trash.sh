@@ -11,9 +11,17 @@ TRASH_RECORD_ID=""
 
 # IDs validated for the current subcommand (newline-separated).
 TRASH_IDS=""
+# Nextcloud names the trash properties nc:trashbin-filename/-deletion-time
+# (nextcloud.org/ns); ownCloud used oc:trashbin-original-filename/
+# -delete-timestamp (owncloud.org/ns). Ask for both vocabularies: a server
+# answers the ones it knows and 404s the rest in a separate propstat.
+# trashbin-original-location has the same local name in both.
 TRASH_PROPFIND_BODY='<?xml version="1.0"?>
-<d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
+<d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns" xmlns:nc="http://nextcloud.org/ns">
   <d:prop>
+    <nc:trashbin-filename/>
+    <nc:trashbin-original-location/>
+    <nc:trashbin-deletion-time/>
     <oc:trashbin-original-filename/>
     <oc:trashbin-original-location/>
     <oc:trashbin-delete-timestamp/>
@@ -46,6 +54,7 @@ Commands:
                  --yes when not running interactively)
 
 Options:
+  --all       restore: restore every listed item instead of naming IDs
   --yes       skip the restore --all / rm / empty confirmation
   -h, --help  show this help
 EOF
@@ -71,8 +80,12 @@ trash_id_from_href() {
 # the caller's.
 trash_parse_xml() {
   local line="" orig_name="" location="" deleted="" size="" href="" id=""
+  local oc_name="" oc_deleted=""
   while IFS= read -r line; do
-    record_split "$line" orig_name location deleted size href
+    record_split "$line" orig_name oc_name location deleted oc_deleted size href
+    # Prefer the Nextcloud property, fall back to the ownCloud one.
+    [[ -n "$orig_name" ]] || orig_name="$oc_name"
+    [[ -n "$deleted" ]] || deleted="$oc_deleted"
     is_uint "$deleted" || deleted=""
     is_uint "$size" || size=""
     orig_name=${ printable "$orig_name";}
@@ -83,8 +96,10 @@ trash_parse_xml() {
     printf '%s\t%s\t%s\t%s\t%s\n' \
       "$orig_name" "$location" "$deleted" "$size" "$id"
   done < <(xml_records "$1" 'd:response' \
-    'oc:trashbin-original-filename' 'oc:trashbin-original-location' \
-    'oc:trashbin-delete-timestamp' 'd:getcontentlength' 'd:href')
+    'nc:trashbin-filename' 'oc:trashbin-original-filename' \
+    'oc:trashbin-original-location' \
+    'nc:trashbin-deletion-time' 'oc:trashbin-delete-timestamp' \
+    'd:getcontentlength' 'd:href')
 }
 
 # trash_valid_id ID - true when ID is one non-empty path segment without
