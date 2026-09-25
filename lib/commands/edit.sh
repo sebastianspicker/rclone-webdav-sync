@@ -45,8 +45,6 @@ EOF
 edit_resolve() {
   local sub="$1"
   EDIT_LOCAL=""
-  # manifest.sh is lazy; load it for the entry lookup below.
-  sciebo_require_module manifest manifest_resolve_local
   manifest_resolve_local "$sub" EDIT_LOCAL || return 1
   return 0
 }
@@ -78,8 +76,6 @@ edit_signature() {
 # (the caller dies with the editor hint) and 2 when the opener itself fails.
 edit_open_path() {
   local file="$1" opener=""
-  # platform.sh is lazy; load it for platform_opener below.
-  sciebo_require_module platform platform_opener
   opener="$(platform_opener)"
   [[ -n "$opener" ]] || return 1
   "$opener" -- "$file" || return 2
@@ -135,9 +131,6 @@ edit_parse_args() {
 # requested). Sets EDIT_LOCAL_FILE and EDIT_REMOTE. Dies on the same errors
 # as the old inline prologue, before any editor is opened.
 edit_prepare_target() {
-  # lock.sh is lazy; load it before acquire_lock below so the EXIT trap's
-  # release_lock exists too.
-  sciebo_require_module lock acquire_lock
   load_settings
   require_remote
   edit_resolve "$EDIT_SUB" ||

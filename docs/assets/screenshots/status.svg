@@ -12,9 +12,9 @@
 <text x="22.0" y="66.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#3fb950" font-weight="600" xml:space="preserve">$ </text>
 <text x="39.4" y="66.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#f0f6fc" font-weight="600" xml:space="preserve">bin/sciebo status</text>
 <text x="22.0" y="87.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">not paused</text>
-<text x="22.0" y="108.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">repos_website                sync   OK       2026-09-19 23:41:24 </text>
-<text x="22.0" y="129.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">repos_thesis                 sync   OK       2026-09-19 23:41:24 </text>
-<text x="22.0" y="150.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">notes                        bisync OK       2026-09-19 23:41:25 </text>
-<text x="22.0" y="171.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">shared                       pull   OK       2026-09-19 23:41:25 </text>
+<text x="22.0" y="108.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">repos_website                sync   OK       2026-09-25 05:28:44 </text>
+<text x="22.0" y="129.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">repos_thesis                 sync   OK       2026-09-25 05:28:44 </text>
+<text x="22.0" y="150.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">notes                        bisync OK       2026-09-25 05:28:44 </text>
+<text x="22.0" y="171.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">shared                       pull   OK       2026-09-25 05:28:44 </text>
 <text x="22.0" y="192.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#f0f6fc" font-weight="600" xml:space="preserve">Summary: 4 source(s) tracked (4 ok, 0 failed, 0 skipped/never)</text>
 </g></svg>

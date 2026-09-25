@@ -42,9 +42,9 @@ EOF
 # was read at, so an external edit is picked up by the next
 # _config_keys_refresh. config_file_defines reads the cache without forking,
 # which matters because `config list` resolves the source of ~120 keys.
-declare -A CONFIG_KEYS_CACHE=()
-declare -A CONFIG_KEYS_STAMP=()
-declare -A CONFIG_KEYS_LOADED=()
+declare -gA CONFIG_KEYS_CACHE=()
+declare -gA CONFIG_KEYS_STAMP=()
+declare -gA CONFIG_KEYS_LOADED=()
 
 # _config_keys_extract FILE - the unique setting keys defined in FILE,
 # preserving the original semantics exactly: the config/settings.env forms
@@ -125,7 +125,10 @@ config_env_exported() {
     esac
     return 1
   fi
-  export -p 2>/dev/null | grep -qE "^declare -x ${name}="
+  # Attribute test instead of `export -p | grep -q`: under pipefail an early
+  # grep exit can SIGPIPE the writer and turn a match into a failure.
+  [[ -n "${!name+set}" ]] || return 1
+  [[ "${!name@a}" == *x* ]]
 }
 
 # config_key_source_into VAR KEY - store profile, local, environment, or

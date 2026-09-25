@@ -1,7 +1,7 @@
 #!/bin/bash
 # favorites.sh command module - list and toggle Nextcloud favorites. The
 # listing is a DAV REPORT on the files root; add/remove set the oc:favorite
-# property through lib/nc_api.sh. Only die/usage_error exit.
+# property through lib/adapters/nc_api.sh. Only die/usage_error exit.
 
 FAVORITES_RECORD_PATH=""
 FAVORITES_RECORD_SIZE=""
@@ -113,8 +113,6 @@ cmd_favorites() {
   # The DAV listing and property updates use the http/nc_api helpers; load
   # them after opt_begin's --help exit so `sciebo favorites --help` parses
   # none of them.
-  sciebo_require_module http xml_get
-  sciebo_require_module nc_api nc_dav_request_allow
   split_positionals_into p1 p2 p3
   [[ "${#POSITIONAL_ARGS[@]}" -le 3 ]] ||
     usage_error favorites "unexpected argument: $(printable "${POSITIONAL_ARGS[3]}")"

@@ -12,8 +12,10 @@ config/settings.env) as a Nextcloud WebDAV backend and validate it.
 Connection values are taken from the environment, from .env in the
 project root, or interactively:
 
-  SCIEBO_URL           Nextcloud base URL, e.g. https://uni-muenster.sciebo.de
-  SCIEBO_USER          sciebo ID, e.g. alice@uni-muenster.de
+  SCIEBO_URL           Nextcloud base URL, e.g. https://your-university.sciebo.de
+                       (any Nextcloud server's base URL works too)
+  SCIEBO_USER          sciebo ID, e.g. alice@your-university.de (a plain
+                       Nextcloud username works too)
   SCIEBO_APP_PASSWORD  app password (Settings > Security > Devices & sessions)
 
 Options:
@@ -60,7 +62,7 @@ setup_prompt() {
 }
 
 # setup_normalize_url URL USER - print URL normalized to USER's Nextcloud
-# WebDAV files root through the shared nextcloud_dav_url (lib/core.sh),
+# WebDAV files root through the shared nextcloud_dav_url (lib/base/core.sh),
 # which strips the trailing slashes, keeps a URL already at that root, and
 # appends /remote.php/dav/files/USER/ otherwise. The helper reports only
 # rc 1 for a URL that points into /remote.php/ but not at USER's root, so
@@ -70,7 +72,7 @@ setup_normalize_url() {
   local url="$1" user="$2" normalized=""
   url="$(strip_trailing_slashes "$url")"
   normalized="$(nextcloud_dav_url "$url" "$user")" ||
-    die "URL '${url}' looks like a WebDAV path, but setup needs the Nextcloud base URL (e.g. https://uni-muenster.sciebo.de); it appends /remote.php/dav/files/<user>/ itself"
+    die "URL '${url}' looks like a WebDAV path, but setup needs the Nextcloud base URL (e.g. https://your-university.sciebo.de); it appends /remote.php/dav/files/<user>/ itself"
   printf '%s' "$normalized"
 }
 
@@ -89,7 +91,7 @@ setup_warn_if_group_or_other_readable() {
 
 # setup_proxy_hint URL - after a run with --proxy, remind the user how to
 # keep it. Settings files are never written. The URL is shown with any
-# userinfo redacted (url_redact_userinfo, lib/core.sh): a credentialed proxy
+# userinfo redacted (url_redact_userinfo, lib/base/core.sh): a credentialed proxy
 # would otherwise land in the terminal scrollback (and any captured log).
 setup_proxy_hint() {
   [[ -n "${1:-}" ]] || return 0
@@ -147,7 +149,7 @@ setup_require_base_url() {
 
 # setup_login_flow_curl_pass_file VAR PASSWORD - write a mode-600 curl config
 # file carrying the client-key passphrase as `pass = "..."` and store its path
-# in VAR. Delegates to the shared curl_key_pass_config_into (lib/core.sh),
+# in VAR. Delegates to the shared curl_key_pass_config_into (lib/base/core.sh),
 # which escapes backslash/double quote, refuses a control byte, and registers
 # the fresh mode-600 temp for exit cleanup; a control byte (rc 1) or write
 # failure (rc 2) is normalized to this path's rc 1. The caller adds
@@ -350,7 +352,7 @@ setup_login_flow() {
 
 # setup_rotate_base_url URL - derive the Nextcloud base URL from the stored
 # (normalized) WebDAV URL. rc 1 when it does not look like a WebDAV URL.
-# Deliberately not remote_nextcloud_base (lib/rclone.sh): that helper
+# Deliberately not remote_nextcloud_base (lib/adapters/rclone.sh): that helper
 # requires an http(s) scheme and the /remote.php/dav/files/ path, while
 # rotate reads whatever url a hand-edited config holds and derives the base
 # from any /remote.php/ path, so the stricter helper would refuse URLs this
@@ -396,10 +398,7 @@ setup_rotate() {
     warn "login flow authorized '${LOGIN_FLOW_USER}', but remote '${RCLONE_REMOTE}:' is configured for '${user}'; keeping the configured user"
   fi
 
-  # keychain.sh is lazy; load it before the probe so KEYCHAIN=1 users keep
-  # storing the fresh password (the probe alone would silently skip).
-  sciebo_require_module keychain keychain_enabled
-  if [[ "$no_keychain" -eq 0 ]] && type keychain_enabled >/dev/null 2>&1 && keychain_enabled; then
+  if [[ "$no_keychain" -eq 0 ]] && keychain_enabled; then
     use_keychain=1
   fi
   pass_config="$(remote_password_config_value "${LOGIN_FLOW_PASSWORD:-}" "$use_keychain")"
@@ -459,9 +458,7 @@ setup_crypt_install_remote() {
   pass2=""
   unset pass1 pass2
 
-  # keychain.sh is lazy; load it before the probe (see setup_rotate).
-  sciebo_require_module keychain keychain_enabled
-  if [[ "$no_keychain" -eq 0 ]] && type keychain_enabled >/dev/null 2>&1 && keychain_enabled; then
+  if [[ "$no_keychain" -eq 0 ]] && keychain_enabled; then
     backend="$(keychain_backend 2>/dev/null || true)"
     warn "the ${backend:-keychain} keychain backend stores one item per remote; the crypt passwords stay obscured in the rclone config"
   fi
@@ -585,7 +582,7 @@ setup_run_login() {
   setup_load_env
   base_url="${OPT_url:-${SCIEBO_URL:-}}"
   [[ -n "$base_url" ]] ||
-    base_url="$(setup_prompt 'sciebo base URL (e.g. https://uni-muenster.sciebo.de)' "")"
+    base_url="$(setup_prompt 'sciebo base URL (e.g. https://your-university.sciebo.de)' "")"
   [[ -n "$base_url" ]] || die "sciebo base URL is required for --login; pass --url URL or set SCIEBO_URL in .env (cp .env.example .env)"
   setup_login_flow "$base_url"
   url="${LOGIN_FLOW_URL:-}"
@@ -603,14 +600,15 @@ setup_run_normal() {
   local base_url="" url="" user="" pass=""
   setup_load_env
   base_url="${OPT_url:-${SCIEBO_URL:-}}"
-  url="$(setup_prompt 'sciebo base URL (e.g. https://uni-muenster.sciebo.de)' "$base_url")"
+  url="$(setup_prompt 'sciebo base URL (e.g. https://your-university.sciebo.de)' "$base_url")"
   [[ -n "$url" ]] || die "sciebo base URL is required; set SCIEBO_URL in .env (cp .env.example .env)"
 
-  user="$(setup_prompt 'sciebo ID (e.g. alice@uni-muenster.de)' "${SCIEBO_USER:-}")"
+  user="$(setup_prompt 'sciebo ID (e.g. alice@your-university.de; a plain Nextcloud username works too)' "${SCIEBO_USER:-}")"
   [[ -n "$user" ]] || die "sciebo ID is required; set SCIEBO_USER in .env (cp .env.example .env)"
   case "$user" in
-    *@*) ;;
-    *) die "sciebo ID '${user}' does not look like an ID; expected <localid>@<scope>, e.g. alice@uni-muenster.de" ;;
+    *[[:space:]]* | *[[:cntrl:]]*)
+      die "sciebo ID '${user}' must not contain whitespace or control characters"
+      ;;
   esac
 
   pass="$(setup_prompt 'sciebo app password' "${SCIEBO_APP_PASSWORD:-}" secret)"
@@ -636,9 +634,7 @@ setup_prepare_credentials() {
     http://*) warn "URL uses plain http://; sciebo connections should use https://" ;;
   esac
 
-  # keychain.sh is lazy; load it before the probe (see setup_rotate).
-  sciebo_require_module keychain keychain_enabled
-  if [[ "$no_keychain" -eq 0 ]] && type keychain_enabled >/dev/null 2>&1 && keychain_enabled; then
+  if [[ "$no_keychain" -eq 0 ]] && keychain_enabled; then
     use_keychain=1
   fi
   # shellcheck disable=SC2034  # written through the nameref; read by setup_commit
@@ -673,26 +669,19 @@ setup_report_quota() {
 }
 
 # setup_report_capabilities - stage 4 of setup_commit: probe the server
-# capabilities and report them (the capability rows plus the chunk-size hint),
-# warning when the probe fails. Silent when the capabilities module is not
-# loaded.
+# capabilities and report them (the capability rows plus the chunk-size
+# hint), warning when the probe fails.
 setup_report_capabilities() {
   local chunk=""
-  if type capabilities_probe >/dev/null 2>&1; then
-    if capabilities_probe; then
-      if type capabilities_show >/dev/null 2>&1; then
-        printf '\n'
-        capabilities_show
-      fi
-      if type capabilities_sync_chunk_size >/dev/null 2>&1; then
-        chunk=${ capabilities_sync_chunk_size;} || chunk=""
-        if [[ -n "$chunk" && "$chunk" != "${CHUNK_SIZE:-}" ]]; then
-          log "server reports chunk size ${chunk}; consider setting CHUNK_SIZE=${chunk} in config/settings.local.env"
-        fi
-      fi
-    else
-      warn "could not probe server capabilities (chunk size not checked)"
+  if capabilities_probe; then
+    printf '\n'
+    capabilities_show
+    chunk=${ capabilities_sync_chunk_size;} || chunk=""
+    if [[ -n "$chunk" && "$chunk" != "${CHUNK_SIZE:-}" ]]; then
+      log "server reports chunk size ${chunk}; consider setting CHUNK_SIZE=${chunk} in config/settings.local.env"
     fi
+  else
+    warn "could not probe server capabilities (chunk size not checked)"
   fi
 }
 
@@ -707,7 +696,7 @@ setup_print_summary() {
   shown_url="${ printable "$url";}"
   printf '  url:    %s\n  user:   %s\n  config: %s\n' "$shown_url" "$user" "$RCLONE_CONFIG"
   if [[ "$use_keychain" -eq 1 ]]; then
-    printf '  password: Keychain (%s, %s)\n' "$KEYCHAIN_SERVICE" "$(keychain_account)"
+    printf '  password: Keychain (%s, %s)\n' "$KEYCHAIN_SERVICE" "$(keychain_account_plain)"
   else
     printf '  password: rclone config (obscured)\n'
   fi
@@ -743,8 +732,6 @@ cmd_setup() {
   # Run dependencies load after opt_begin's --help exit (and after the
   # unknown-option usage error), so `sciebo setup --help` parses none of
   # them: the login flow and remote validation use http/capabilities.
-  sciebo_require_module http xml_get
-  sciebo_require_module capabilities capabilities_load
 
   local use_login=0 no_keychain=0 rotate=0 crypt=0
   local proxy="${OPT_proxy:-}"

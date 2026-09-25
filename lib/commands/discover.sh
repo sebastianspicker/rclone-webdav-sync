@@ -144,8 +144,6 @@ cmd_discover() {
   # Run dependencies load after opt_guard's --help exit: the roots parser
   # validates entry modes through the manifest model, and lock.sh loads
   # before acquire_lock (so the EXIT trap can release it).
-  sciebo_require_module manifest valid_entry_mode
-  sciebo_require_module lock acquire_lock
   opt_into write write 1
 
   load_settings --no-rclone

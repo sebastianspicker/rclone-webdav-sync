@@ -11,9 +11,9 @@
 # --verbose is an alias of --logdebug. The rclone remote is dedicated to this
 # command (`sciebo-nextcloudcmd`), so a normal `sciebo setup` remote is
 # neither read nor changed. Shared helpers cover the rest of what upstream
-# nextcloudcmd does locally: netrc_host (lib/core.sh) strips the machine's
+# nextcloudcmd does locally: netrc_host (lib/base/core.sh) strips the machine's
 # port for the ~/.netrc lookup, and progress_append_args/progress_stdout_tty
-# (lib/rclone.sh) own the -P argv guards (terminal only, suppressed by
+# (lib/adapters/rclone.sh) own the -P argv guards (terminal only, suppressed by
 # --silent and JSON mode).
 
 # Remote name and the resolved URL/credential pieces.
@@ -172,7 +172,7 @@ ncc_parse_url() {
 
 # ncc_normalize_path PATH - strip leading and trailing slashes. The leading
 # strip is nextcloudcmd's own (--path arrives user-written); the trailing
-# strip is the shared strip_trailing_slashes (lib/core.sh), which keeps a
+# strip is the shared strip_trailing_slashes (lib/base/core.sh), which keeps a
 # lone "/" intact.
 ncc_normalize_path() {
   local path="$1"
@@ -207,13 +207,11 @@ ncc_netrc_lookup() {
   ' "$file"
 }
 
-# ncc_prompt user|password - ask on the terminal through lib/ui.sh: the user
+# ncc_prompt user|password - ask on the terminal through lib/base/ui.sh: the user
 # name through ui_ask, the password through ui_ask_secret (read -s, so the
-# typed secret is never echoed). The UI module is lazy, so it is required
-# before the probes rather than silently skipped.
+# typed secret is never echoed).
 ncc_prompt() {
   local what="$1" prompt=""
-  sciebo_require_module ui ui_ask
   if [[ "$what" == "user" ]]; then
     prompt="Username: "
     ui_ask "$prompt" || return 1
@@ -262,7 +260,7 @@ ncc_read_password() {
   if [[ -n "${OPT_password:-}" ]]; then
     usage_error nextcloudcmd "--password and --password-fd cannot be combined"
   fi
-  # opt_read_fd_secret (lib/core.sh) owns the shared fd vocabulary
+  # opt_read_fd_secret (lib/base/core.sh) owns the shared fd vocabulary
   # ("requires a file descriptor number"/"requires a positive file descriptor
   # number"/"is not readable"/"provided an empty password") that
   # tests/features/nextcloudcmd.sh asserts.
@@ -279,7 +277,7 @@ ncc_resolve_credentials() {
   [[ -z "${OPT_non_interactive:-}" && -z "${SCIEBO_NON_INTERACTIVE:-}" ]] || non_interactive=true
   opt_into netrc netrc
   if [[ "$netrc" == true ]]; then
-    # netrc_host (lib/core.sh) strips scheme/path/port; NCC_HOST is already
+    # netrc_host (lib/base/core.sh) strips scheme/path/port; NCC_HOST is already
     # the bare authority ncc_parse_url produced, so only its port-stripping
     # half applies here (host, host:port, and bracketed IPv6 behave exactly
     # like the ncc-local copy this replaced).
@@ -340,7 +338,7 @@ ncc_configure_remote() {
 }
 
 # ncc_bisync_initialized WORKDIR - true when the workdir holds non-dry state.
-# Delegates to bisync_initialized_dir (lib/settings.sh) so both bisync
+# Delegates to bisync_initialized_dir (lib/config/settings.sh) so both bisync
 # call sites share the same definition of "initialized".
 ncc_bisync_initialized() {
   bisync_initialized_dir "$1"
@@ -417,7 +415,7 @@ ncc_build_args_logging() {
 }
 
 # ncc_append_progress LOG_MODE - append rclone's -P through the shared
-# progress_append_args (lib/rclone.sh), which checks --progress, quiet, JSON
+# progress_append_args (lib/adapters/rclone.sh), which checks --progress, quiet, JSON
 # mode, and progress_stdout_tty (the terminal probe this module used to
 # duplicate as ncc_progress_tty). LOG_MODE "probe" is the captured
 # --max-sync-retries dry-run check, which never shows a bar; --silent maps
@@ -432,7 +430,7 @@ ncc_append_progress() {
 # ncc_build_args_limits DRY_RUN RESYNC - append the bandwidth/retry/TLS
 # flags and the --dry-run/--resync switches. The proxy is never hand-built
 # into the argv here: ncc_prepare_workdir folds --httpproxy into PROXY and
-# rclone_cmd routes it through _rclone_proxy_resolve (lib/rclone.sh), so
+# rclone_cmd routes it through _rclone_proxy_resolve (lib/adapters/rclone.sh), so
 # proxy credentials stay out of ps.
 ncc_build_args_limits() {
   local dry_run="$1" resync="$2"
@@ -483,7 +481,7 @@ ncc_parse_positionals() {
   [[ "$nargs" -ge 2 ]] || usage_error nextcloudcmd "SOURCEDIR and NEXTCLOUDURL are required"
   [[ "$nargs" -le 2 ]] || usage_error nextcloudcmd "unexpected argument: $(printable "${line}")"
   # The URL may carry user:pass@ userinfo, so only the redacted form may be
-  # printed in the error line (url_redact_userinfo, lib/core.sh).
+  # printed in the error line (url_redact_userinfo, lib/base/core.sh).
   ncc_parse_url "$url" || usage_error nextcloudcmd "invalid NEXTCLOUDURL: $(url_redact_userinfo "$url")"
   NCC_SOURCEDIR="$sourcedir"
 }
@@ -547,7 +545,7 @@ ncc_prepare_workdir() {
   # rclone child's environment instead of its argv (credentials never reach
   # ps), keeps a socks URL as --http-proxy, honors PROXY_TYPE/PROXY_DIRECT,
   # and strips the ambient proxy environment for a direct run.
-  # shellcheck disable=SC2034  # read by _rclone_proxy_resolve inside rclone_cmd (lib/rclone.sh)
+  # shellcheck disable=SC2034  # read by _rclone_proxy_resolve inside rclone_cmd (lib/adapters/rclone.sh)
   opt_into PROXY httpproxy "${OPT_httpproxy:-}"
   ensure_state_dirs
   ncc_resolve_credentials

@@ -65,9 +65,7 @@ ignored_scan_args() {
     IGNORED_SCAN_INC_ARGS+=(--filter-from "${FILTER_DIR}/clutter.txt")
   fi
   [[ -z "$ENTRY_FILTER" ]] || IGNORED_SCAN_INC_ARGS+=(--filter-from "${FILTER_DIR}/${ENTRY_FILTER}")
-  if type -t filter_server_filter_file >/dev/null 2>&1; then
-    server_filter="$(filter_server_filter_file)"
-  fi
+  server_filter="$(filter_server_filter_file)"
   if [[ -n "$server_filter" && -n "${SERVER_EXCLUDE_FILTER:-}" ]]; then
     IGNORED_SCAN_INC_ARGS+=(--filter-from "$SERVER_EXCLUDE_FILTER")
   fi
@@ -166,9 +164,6 @@ cmd_ignored() {
   # excludes, the generated server-exclude filter mirrored by the listing
   # (guarded by `type -t` below, but it must be loaded), and the manifest
   # walkers.
-  sciebo_require_module blacklist blacklist_record_many
-  sciebo_require_module commands/filters filter_server_filter_file
-  sciebo_require_module manifest manifest_each
   # SUB is optional (MIN 0); a second positional is rejected with the same
   # wording the inline check used.
   opt_require_sub ignored "SUB" "${OPT_EXTRA:-}" 0

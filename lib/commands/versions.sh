@@ -1,7 +1,7 @@
 #!/bin/bash
 # versions.sh command module - list, download, restore, and delete Nextcloud
 # file versions. Resolves a remote path's file id and lists its versions via
-# the WebDAV versions endpoint through lib/http.sh; restoring and deleting
+# the WebDAV versions endpoint through lib/adapters/http.sh; restoring and deleting
 # are confirmed interactively (or require --yes).
 
 VERSIONS_RECORD_VERSION=""
@@ -14,12 +14,6 @@ VERSIONS_LIST_XML=""
 VERSIONS_SUB=""
 VERSIONS_ACTION=""
 VERSIONS_VERSION=""
-VERSIONS_FILEID_BODY='<?xml version="1.0"?>
-<d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
-  <d:prop>
-    <oc:fileid/>
-  </d:prop>
-</d:propfind>'
 VERSIONS_LIST_BODY='<?xml version="1.0"?>
 <d:propfind xmlns:d="DAV:">
   <d:prop>
@@ -92,7 +86,7 @@ versions_parse_action() {
 
 # versions_parse_fileid XML - print the numeric file id of the first
 # <oc:fileid> value; empty when the property is absent or not numeric.
-# xml_get comes from lib/http.sh, which the guard above loads when this
+# xml_get comes from lib/adapters/http.sh, which the guard above loads when this
 # module is sourced on its own (nc_parse_fileid is the nc_api copy).
 versions_parse_fileid() {
   local fileid=""
@@ -140,7 +134,7 @@ versions_version_url() {
 versions_resolve() {
   local sub="$1" url="" fileid=""
   url="$(nc_path_url "${REMOTE_BASE}/${sub}")"
-  nc_dav_request PROPFIND "$url" 0 "$VERSIONS_FILEID_BODY"
+  nc_dav_request PROPFIND "$url" 0 "$NC_FILEID_BODY"
   fileid="$(versions_parse_fileid "$HTTP_BODY")"
   [[ -n "$fileid" ]] ||
     die "no file id for '${sub}' below ${RCLONE_REMOTE}:${REMOTE_BASE}/ (not found, or not a file)"
@@ -247,14 +241,6 @@ versions_run_delete() {
 cmd_versions() {
   local url=""
   versions_parse_action "$@"
-  # Run dependencies load after the parse (its opt_begin consumed --help),
-  # so `sciebo versions --help` parses none of them: versions_parse_fileid
-  # and the file-id lookup use the http/nc_api helpers (unit tests that
-  # source this module alone still get them loaded on demand here), and the
-  # restore/delete confirmation prompts through ui.
-  sciebo_require_module http xml_get
-  sciebo_require_module nc_api nc_dav_request_allow
-  sciebo_require_module ui ui_confirm_mutation
   case "$VERSIONS_ACTION" in
     restore | delete) versions_confirm "$VERSIONS_ACTION" "$VERSIONS_VERSION" || return 0 ;;
   esac

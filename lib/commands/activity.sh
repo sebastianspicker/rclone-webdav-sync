@@ -1,6 +1,6 @@
 #!/bin/bash
 # activity.sh command module - show the Nextcloud activity stream.
-# Talks to the activity OCS API through lib/http.sh. --notify sends
+# Talks to the activity OCS API through lib/adapters/http.sh. --notify sends
 # best-effort desktop notifications and remembers the ids in ACTIVITY_SEEN;
 # it never changes the command's exit status. --since walks the API's
 # activity-id cursor (since=) backwards until entries older than the cutoff
@@ -21,10 +21,10 @@ ACTIVITY_RECORDS=""
 ACTIVITY_PAGE_XML=""
 # Ids already collected, keyed for O(1) cross-page membership checks; a page
 # boundary may repeat the cursor id.
-declare -A ACTIVITY_FETCHED_IDS=()
+declare -gA ACTIVITY_FETCHED_IDS=()
 # Datetime -> epoch cache so each distinct timestamp is parsed once; an unset
 # key means "not parsed yet", a set-but-empty value means "unparsable".
-declare -A ACTIVITY_EPOCH_CACHE=()
+declare -gA ACTIVITY_EPOCH_CACHE=()
 # Records appended by the last activity_records_append call.
 ACTIVITY_PAGE_NEW=0
 # Records counted by the last activity_record_count call.
@@ -71,7 +71,7 @@ activity_api_path() {
 # shared xml_html_strip (_AWK_HTML_LIB composed into _AWK_XML_LIB),
 # replacing a fork per field.
 activity_parse_xml() {
-  printf '%s' "$1" | awk "${_AWK_XML_LIB}"'
+  printf '%s' "$1" | LC_ALL=C awk "${_AWK_XML_LIB}"'
     { doc = doc $0 }
     END {
       gsub(/\r/, "", doc)
@@ -309,13 +309,10 @@ activity_print_rows() {
 # activity_notify [CUTOFF] - notify the unseen activities in the collected
 # (optionally --since filtered) stream and record the ids in ACTIVITY_SEEN.
 # --limit (default 20) caps how many notifications are sent. Sending is
-# best-effort: a missing notify_send or a failed send is ignored.
+# best-effort: a failed send is ignored.
 activity_notify() {
   local cutoff="${1:-}" limit=20 line="" new_ids="" sent=0 app_disp=""
   local -a lines=()
-  # notify.sh is lazy; load it before the `type notify_send` probe below so
-  # `--notify` still delivers when the module has not been loaded yet.
-  sciebo_require_module notify notify_send
   [[ -n "${OPT_limit_SET:-}" ]] && limit="${OPT_limit:-0}"
   mapfile -t lines <<<"$ACTIVITY_RECORDS"
   for line in "${lines[@]}"; do
@@ -324,10 +321,8 @@ activity_notify() {
     [[ -z "$cutoff" ]] || activity_recent "$ACTIVITY_RECORD_DATETIME" "$cutoff" || continue
     seen_contains "$ACTIVITY_SEEN" "$ACTIVITY_RECORD_ID" && continue
     [[ "$sent" -lt "$limit" ]] || break
-    if type notify_send >/dev/null 2>&1; then
-      app_disp=${ printable "$ACTIVITY_RECORD_APP";}
-      notify_send "Nextcloud activity" "${app_disp}: ${ACTIVITY_RECORD_SUBJECT}"
-    fi
+    app_disp=${ printable "$ACTIVITY_RECORD_APP";}
+    notify_send "Nextcloud activity" "${app_disp}: ${ACTIVITY_RECORD_SUBJECT}"
     new_ids="${new_ids}${ACTIVITY_RECORD_ID}"$'\n'
     sent=$((sent + 1))
   done
@@ -343,7 +338,6 @@ cmd_activity() {
   # `sciebo activity --help` parses none of them: the OCS calls go through
   # http.sh; --limit and --since validate through the eagerly loaded core/
   # duration helpers.
-  sciebo_require_module http xml_get
   if [[ -n "${OPT_limit_SET:-}" ]]; then
     opt_require_uint activity --limit "${OPT_limit:-}" 1
     limit=$((10#${OPT_limit}))

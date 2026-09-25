@@ -1,7 +1,7 @@
-.\" Man page for the sciebo CLI.
-.TH SCIEBO 1 "2026-09-24" "rclone-sciebo" "User Commands"
+.\" Man page for the sciebo command (rclone-webdav-sync).
+.TH SCIEBO 1 "2026-09-24" "rclone-webdav-sync" "User Commands"
 .SH NAME
-sciebo \- synchronize local directories with a sciebo (Nextcloud/WebDAV) remote
+sciebo \- unofficial client for the sciebo (Hochschulcloud.NRW) service and other Nextcloud servers, synchronizing local directories with a WebDAV remote
 .SH SYNOPSIS
 .B sciebo
 .RI [ global\-options ]
@@ -17,8 +17,9 @@ sciebo \- synchronize local directories with a sciebo (Nextcloud/WebDAV) remote
 .B \-\-help
 .SH DESCRIPTION
 .B sciebo
-synchronizes local directories with a sciebo (Nextcloud/WebDAV) account
-through
+is the command installed by rclone-webdav-sync, an unofficial client for the
+sciebo (Hochschulcloud.NRW) service and other Nextcloud servers. It
+synchronizes local directories with a Nextcloud/WebDAV account through
 .BR rclone (1).
 Sources are declared in
 .IR config/sources.conf ,
@@ -1246,7 +1247,7 @@ after their user id when safe, else
 .IR account<N> .
 The
 .B [General]
-values with a sciebo equivalent map into the profile's
+values with an equivalent in this tool's settings map into the profile's
 .IR settings.local.env ,
 folder pairs are added as bisync pairs, and passwords are never imported:
 run
@@ -2196,4 +2197,4 @@ and
 The project README documents the manifest format, the settings precedence,
 and the full configuration reference:
 .I README.md
-in the rclone-sciebo project tree.
+in the rclone-webdav-sync project tree.

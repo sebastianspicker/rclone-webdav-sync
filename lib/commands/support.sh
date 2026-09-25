@@ -135,6 +135,20 @@ support_stat_mtime_name() {
   printf '%s %s' "$mtime" "$file"
 }
 
+# support_sort_capped LIST LIMIT - LIST's "<mtime> <path>" records (one per
+# line), newest first, capped at LIMIT rows, with the mtime column
+# stripped. `sort` runs inside a process substitution, so `mapfile -n`
+# stopping before EOF never turns into a SIGPIPE on the pipeline itself
+# (pipefail would otherwise fail this on a large LIST once `head` closed
+# the pipe on `sort` mid-write).
+support_sort_capped() {
+  local list="$1" limit="$2"
+  local -a lines=()
+  # Read everything, then slice (see recent_sorted): no early pipe close.
+  mapfile -t lines < <(printf '%s' "$list" | LC_ALL=C sort -rn)
+  printf '%s\n' "${lines[@]:0:$limit}" | sed 's/^[0-9][0-9]* //'
+}
+
 # support_newest_files DIR LIMIT - print up to LIMIT regular files from DIR,
 # newest first. Log names are sanitized by the tooling, so line-based
 # sorting is safe here.
@@ -146,13 +160,11 @@ support_newest_files() {
     list="${list}${record}"$'\n'
   done
   [[ -n "$list" ]] || return 0
-  printf '%s' "$list" | LC_ALL=C sort -rn | head -n "$limit" | sed 's/^[0-9][0-9]* //'
+  support_sort_capped "$list" "$limit"
 }
 
 support_add_version() {
   local out="$1"
-  # version.sh is lazy; load it for version_print below.
-  sciebo_require_module version version_print
   {
     version_print || true
     uname -a 2>/dev/null || true
@@ -182,9 +194,7 @@ support_add_settings() {
 
 support_add_rclone_config() {
   local out="$1" show=""
-  if type remote_config_show >/dev/null 2>&1; then
-    show=${ remote_config_show;} || show=""
-  fi
+  show=${ remote_config_show;} || show=""
   if [[ -z "$show" && -n "${RCLONE_BIN:-}" ]]; then
     show="$("$RCLONE_BIN" --config "$RCLONE_CONFIG" config show "$RCLONE_REMOTE" 2>/dev/null)" || show=""
   fi
@@ -231,12 +241,8 @@ support_add_logs() {
 support_add_capabilities() {
   local out="$1"
   {
-    if type capabilities_load >/dev/null 2>&1; then capabilities_load || true; fi
-    if type capabilities_show >/dev/null 2>&1; then
-      capabilities_show || true
-    elif [[ -n "${CAPABILITIES_JSON:-}" && -f "$CAPABILITIES_JSON" ]]; then
-      cat "$CAPABILITIES_JSON" || true
-    fi
+    capabilities_load || true
+    capabilities_show || true
   } | support_redact_stream >"$out"
 }
 
@@ -274,7 +280,6 @@ cmd_support() {
   [[ -z "$OPT_EXTRA" ]] || usage_error support "unexpected argument: ${OPT_EXTRA%%$'\n'*}"
   # The capabilities section is read from the cache; load the module after
   # the help/usage exits so `sciebo support --help` parses none of it.
-  sciebo_require_module capabilities capabilities_load
   output="${OPT_output:-}"
   if rclone_available; then load_settings; else load_settings --no-rclone; fi
   mkdir -p "$STATE_DIR" 2>/dev/null || die "cannot create state dir: ${STATE_DIR}"

@@ -1,6 +1,6 @@
 #!/bin/bash
 # tags.sh command module - list system tags and assign them to files. Talks
-# to the DAV systemtags endpoint through lib/nc_api.sh; only `create` and
+# to the DAV systemtags endpoint through lib/adapters/nc_api.sh; only `create` and
 # `assign`/`clear` modify the server. Only die/usage_error exit.
 
 TAGS_RECORD_ID=""
@@ -178,11 +178,6 @@ tags_run_action() {
 
 cmd_tags() {
   tags_parse_action "$@"
-  # The systemtags DAV calls use the http/nc_api helpers; load them after
-  # the parse (its opt_begin consumed --help) so `sciebo tags --help`
-  # parses none of them.
-  sciebo_require_module http xml_get
-  sciebo_require_module nc_api nc_dav_request_allow
   tags_run_action
   return 0
 }

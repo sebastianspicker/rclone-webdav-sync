@@ -1,7 +1,7 @@
 #!/bin/bash
 # comments.sh command module - list, add, and delete Nextcloud file
 # comments. Resolves SUB to a file id and talks to the DAV comments endpoint
-# through lib/nc_api.sh; deleting a comment is confirmed interactively (or
+# through lib/adapters/nc_api.sh; deleting a comment is confirmed interactively (or
 # requires --yes). Only die/usage_error exit.
 
 COMMENTS_RECORD_ID=""
@@ -167,9 +167,6 @@ cmd_comments() {
   # Run dependencies load after the parse (its opt_begin consumed --help),
   # so `sciebo comments --help` parses none of them: the DAV calls use
   # http/nc_api, and the delete confirmation prompts through ui.
-  sciebo_require_module http xml_get
-  sciebo_require_module nc_api nc_dav_request_allow
-  sciebo_require_module ui ui_confirm_mutation
   opt_json_mode
   if [[ "$COMMENTS_ACTION" == "delete" ]]; then
     comments_confirm_delete "$COMMENTS_ARG" || return 0

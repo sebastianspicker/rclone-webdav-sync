@@ -1,6 +1,6 @@
 #!/bin/bash
 # trash.sh command module - list, restore, and delete Nextcloud trashbin
-# items. Talks to the WebDAV trashbin endpoint through lib/http.sh; only the
+# items. Talks to the WebDAV trashbin endpoint through lib/adapters/http.sh; only the
 # restore/rm/empty subcommands modify the server.
 
 TRASH_RECORD_NAME=""
@@ -322,9 +322,6 @@ cmd_trash() {
   esac
   # Run dependencies: the trashbin DAV calls use http/nc_api, and the
   # restore/rm/empty confirmations prompt through the ui gates.
-  sciebo_require_module http xml_records
-  sciebo_require_module nc_api nc_dav_request_allow
-  sciebo_require_module ui ui_confirm_mutation_soft
   case "$sub" in
     list) shift && trash_cmd_list "$@" ;;
     restore) shift && trash_cmd_restore "$@" ;;

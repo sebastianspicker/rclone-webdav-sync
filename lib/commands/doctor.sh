@@ -456,10 +456,6 @@ doctor_report_capabilities() {
 # the doctor unusable.
 doctor_check_capabilities() {
   local summary=""
-  if ! type capabilities_load >/dev/null 2>&1; then
-    doctor_report WARN "server capabilities module unavailable"
-    return 0
-  fi
   if [[ "$DOCTOR_OFFLINE" -eq 1 ]]; then
     if capabilities_load; then
       DOCTOR_CAPABILITIES_AVAILABLE=1
@@ -470,7 +466,7 @@ doctor_check_capabilities() {
     fi
     return 0
   fi
-  if type capabilities_probe >/dev/null 2>&1 && capabilities_probe; then
+  if capabilities_probe; then
     DOCTOR_CAPABILITIES_AVAILABLE=1
     DOCTOR_CAPABILITIES_PROBED=1
     doctor_report_capabilities
@@ -508,24 +504,17 @@ doctor_check_backends() {
 # single function used to.
 doctor_keychain_backend() {
   local -n out_backend="$1"
-  out_backend=""
-  if type keychain_backend >/dev/null 2>&1; then
-    out_backend="$(keychain_backend 2>/dev/null || true)"
-  fi
-  if [[ -z "$out_backend" ]] && type platform_keychain_backend >/dev/null 2>&1; then
+  out_backend="$(keychain_backend 2>/dev/null || true)"
+  if [[ -z "$out_backend" ]]; then
     out_backend="$(platform_keychain_backend 2>/dev/null || true)"
   fi
 }
 
 # doctor_keychain_have_secret - true when the stored app password can be read:
 # the plain-text lookup first, the legacy keychain_lookup fallback after. The
-# caller has already ruled out a build without keychain_lookup, and the probe
-# runs inside an `if` condition so a missing secret is never an error.
+# probe runs inside an `if` condition so a missing secret is never an error.
 doctor_keychain_have_secret() {
-  if type keychain_lookup_plain >/dev/null 2>&1 && keychain_lookup_plain >/dev/null 2>&1; then
-    return 0
-  fi
-  keychain_lookup >/dev/null 2>&1
+  keychain_lookup_plain >/dev/null 2>&1 || keychain_lookup >/dev/null 2>&1
 }
 
 # doctor_check_keychain_enabled - the KEYCHAIN=1 tier of doctor_check_keychain:
@@ -542,10 +531,6 @@ doctor_check_keychain_enabled() {
     doctor_report FAIL "KEYCHAIN=1 but no keychain backend is available (need security, secret-tool, or pass)"
     return 0
   fi
-  if ! type keychain_lookup >/dev/null 2>&1; then
-    doctor_report WARN "keychain lookup unavailable in this build; cannot verify the stored app password"
-    return 0
-  fi
   if doctor_keychain_have_secret; then have=1; fi
   if [[ "$have" -eq 0 ]]; then
     # Existing configs may still carry the obscured password; sync keeps
@@ -558,9 +543,7 @@ doctor_check_keychain_enabled() {
     fi
     return 0
   fi
-  if type keychain_account >/dev/null 2>&1; then
-    account="$(keychain_account 2>/dev/null || true)"
-  fi
+  account="$(keychain_account 2>/dev/null || true)"
   doctor_report PASS "app password stored in the ${backend} keychain (${KEYCHAIN_SERVICE}, ${account:-unknown})"
   return 0
 }
@@ -763,7 +746,6 @@ doctor_check_e2ee() {
   local json="${CAPABILITIES_JSON:-}"
   [[ "$DOCTOR_CAPABILITIES_AVAILABLE" -eq 1 ]] || return 0
   if [[ "$DOCTOR_CAPABILITIES_PROBED" -ne 1 ]]; then
-    type capabilities_cache_fresh >/dev/null 2>&1 || return 0
     capabilities_cache_fresh || return 0
   fi
   [[ -n "$json" && -r "$json" ]] || return 0
@@ -919,7 +901,7 @@ doctor_manifest_locals_entry() {
     doctor_report WARN "${mode} entry '${remote_label}': local dir ${local_path} does not exist (created on first run)"
   fi
   if [[ "$mode" == bisync ]] && ! bisync_initialized "$name"; then
-    doctor_report WARN "bisync entry '${remote_label}': not initialized; run 'make bisync-resync' first"
+    doctor_report WARN "bisync entry '${remote_label}': not initialized; run '${CLI_NAME} sync --resync --apply --only ${name}' first"
   fi
   # doctor_normalize_local is memoized, so the forkless capture makes repeat
   # paths free (first sighting still pays its `cd`/`pwd -P` subshell inside).
@@ -1252,13 +1234,6 @@ doctor_remote_is_nextcloud() {
   remote_is_nextcloud
 }
 
-# doctor_remote_size_bytes SPEC - print the remote total in bytes from one
-# `rclone size --json`, delegating to rclone_remote_size. rc 1 when the size
-# cannot be read or parsed.
-doctor_remote_size_bytes() {
-  rclone_remote_size "$1"
-}
-
 # doctor_check_policies - one compact PASS line naming the active
 # desktop-parity policies, so the report shows what behavior to expect.
 doctor_check_policies() {
@@ -1380,8 +1355,9 @@ doctor_external_storage_entry() {
   local remote="$3" path="" path_label=""
   [[ "$checked" -lt "$limit" ]] || return 0
   checked=$((checked + 1))
-  # POLICY_REMOTE_* are read by policy_remote_paths_apply in lib/policy.sh,
-  # which shellcheck cannot follow through sciebo_require_module.
+  # POLICY_REMOTE_* are read by policy_remote_paths_apply in lib/sync/remote_paths.sh,
+  # which shellcheck cannot follow (doctor.sh sources it through no direct
+  # `source` line; lib/sciebo.sh loads it eagerly at runtime).
   # shellcheck disable=SC2034  # read by policy_remote_paths_apply
   POLICY_REMOTE_ROOT="$remote"
   # shellcheck disable=SC2034  # read by policy_remote_paths_apply
@@ -1420,7 +1396,6 @@ doctor_check_external_storage() {
     doctor_report_named "external storage" WARN "external storage: remote '${RCLONE_REMOTE}:' is not a Nextcloud WebDAV remote; cannot scan for mounted external storages (EXTERNAL_STORAGE_POLICY=${policy})"
     return 0
   fi
-  type nc_external_paths >/dev/null 2>&1 || return 0
   doctor_each_entry doctor_external_storage_entry
   DOCTOR_EXTERNAL_PATHS="${DOCTOR_EXTERNAL_PATHS%$'\n'}"
   DOCTOR_EXTERNAL_CHECKED=$checked
@@ -1466,11 +1441,7 @@ doctor_check_quota() {
     return 0
   fi
   have "$RCLONE_BIN" || return 0
-  if ! type -t sync_quota_used_percent >/dev/null 2>&1; then
-    doctor_report_named quota WARN "quota: quota probe unavailable in this build"
-    return 0
-  fi
-  if ! percent="$(sync_quota_used_percent)"; then
+  if ! percent="$(quota_used_percent)"; then
     doctor_report_named quota WARN "quota: cannot read the server quota (${RCLONE_REMOTE}:; QUOTA_WARN_PERCENT=${threshold})"
     return 0
   fi
@@ -1491,14 +1462,10 @@ doctor_big_folders_entry() {
   [[ "$attempted" -lt "$scan_limit" ]] || return 0
   attempted=$((attempted + 1))
   spec=${ remote_spec "$remote";}
-  if type -t sync_remote_size_lookup >/dev/null 2>&1; then
-    # Looked up in this shell so the shared cache persists across sources.
-    sync_remote_size_lookup "$spec" || return 0
-    # shellcheck disable=SC2154  # out-param filled by sync_remote_size_lookup
-    bytes="$SYNC_REMOTE_SIZE_BYTES"
-  else
-    bytes="$(doctor_remote_size_bytes "$spec")" || return 0
-  fi
+  # Looked up in this shell so lib/sync/quota.sh's shared cache persists
+  # across sources.
+  remote_size_lookup "$spec" || return 0
+  bytes="$REMOTE_SIZE_BYTES"
   measured=$((measured + 1))
   [[ "$bytes" -gt "$limit_bytes" ]] || return 0
   count=$((count + 1))
@@ -1554,15 +1521,15 @@ doctor_quota_enabled() {
 }
 
 # doctor_quota_shared_probe - run the one `rclone about --json` call shared by
-# doctor_check_runtime's quota line and doctor_check_quota, caching the parsed
-# used/total in sync's quota globals so the QUOTA_WARN_PERCENT check reuses
-# them instead of probing again. Sets DOCTOR_ABOUT_OK (1/0) and
+# doctor_check_runtime's quota line and doctor_check_quota, priming
+# lib/sync/quota.sh's memoized probe (quota_prime) so the QUOTA_WARN_PERCENT
+# check reuses it instead of probing again. Sets DOCTOR_ABOUT_OK (1/0) and
 # DOCTOR_ABOUT_OUT (the combined output, used as the failure detail). A
-# result already cached by sync_quota_probe (ok or error) is reused as-is.
+# result already cached by quota_probe (ok or error) is reused as-is.
 doctor_quota_shared_probe() {
   local json="" total="" used=""
   DOCTOR_ABOUT_OUT=""
-  case "$SYNC_QUOTA_STATUS" in
+  case "$QUOTA_STATUS" in
     ok)
       DOCTOR_ABOUT_OK=1
       return 0
@@ -1575,23 +1542,19 @@ doctor_quota_shared_probe() {
   if json="$(rclone_cmd about --json "${RCLONE_REMOTE}:" 2>&1)"; then
     DOCTOR_ABOUT_OK=1
     DOCTOR_ABOUT_OUT="$json"
-    total="$(sync_about_number "$json" total)"
-    used="$(sync_about_number "$json" used)"
+    total="$(quota_about_number "$json" total)"
+    used="$(quota_about_number "$json" used)"
     case "$total" in '' | *[!0-9]*) total="" ;; esac
     case "$used" in '' | *[!0-9]*) used="" ;; esac
     if [[ -n "$total" && "$total" -gt 0 && -n "$used" ]]; then
-      SYNC_QUOTA_STATUS="ok"
-      # shellcheck disable=SC2034  # read by sync_quota_used_percent in sync.sh
-      SYNC_QUOTA_TOTAL="$total"
-      # shellcheck disable=SC2034  # read by sync_quota_used_percent in sync.sh
-      SYNC_QUOTA_USED="$used"
+      quota_prime ok "$total" "$used"
     else
-      SYNC_QUOTA_STATUS="error"
+      quota_prime error
     fi
   else
     DOCTOR_ABOUT_OK=0
     DOCTOR_ABOUT_OUT="$json"
-    SYNC_QUOTA_STATUS="error"
+    quota_prime error
   fi
   return 0
 }
@@ -1628,7 +1591,7 @@ doctor_check_quota_probe() {
   if [[ "$DOCTOR_OFFLINE" -eq 1 ]]; then
     return 0
   fi
-  if doctor_quota_enabled && type -t sync_quota_used_percent >/dev/null 2>&1; then
+  if doctor_quota_enabled; then
     # The quota check needs the same server probe; run it once here and let
     # doctor_check_quota report the cached result with no second call.
     doctor_quota_shared_probe
@@ -1654,7 +1617,7 @@ doctor_check_launchd_agent() {
   [[ "$(platform_scheduler_backend)" == "launchd" ]] || return 0
   plist="${HOME}/Library/LaunchAgents/${LAUNCHD_LABEL}.plist"
   if [[ ! -f "$plist" ]]; then
-    doctor_report WARN "launchd agent not installed ('make schedule-install')"
+    doctor_report WARN "launchd agent not installed ('${CLI_NAME} schedule install')"
     return
   fi
   grep -q 'bin/sciebo' "$plist" 2>/dev/null || doctor_report WARN "launchd plist still runs the old scripts/sync.sh entrypoint; re-run '${CLI_NAME} schedule install'"
@@ -1678,29 +1641,10 @@ doctor_check_runtime() {
 cmd_doctor() {
   opt_begin "offline:b json:b" doctor "" "$@"
   opt_guard doctor
-  # Desktop-parity policy helpers (the shared remote-path gate).
-  sciebo_require_module policy policy_case_clashes
-  # The capabilities summary and the DAV/OCS probes use the nc_api/http and
-  # capabilities helpers; load them on demand.
-  sciebo_require_module http xml_get
-  sciebo_require_module nc_api nc_dav_request_allow
-  sciebo_require_module capabilities capabilities_load
-  # The quota and big-folder checks reuse sync's probes (sync_quota_used_percent,
-  # sync_remote_size_lookup); both are guarded by `type -t` below, so load the
-  # module on demand instead of silently skipping the checks. Sourcing
-  # commands/sync now only defines its functions (its own dependencies load
-  # inside cmd_sync), so nothing else arrives transitively — these helpers
-  # need only the eagerly loaded rclone.sh and sync.sh internals.
-  sciebo_require_module commands/sync sync_quota_used_percent
-  # The keychain/backend/network/runtime checks and the manifest checks use
-  # the keychain/platform/manifest helpers; they load here (after the
-  # --help exit) so none of the checks silently degrades to a skipped
-  # `type` probe when the module has not been loaded yet. lock.sh loads for
-  # pid_alive, which doctor_check_watch shares with watch's own guard.
-  sciebo_require_module keychain keychain_backend
-  sciebo_require_module platform platform_os
-  sciebo_require_module manifest manifest_each
-  sciebo_require_module lock pid_alive
+  # Every lib/ dependency (policy, nc_api/http, capabilities, keychain,
+  # platform, manifest, lock) is loaded eagerly by lib/sciebo.sh, including
+  # the quota and big-folder probes (lib/sync/quota.sh's quota_used_percent,
+  # remote_size_lookup) doctor shares with sync.
   DOCTOR_OFFLINE=0
   opt_into DOCTOR_OFFLINE offline 1
   DOCTOR_JSON=0

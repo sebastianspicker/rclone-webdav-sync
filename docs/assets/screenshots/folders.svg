@@ -30,7 +30,7 @@
 <text x="22.0" y="423.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  bisync photos                   ~/sciebo/photos &lt;-&gt; sciebo:backup/photos [filter: pair-photos.txt]</text>
 <text x="22.0" y="444.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">Add these 1 pair(s) to ~/sciebo-demo/folders.conf? [y/N]: y</text>
 <text x="22.0" y="465.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">Added bisync pair 'photos': ~/sciebo/photos &lt;-&gt; sciebo:backup/photos</text>
-<text x="22.0" y="486.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#8b949e" xml:space="preserve">Next: make check (dry run), then make sync</text>
-<text x="22.0" y="507.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#8b949e" xml:space="preserve">First run: sciebo sync --resync --apply (or make bisync-resync)</text>
+<text x="22.0" y="486.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#8b949e" xml:space="preserve">Next: sciebo check (dry run), then sciebo sync</text>
+<text x="22.0" y="507.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#8b949e" xml:space="preserve">First run: sciebo sync --resync --apply</text>
 <text x="22.0" y="528.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">Run a dry run for the new pairs now? [Y/n]: n</text>
 </g></svg>

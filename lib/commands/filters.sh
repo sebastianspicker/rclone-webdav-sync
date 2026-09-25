@@ -8,16 +8,9 @@
 # and it replaces the cache and the generated filter atomically; no run lock
 # is needed (nothing else reads them as shared state).
 #
-# Interface for the sync integration:
-#   filter_server_filter_enabled - rc 0 when FILTER_SERVER_SYNC=1 and the
-#     generated filter file exists non-empty. sync tests this once per entry
-#     to decide about --filter-from without forking a `cat` of the whole
-#     file (the content only ever reaches rclone, through the path flag).
-#   filter_server_filter_file - print the generated server filter when
-#     FILTER_SERVER_SYNC=1 and the file exists; empty otherwise. It only
-#     reads settings state and the cached file, so cross-module callers
-#     (hydrate/ignored) need no http/capabilities for it — those load in
-#     cmd_filters below.
+# The sync/hydrate/ignored integration (filter_server_filter_enabled,
+# filter_server_filter_file) lives in lib/sync/filters.sh: it is domain
+# filter state, not part of this command's own subcommands.
 
 usage_filters() {
   usage_emit <<'EOF'
@@ -40,28 +33,6 @@ Options:
   --json      sync/list: print the result as JSON instead of the table
   -h, --help  show this help
 EOF
-}
-
-# filter_server_filter_enabled - rc 0 when the server filter should be
-# layered under every source: FILTER_SERVER_SYNC=1 and a non-empty generated
-# filter file at SERVER_EXCLUDE_FILTER. The `-s` test covers the file's
-# existence, non-emptiness, and the path being set in one shell stat, so the
-# sync entry loop never forks a `cat` just to learn whether the file has any
-# content (filter_server_filter_file below still prints it for callers that
-# need the body).
-filter_server_filter_enabled() {
-  [[ "${FILTER_SERVER_SYNC:-0}" == 1 && -s "${SERVER_EXCLUDE_FILTER:-}" ]]
-}
-
-# filter_server_filter_file - print the generated server filter when
-# FILTER_SERVER_SYNC=1 and the file exists; print nothing otherwise. Always
-# returns 0 so the sync integration can call it unconditionally.
-filter_server_filter_file() {
-  [[ "${FILTER_SERVER_SYNC:-0}" == "1" ]] || return 0
-  local file="${SERVER_EXCLUDE_FILTER:-}"
-  [[ -n "$file" && -f "$file" ]] || return 0
-  cat "$file" 2>/dev/null || true
-  return 0
 }
 
 # filters_pattern_count FILE - number of non-blank, non-comment rules.
@@ -327,13 +298,6 @@ filters_cmd_check() {
 }
 
 cmd_filters() {
-  # The server fetch uses the http helpers and the chunked-download label uses
-  # capabilities; load both on demand at dispatch instead of file top, so
-  # sourcing this module (for usage_filters or the read-only
-  # filter_server_filter_enabled/filter_server_filter_file helpers) parses
-  # neither.
-  sciebo_require_module http xml_get
-  sciebo_require_module capabilities capabilities_load
   local sub="${1:-}"
   case "$sub" in
     sync) shift && filters_cmd_sync "$@" ;;

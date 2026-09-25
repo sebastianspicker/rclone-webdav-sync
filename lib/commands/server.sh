@@ -3,7 +3,7 @@
 #
 # Read-only. `info` and `capabilities` read the capabilities cache when it
 # is fresh and never touch the network then; a stale or missing cache falls
-# back to the OCS probe in lib/capabilities.sh. `status` checks
+# back to the OCS probe in lib/adapters/capabilities.sh. `status` checks
 # reachability through `rclone lsd`. No lock and no local state writes
 # beyond the capabilities cache the probe maintains.
 
@@ -165,11 +165,6 @@ server_cmd_status() {
 cmd_server() {
   local sub="" rc=0 argc=0
   opt_begin "json:b raw:b" server "" "$@"
-  # The OCS probe and endpoint facts use the http/capabilities helpers;
-  # load them after opt_begin's --help exit so `sciebo server --help`
-  # parses none of them.
-  sciebo_require_module http xml_get
-  sciebo_require_module capabilities capabilities_load
   split_positionals "${OPT_EXTRA:-}"
   argc=${#POSITIONAL_ARGS[@]}
   [[ "$argc" -eq 0 ]] || sub="${POSITIONAL_ARGS[0]}"

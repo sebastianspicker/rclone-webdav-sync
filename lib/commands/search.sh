@@ -1,6 +1,6 @@
 #!/bin/bash
 # search.sh command module - Nextcloud unified search over the files
-# provider. Read-only: one OCS request through lib/nc_api.sh, no lock, no
+# provider. Read-only: one OCS request through lib/adapters/nc_api.sh, no lock, no
 # local state. Titles and sublines are stripped of HTML and control bytes
 # before they reach the terminal; --open hands the first result to the
 # platform opener without replacing the shell, and only when the URL stays
@@ -101,8 +101,6 @@ search_first_url() {
 # action links).
 search_launch_url() {
   local url="$1" opener="" origin="" expected=""
-  # platform.sh is lazy; load it for platform_opener below.
-  sciebo_require_module platform platform_opener
   case "$url" in
     http://* | https://*) ;;
     *) die "refusing to open non-http(s) URL: $(printable "$url")" ;;
@@ -125,8 +123,6 @@ cmd_search() {
   opt_begin "limit:s json:b open:b" search "" "$@"
   # Run dependencies load after opt_begin's --help exit, so
   # `sciebo search --help` parses none of them.
-  sciebo_require_module http xml_get
-  sciebo_require_module nc_api nc_dav_request_allow
   opt_require_sub search "a search term" "${OPT_EXTRA:-}" 1 1 \
     "search accepts exactly one term; quote a term with spaces"
   term="${POSITIONAL_ARGS[0]}"

@@ -1,7 +1,7 @@
 #!/bin/bash
 # notifications.sh command module - list, filter, act on, watch, and delete
 # Nextcloud notifications. Talks to the notifications OCS API through
-# lib/http.sh. --notify sends best-effort desktop notifications and remembers
+# lib/adapters/http.sh. --notify sends best-effort desktop notifications and remembers
 # the ids in NOTIFICATIONS_SEEN; it never changes the command's exit status.
 # --watch polls in the foreground and records every notification it reports.
 
@@ -249,11 +249,9 @@ notifications_notify_row() {
   [[ -z "$NOTIFICATIONS_SKIP_ID" || "$id" != "$NOTIFICATIONS_SKIP_ID" ]] || return 0
   seen_contains "$NOTIFICATIONS_SEEN" "$id" && return 0
   [[ "$NOTIFICATIONS_USE_LIMIT" -eq 0 || "$NOTIFICATIONS_SENT_COUNT" -lt "$NOTIFICATIONS_LIMIT" ]] || return 1
-  if type notify_send >/dev/null 2>&1; then
-    subject=${ notifications_subject "$NOTIFICATIONS_RECORD_SUBJECT" "$NOTIFICATIONS_RECORD_MESSAGE";}
-    app=${ printable "$NOTIFICATIONS_RECORD_APP";}
-    notify_send "Nextcloud" "${app}: ${subject}"
-  fi
+  subject=${ notifications_subject "$NOTIFICATIONS_RECORD_SUBJECT" "$NOTIFICATIONS_RECORD_MESSAGE";}
+  app=${ printable "$NOTIFICATIONS_RECORD_APP";}
+  notify_send "Nextcloud" "${app}: ${subject}"
   NOTIFICATIONS_NEW_IDS="${NOTIFICATIONS_NEW_IDS}${id}"$'\n'
   NOTIFICATIONS_SENT_COUNT=$((NOTIFICATIONS_SENT_COUNT + 1))
   return 0
@@ -285,7 +283,7 @@ notifications_notify() {
 # nested walk reuses the same awk buffers, so nested <element> wrappers stay
 # inside their parent block.
 notifications_action_records() {
-  printf '%s' "$1" | awk "${_AWK_XML_LIB}"'
+  printf '%s' "$1" | LC_ALL=C awk "${_AWK_XML_LIB}"'
     function notif_action(id, nid, block) {
       printf "%s\t%s\t%s\t%s\t%s\t%s\n", id, nid, xml_extract(block, "label"), xml_extract(block, "method"), xml_extract(block, "type"), xml_extract(block, "link")
     }
@@ -420,7 +418,7 @@ notifications_watch_row() {
   seen_contains "$NOTIFICATIONS_SEEN" "$id" && return 0
   [[ "$NOTIFICATIONS_USE_LIMIT" -eq 0 || "$NOTIFICATIONS_SENT_COUNT" -lt "$NOTIFICATIONS_LIMIT" ]] || return 1
   [[ "${OPT_quiet:-0}" == "1" ]] || notifications_print_record
-  if [[ "${OPT_notify:-0}" == "1" ]] && type notify_send >/dev/null 2>&1; then
+  if [[ "${OPT_notify:-0}" == "1" ]]; then
     subject=${ notifications_subject "$NOTIFICATIONS_RECORD_SUBJECT" "$NOTIFICATIONS_RECORD_MESSAGE";}
     app=${ printable "$NOTIFICATIONS_RECORD_APP";}
     notify_send "Nextcloud" "${app}: ${subject}"
@@ -603,13 +601,6 @@ cmd_notifications() {
   notifications_parse_argv args "$@"
   opt_begin "limit:s app:s type:s unseen:b action:s delete:s delete-all:b notify:b quiet:b yes:b json:b watch:o:default" notifications "" "${args[@]}"
   opt_guard notifications
-  # The OCS calls go through http.sh; load them after opt_guard's --help
-  # exit so `sciebo notifications --help` parses none of them.
-  sciebo_require_module http xml_get
-  # ui loads for the delete confirmation; notify for --notify rows (both
-  # before their `type` probes so neither silently skips).
-  sciebo_require_module ui ui_confirm_mutation
-  sciebo_require_module notify notify_send
   notifications_validate_options
   opt_json_mode
   http_load_context

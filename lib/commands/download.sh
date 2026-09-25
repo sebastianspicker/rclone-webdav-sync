@@ -1,17 +1,13 @@
 #!/bin/bash
 # download.sh command module - download a remote path below the remote base.
 #
-# A single file is fetched over WebDAV through lib/http.sh (binary-safe, and
+# A single file is fetched over WebDAV through lib/adapters/http.sh (binary-safe, and
 # resumable with --resume/--continue via curl's `-C -`); a destination that
 # already matches the remote size is skipped unless --force. A directory (or
 # a DEST ending in "/") falls back to `rclone copy` with hydrate's filter
 # layering and reports the copied byte/file counts from rclone's JSON stats.
 # SUB is validated with the shared safe-remote-path helper; no raw curl is
 # used and no secret is ever printed.
-
-# Settings defaults (config/settings.env is the shipped layer; these keep the
-# module usable when sourced on its own).
-: "${DOWNLOAD_DIR:=}"
 
 DOWNLOAD_IS_DIR=false
 DOWNLOAD_REMOTE_SIZE=""
@@ -56,7 +52,7 @@ EOF
 # directory.
 download_default_dest() {
   local name="${1##*/}"
-  if [[ -n "$DOWNLOAD_DIR" ]]; then
+  if [[ -n "${DOWNLOAD_DIR:-}" ]]; then
     printf '%s/%s' "${DOWNLOAD_DIR%/}" "$name"
   else
     printf '%s' "./${name}"
@@ -234,15 +230,8 @@ download_rclone_file() {
 # and report the copied file/byte counts from rclone's JSON stats.
 download_dir() {
   local sub="$1" dest="$2" rc=0 stats="" counts=""
-  # lock.sh is lazy; load it before acquire_lock below so the EXIT trap's
-  # release_lock exists too.
-  sciebo_require_module lock acquire_lock
   hydrate_resolve "$sub"
-  # HYDRATE_APPLY is read by hydrate_build_args in lib/commands/hydrate.sh,
-  # which shellcheck cannot follow through sciebo_require_module.
-  # shellcheck disable=SC2034  # read by hydrate_build_args
-  HYDRATE_APPLY="$DOWNLOAD_APPLY"
-  hydrate_build_args "$sub" "$dest"
+  hydrate_build_args "$sub" "$dest" "$DOWNLOAD_APPLY"
   progress_append_args HYDRATE_ARGS "$DOWNLOAD_QUIET"
   HYDRATE_ARGS+=(--use-json-log)
   if ! hydrate_remote_exists "$(remote_spec "$sub")"; then
@@ -312,10 +301,6 @@ cmd_download() {
   # `sciebo download --help` parses none of them: the directory path reuses
   # hydrate's resolver and argv builder, progress_append_args/rclone_cmd
   # live in rclone.sh, and the DAV file path uses http/nc_api.
-  sciebo_require_module commands/hydrate hydrate_resolve
-  sciebo_require_module rclone progress_append_args
-  sciebo_require_module http xml_get
-  sciebo_require_module nc_api nc_dav_request_allow
   opt_json_mode
   DOWNLOAD_APPLY=true
   opt_into DOWNLOAD_APPLY dry_run false

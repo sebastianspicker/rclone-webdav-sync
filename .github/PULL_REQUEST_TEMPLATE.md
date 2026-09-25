@@ -4,13 +4,10 @@
 
 ## Checklist
 
-- [ ] `make lint` passes (shellcheck + shfmt + bash-min + drift).
-- [ ] `make test` passes (unit + feature + integration).
-- [ ] New command/setting is documented in `docs/commands.md` /
-      `docs/settings.md`, `config/settings.env`, and the man page; a new
-      command/option is also added to `completions/sciebo.spec` (run
-      `make gen` to regenerate the completion files, never edit them by hand).
-- [ ] `CHANGELOG.md` has an entry.
+- [ ] `make lint` passes.
+- [ ] `make test` passes (or `make test-fast` plus a note on what wasn't run).
+- [ ] Docs updated: `docs/commands.md`/`docs/settings.md`, `CHANGELOG.md`, and
+      `lib/cli/sciebo.spec` (`make gen`) for a new command or option.
 - [ ] No secrets, credentials, or real account data are included.
 
 ## Notes for reviewers
