@@ -7,7 +7,9 @@
 - [ ] `make lint` passes (shellcheck + shfmt + bash-min + drift).
 - [ ] `make test` passes (unit + feature + integration).
 - [ ] New command/setting is documented in `docs/commands.md` /
-      `docs/settings.md`, `config/settings.env`, and the completions/man page.
+      `docs/settings.md`, `config/settings.env`, and the man page; a new
+      command/option is also added to `completions/sciebo.spec` (run
+      `make gen` to regenerate the completion files, never edit them by hand).
 - [ ] `CHANGELOG.md` has an entry.
 - [ ] No secrets, credentials, or real account data are included.
 

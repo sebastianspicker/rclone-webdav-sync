@@ -41,7 +41,8 @@ the same filter layering as hydrate.
 Options:
   --dry-run    report what would be transferred; change nothing
   --force      download even when DEST already matches the remote
-  --resume     continue a partial file (alias: --continue)
+  --resume     continue a partial file
+  --continue   continue a partial file (alias of --resume)
   --quiet      do not print the success line
   --json       print a structured summary instead of the text line
   --progress   show rclone's transfer progress (rclone transfers only;

@@ -90,8 +90,17 @@ jobs:
     # The integration suite is portable: platform backends are pinned through
     # the CLI's SCIEBO_* test hooks and stat/mount output has fallbacks.
     # launchd install/uninstall stays opt-in and is covered by the macOS job.
+    #
+    # The rclone matrix proves both ends of the documented support range:
+    # "latest" (current stable, via rclone's own install.sh) and the
+    # documented floor, 1.69.0 (unzipped from a pinned release download,
+    # since 1.69.0 predates most distro/homebrew packages).
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        rclone: [latest, 1.69.0]
     steps:
       - uses: actions/checkout@v7
 
@@ -102,13 +111,28 @@ jobs:
           echo "$(brew --prefix)/bin" >>"$GITHUB_PATH"
           "$(brew --prefix)/bin/bash" --version | head -1
 
-      - name: Install rclone
+      - name: Install rclone (latest)
+        if: matrix.rclone == 'latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y bash curl ca-certificates unzip
           # Ubuntu's packaged rclone is older than the suite's
           # RCLONE_MIN_VERSION (1.69), so install the current stable release.
           curl -fsSL https://rclone.org/install.sh | sudo bash
+          rclone version
+
+      - name: Install rclone (pinned floor, 1.69.0)
+        if: matrix.rclone == '1.69.0'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl ca-certificates unzip
+          curl -fsSL -o /tmp/rclone.zip \
+            https://downloads.rclone.org/v1.69.0/rclone-v1.69.0-linux-amd64.zip
+          # SHA256 from https://downloads.rclone.org/v1.69.0/SHA256SUMS
+          echo "813892bb54ebc5891664b85c9cfc0e05ee50d39e3d5bb1ddd6d53d0f93a64dc2  /tmp/rclone.zip" |
+            sha256sum -c -
+          unzip -q /tmp/rclone.zip -d /tmp/rclone-extract
+          sudo install -m 755 /tmp/rclone-extract/rclone-v1.69.0-linux-amd64/rclone /usr/local/bin/rclone
           rclone version
 
       - name: Integration

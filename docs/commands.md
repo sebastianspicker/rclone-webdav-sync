@@ -4,6 +4,15 @@ Complete reference for the `sciebo` CLI. The command set is defined by the
 `COMMANDS` list in [`bin/sciebo`](../bin/sciebo); `sciebo help <command>` or
 `<command> --help` prints the same usage text the CLI uses.
 
+Commands come in two tiers, marked in `completions/sciebo.spec` and shown
+separately by `sciebo help`. **Core** commands are the sync workflow plus the
+file operations the real-server contract suite (`tests/contract/`) exercises
+against a live Nextcloud. **Extra** commands (`notifications`, `activity`,
+`presence`, `file`, `search`, `recent`, `comments`, `favorites`, `tags`,
+`server`, `edit`, `announcements`, `preview`) wrap further Nextcloud server
+features; the isolated test suite covers them, the contract suite does not
+yet.
+
 - [Invocation and global options](#invocation-and-global-options)
 - [Exit codes](#exit-codes)
 - [Destructive operations and confirmations](#destructive-operations-and-confirmations)

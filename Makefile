@@ -9,7 +9,7 @@ DIST_NAME := rclone-sciebo-$(VERSION)
 .PHONY: help setup doctor discover list check sync verify status pause resume bisync-resync \
 	folders folders-list mount umount mount-status \
 	cleanup-logs cleanup-logs-apply cleanup-uploads cleanup-uploads-apply trash \
-	check-bash lint test test-fast screenshots schedule-install schedule-uninstall schedule-status \
+	check-bash lint test test-fast test-one handoff hooks gen screenshots schedule-install schedule-uninstall schedule-status \
 	version install uninstall update dist clean-dist
 
 help: ## show this help
@@ -85,22 +85,30 @@ check-bash: ## fail fast unless the selected bash is 5.3+
 	  exit 1; \
 	fi'
 
-lint: check-bash ## shellcheck + shfmt + bash-min/drift guards over the CLI and tests
+lint: check-bash ## shellcheck + shfmt + bash-min/drift guards (LINT_ALLOW_MISSING=1 skips absent linters)
 	@status=0; \
 	if command -v shellcheck >/dev/null 2>&1; then \
-	  echo "shellcheck -x -P SCRIPTDIR bin/sciebo scripts/*.sh tests/*.sh tests/features/*.sh lib/*.sh lib/commands/*.sh"; \
-	  shellcheck -x -P SCRIPTDIR $(SCIEBO) scripts/*.sh tests/*.sh tests/features/*.sh lib/*.sh lib/commands/*.sh || status=1; \
+	  echo "shellcheck -x -P SCRIPTDIR bin/sciebo .githooks/pre-commit .claude/hooks/*.sh completions/sciebo.bash scripts/*.sh tests/*.sh tests/unit/*.sh tests/contract/*.sh tests/features/*.sh lib/*.sh lib/commands/*.sh"; \
+	  shellcheck -x -P SCRIPTDIR $(SCIEBO) .githooks/pre-commit .claude/hooks/*.sh completions/sciebo.bash scripts/*.sh tests/*.sh tests/unit/*.sh tests/contract/*.sh tests/features/*.sh lib/*.sh lib/commands/*.sh || status=1; \
+	elif [ -n "$(LINT_ALLOW_MISSING)" ]; then \
+	  echo "WARN: shellcheck not found; skipping shellcheck (LINT_ALLOW_MISSING)" >&2; \
 	else \
-	  echo "WARN: shellcheck not found; skipping shellcheck" >&2; \
+	  echo "ERROR: shellcheck not found; install it or set LINT_ALLOW_MISSING=1" >&2; \
+	  status=1; \
 	fi; \
 	if command -v shfmt >/dev/null 2>&1; then \
-	  echo "shfmt -i 2 -ci -d bin/sciebo scripts/*.sh lib tests"; \
-	  shfmt -i 2 -ci -d $(SCIEBO) scripts/*.sh lib tests || status=1; \
+	  echo "shfmt -i 2 -ci -d bin/sciebo .githooks/pre-commit .claude/hooks/*.sh scripts/*.sh lib tests"; \
+	  shfmt -i 2 -ci -d $(SCIEBO) .githooks/pre-commit .claude/hooks/*.sh scripts/*.sh lib tests || status=1; \
+	elif [ -n "$(LINT_ALLOW_MISSING)" ]; then \
+	  echo "WARN: shfmt not found; skipping shfmt (LINT_ALLOW_MISSING)" >&2; \
 	else \
-	  echo "WARN: shfmt not found; skipping shfmt" >&2; \
+	  echo "ERROR: shfmt not found; install it or set LINT_ALLOW_MISSING=1" >&2; \
+	  status=1; \
 	fi; \
 	echo "scripts/check-bash-min.sh"; \
 	scripts/check-bash-min.sh || status=1; \
+	echo "scripts/gen-completions.sh --check"; \
+	scripts/gen-completions.sh --check || status=1; \
 	echo "DRIFT_STRICT=1 scripts/check-drift.sh"; \
 	DRIFT_STRICT=1 scripts/check-drift.sh || status=1; \
 	if command -v python3 >/dev/null 2>&1; then \
@@ -119,6 +127,36 @@ test: check-bash ## unit + feature + integration tests (isolated, never sciebo)
 test-fast: check-bash ## unit + feature tests only (pre-PR gate without integration)
 	$(BASH) tests/unit.sh
 	$(BASH) tests/features.sh
+
+test-one: check-bash ## run one unit/feature test script by name (make test-one T=NAME)
+	@if [ -z "$(T)" ]; then echo "usage: make test-one T=NAME" >&2; exit 2; fi
+	$(BASH) tests/run-one.sh "$(T)"
+
+handoff: ## write a .agents/handoff.md template (refuses to overwrite; FORCE=1 to replace)
+	@f=.agents/handoff.md; \
+	if [ -e "$$f" ] && [ -z "$(FORCE)" ]; then \
+	  echo "$$f exists; edit it or rerun with FORCE=1" >&2; exit 1; \
+	fi; \
+	mkdir -p .agents; \
+	printf '%s\n' \
+	  '# Handoff' '' \
+	  'Status: in-progress | ready-for-review | changes-requested | accepted' \
+	  "Date: $$(date +%Y-%m-%d)" \
+	  "Branch: $$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" '' \
+	  '## Goal' '' '' \
+	  '## Files changed' '' \
+	  "$$(git status --short 2>/dev/null)" '' \
+	  '## Checks (command -> exit code)' '' \
+	  '- make lint -> ' '- make test -> ' '' \
+	  '## Open questions / risks' '' >"$$f"; \
+	printf 'wrote %s\n' "$$f"
+
+hooks: ## opt in to the repo git hooks (.githooks/pre-commit: shfmt + shellcheck on staged files)
+	git config core.hooksPath .githooks
+	@printf 'git hooks enabled from .githooks (undo: git config --unset core.hooksPath)\n'
+
+gen: ## regenerate the shell completions from completions/sciebo.spec
+	scripts/gen-completions.sh
 
 screenshots: ## regenerate README/demo screenshots (needs rclone + python3)
 	tools/screenshots.py

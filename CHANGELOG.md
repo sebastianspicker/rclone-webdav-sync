@@ -6,8 +6,23 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-24
+
 ### Added
 
+- Command tiers: `sciebo help` lists Nextcloud server-feature commands under
+  "Extra commands"; `completions/sciebo.spec` records each command's tier and
+  `make lint` checks both agree.
+- Real-server contract suite (`tests/contract/`, `INTEGRATION_TARGET=real`)
+  against a pinned Nextcloud 34 container, plus golden fixtures captured from
+  a live server (`tests/fixtures/nextcloud/`); nightly/manual `contract.yml`
+  workflow. CI now also runs the integration suite on rclone 1.69.0, the
+  documented minimum.
+- `make gen` regenerates the bash/zsh/fish completions from
+  `completions/sciebo.spec`; `make test-one T=NAME`, `make hooks` (opt-in
+  pre-commit shfmt/shellcheck), `make handoff`; tag-driven `release.yml`.
+- Test runners take `-j N` and suite names; unit tests are split per module
+  under `tests/unit/`.
 - New commands: `announcements` (server news), `preview` (thumbnail by file
   id), `download` (resumable single file or directory), and `update` (git
   `--check`/fast-forward of the local checkout).
@@ -195,6 +210,11 @@ uses [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- `make lint` fails when shellcheck or shfmt is missing; set
+  `LINT_ALLOW_MISSING=1` to skip an absent linter locally.
+- `lib/core.sh` is split into `text.sh`, `opts.sh`, `secrets.sh`, and
+  `fsutil.sh` (no behavior change; `lib/core.sh` still loads them all).
+- Shell completions are generated; bash/fish now match zsh coverage.
 - Shared internals: the proxy environment classification/export, the
   single-pass XML/awk layer, the curl client-key `--config` writer
   (`curl_key_pass_config_into`), and TAB record/list splitting (`record_split`)
@@ -334,6 +354,16 @@ uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- `trash` listed a non-empty Nextcloud trashbin as empty (and `trash restore
+  --all` did nothing): it now requests Nextcloud's `nc:trashbin-filename`/
+  `nc:trashbin-deletion-time` as well as ownCloud's `oc:` properties.
+- `lock` failed on Nextcloud files_lock ("no Lock-Token header"): the token
+  is read back as `nc:lock-token`; `unlock` sends `X-User-Lock: 1`, without
+  which files_lock answers HTTP 500.
+- `--help` now lists `sync --list`, `share accept/decline --all`, and
+  `download --continue`; bash completion printed full profile paths and
+  treated options as value-taking regardless of the command.
+- `tools/screenshots.py` ran the CLI with `/bin/bash` (3.2 on macOS).
 - Login-flow control-byte refusal: a control byte in the Login Flow app
   password (or in `CLIENT_KEY_PASSWORD`) is refused before it can travel,
   instead of being passed on.
@@ -562,5 +592,6 @@ git discovery, Login Flow v2 with Keychain storage, capabilities probe,
 filters and `.nosync`, verify/status/pause, launchd scheduling, on-demand
 mounts, cleanup, and the read-only trashbin/version listings.
 
-[Unreleased]: https://github.com/example/rclone-sciebo-webdav/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/example/rclone-sciebo-webdav/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/example/rclone-sciebo-webdav/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/example/rclone-sciebo-webdav/releases/tag/v0.1.0

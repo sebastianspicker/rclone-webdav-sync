@@ -30,6 +30,11 @@ Select a profile per run with the global `sciebo --profile NAME ...` flag or
 by exporting SCIEBO_PROFILE=NAME for the shell. Keychain storage uses the
 service rclone-sciebo/<name> automatically.
 
+add options:
+  --remote R  rclone remote name for this profile (letters, digits, dot,
+              dash, underscore)
+  --base B    remote base folder for this profile (a relative path)
+
 import options:
   --nextcloud-cfg FILE   read FILE instead of the default nextcloud.cfg
                          (also honored: the NEXTCLOUD_CFG environment

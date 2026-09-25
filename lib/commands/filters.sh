@@ -35,6 +35,10 @@ Subcommands:
 
 `filters sync` replaces the cache (sync-exclude.lst) and the generated
 server filter (server-exclude.txt) atomically and takes no run lock.
+
+Options:
+  --json      sync/list: print the result as JSON instead of the table
+  -h, --help  show this help
 EOF
 }
 
