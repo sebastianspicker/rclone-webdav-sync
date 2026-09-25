@@ -1,7 +1,7 @@
 #!/bin/bash
 # announcements.sh command module - list the Nextcloud announcements.
 #
-# Read-only: reads the announcementcenter OCS app through lib/http.sh and
+# Read-only: reads the announcementcenter OCS app through lib/adapters/http.sh and
 # never dismisses anything yet. --no-dismiss is accepted for interface
 # compatibility and currently ignored. An absent or disabled app is reported
 # as unavailable with rc 0, not as a failure.
@@ -166,9 +166,6 @@ cmd_announcements() {
   local limit="$ANN_DEFAULT_LIMIT"
   opt_begin "limit:s json:b no-dismiss:b" announcements "" "$@"
   opt_guard announcements
-  # The OCS call goes through http.sh; load it after opt_guard's --help
-  # exit so `sciebo announcements --help` parses none of it.
-  sciebo_require_module http xml_get
   opt_json_mode
   if [[ -n "${OPT_limit_SET:-}" ]]; then
     opt_require_uint announcements --limit "${OPT_limit:-}" 1

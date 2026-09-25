@@ -25,7 +25,7 @@ printf 'ok\n' >"${ROOT2}/ok.txt"
 printf 'ok\n' >"${CLEAN}/ok.txt"
 
 # The main entry carries a pair filter; the failure blacklist record uses
-# the format lib/blacklist.sh parses (count<TAB>path<TAB>error).
+# the format lib/state/blacklist.sh parses (count<TAB>path<TAB>error).
 printf -- '- pair-skip.txt\n' >"${FILTER_DIR}/pair-ignored.txt"
 cat >"$MANIFEST_FILE" <<EOF
 sync|${ROOT}|ignored-src|pair-ignored.txt

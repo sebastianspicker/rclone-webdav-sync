@@ -6,7 +6,7 @@ config/settings.local.env
 
 # Generated configuration and runtime state
 config/sources.generated.conf
-state/
+/state/
 
 # Logs and atomic-write debris
 *.log
@@ -26,5 +26,13 @@ __pycache__/
 .idea/
 .vscode/
 
-# Claude Code agent worktrees
-.claude/worktrees/
+# Local agent workspace and settings (kept out of the published repo)
+/.agents/
+/.claude/
+/AGENTS.md
+/CLAUDE.md
+/docs/plans/
+
+# Build output and archives (`make dist`, `sciebo support --output`)
+/dist/
+*.tar.gz

@@ -1,12 +1,14 @@
 #!/bin/bash
 # sync.sh command module - dry run (check) and apply (sync); the `list`
-# command lives in list.sh.
+# command lives in list.sh (its row rendering, shared with `sync --list`,
+# lives in lib/config/manifest.sh's manifest_list_render).
 # `sciebo check` is a dry run; .nosync and filters apply to sync/pull only.
 #
 # Sourcing this module only defines functions and the SYNC_* state: every
-# dependency (blacklist, policy, http, nc_api, capabilities, bigfolder, the
-# filters/list modules) loads inside cmd_sync, so `sciebo sync --help` and
-# the test fixtures that source this file directly parse none of them.
+# dependency (blacklist, policy, http, nc_api, capabilities, bigfolder,
+# filters, quota, hydrate) is loaded eagerly by lib/sciebo.sh, so `sciebo
+# sync --help` and the test fixtures that source this file directly parse
+# none of the run-only work, only cmd_sync itself does.
 
 SYNC_FORCE_DRY=false
 SYNC_APPLY=false
@@ -47,21 +49,11 @@ SYNC_CHUNK_SIZE=""
 # appends them after the blacklist patterns.
 SYNC_POLICY_EXCLUDES=()
 # Remote size in bytes for the current entry; sync_download_guard and the
-# BIG_FOLDER_EXISTING_POLICY guard share one `rclone size` result.
-SYNC_REMOTE_SIZE=""
-# Per-process cache of successful `rclone size` lookups keyed by the remote
-# spec (B9). The download and big-folder guards for the same spec, and
-# repeated or overlapping entries, reuse one result within a run; entries are
-# only created when a guard is opted in and a size is actually fetched.
-declare -gA SYNC_REMOTE_SIZE_CACHE=()
-# Out-param of sync_remote_size_lookup: the bytes for the requested spec.
-SYNC_REMOTE_SIZE_BYTES=""
-# Server quota probe state for QUOTA_WARN_PERCENT: ""=not probed yet,
-# "ok"/"error" after one attempt, plus the parsed byte counts. Cached for
-# the run, so several entries never re-probe the quota.
-SYNC_QUOTA_STATUS=""
-SYNC_QUOTA_TOTAL=""
-SYNC_QUOTA_USED=""
+# BIG_FOLDER_EXISTING_POLICY guard share one `rclone size` result (filled by
+# lib/sync/quota.sh's remote_size). The per-process cache and the server
+# quota probe state (QUOTA_WARN_PERCENT) live in lib/sync/quota.sh, shared
+# with doctor.
+REMOTE_SIZE=""
 # True when the current entry's argv carries the ASK_DELETE guard; the run
 # failure path then looks for the rclone abort and may re-run without it.
 SYNC_DELETE_GUARD=false
@@ -183,7 +175,7 @@ sync_prepare_bisync() {
     return 2
   fi
   if [[ "$SYNC_RESYNC" == false ]] && ! bisync_initialized "$ENTRY_NAME"; then
-    SYNC_ENTRY_REASON="bisync state missing for '${ENTRY_NAME}'; run 'make bisync-resync'"
+    SYNC_ENTRY_REASON="bisync state missing for '${ENTRY_NAME}'; run '${CLI_NAME} sync --resync --apply --only ${ENTRY_NAME}'"
     sync_entry_status FAIL "$SYNC_ENTRY_REASON"
     return 1
   fi
@@ -194,7 +186,7 @@ sync_prepare_bisync() {
   fi
 }
 
-# sync_policy_args OUT CMD [ARG...] - load lib/policy.sh on first use and run
+# sync_policy_args OUT CMD [ARG...] - load lib/sync/policy.sh on first use and run
 # the policy helper CMD with the argv array name OUT as its first argument:
 # the helper appends its rclone arguments (if any) through that nameref
 # out-param, so no subshell runs and no newline output is re-parsed. Callers
@@ -203,10 +195,9 @@ sync_policy_args() {
   local out="${1:-}" cmd="${2:-}"
   [[ -n "$out" && -n "$cmd" ]] || return 0
   shift 2
-  # Load lib/policy.sh on first use: cmd_sync requires it too, but unit and
+  # Load lib/sync/policy.sh on first use: cmd_sync requires it too, but unit and
   # feature probes source this module directly and drive sync_build_args
   # without dispatching. Idempotent (one type lookup once loaded).
-  sciebo_require_module policy policy_case_clashes
   "$cmd" "$out" "$@"
   return 0
 }
@@ -222,7 +213,7 @@ sync_args_add_filters() {
   # Only the existence of a non-empty server filter matters here; the file
   # body reaches rclone through the path below, so no `cat` of the whole
   # file runs per entry.
-  if type -t filter_server_filter_enabled >/dev/null 2>&1 && filter_server_filter_enabled; then
+  if filter_server_filter_enabled; then
     args_ref+=(--filter-from "$SERVER_EXCLUDE_FILTER")
   fi
   args_ref+=(--filter-from "${FILTER_DIR}/clutter.txt")
@@ -295,13 +286,9 @@ sync_args_add_bwlimit() {
   # shellcheck disable=SC2178  # nameref to an argv array
   local -n args_ref="$1"
   local limit=""
-  if type -t bw_effective_limit >/dev/null 2>&1; then
-    # Forkless capture: bw_effective_limit is pure bash over the marker file
-    # and the settings (it always returns 0).
-    limit=${ bw_effective_limit;}
-  elif [[ -n "$BW_LIMIT_UP" || -n "$BW_LIMIT_DOWN" ]]; then
-    limit="${BW_LIMIT_UP:-off}:${BW_LIMIT_DOWN:-off}"
-  fi
+  # Forkless capture: bw_effective_limit is pure bash over the marker file
+  # and the settings (it always returns 0).
+  limit=${ bw_effective_limit;}
   [[ -z "$limit" ]] || args_ref+=(--bwlimit "$limit")
 }
 
@@ -386,99 +373,22 @@ sync_build_args() {
   [[ "$SYNC_APPLY" == true ]] || SYNC_ARGS+=(--dry-run)
 }
 
-# sync_remote_size_lookup SPEC - set SYNC_REMOTE_SIZE_BYTES to the remote's
-# total size in bytes, reusing the per-process SYNC_REMOTE_SIZE_CACHE when
-# SPEC was already measured. rc 1 when the size cannot be read or parsed; a
-# failed lookup is not cached, so a later guard can still retry it.
-sync_remote_size_lookup() {
-  local spec="$1" bytes=""
-  SYNC_REMOTE_SIZE_BYTES=""
-  if [[ -n "${SYNC_REMOTE_SIZE_CACHE[$spec]+cached}" ]]; then
-    SYNC_REMOTE_SIZE_BYTES="${SYNC_REMOTE_SIZE_CACHE[$spec]}"
-    return 0
-  fi
-  bytes="$(rclone_remote_size "$spec")" || return 1
-  [[ -n "$bytes" ]] || return 1
-  SYNC_REMOTE_SIZE_CACHE[$spec]="$bytes"
-  SYNC_REMOTE_SIZE_BYTES="$bytes"
-  return 0
-}
-
-# sync_remote_size SPEC - fill SYNC_REMOTE_SIZE with the remote's total size
-# in bytes from one cached `rclone size --json`; rc 1 when the size cannot be
-# read or parsed. The result is cached per spec, so the download and
-# big-folder guards (and repeated/overlapping entries) share one lookup.
-sync_remote_size() {
-  local spec="$1"
-  SYNC_REMOTE_SIZE=""
-  sync_remote_size_lookup "$spec" || return 1
-  SYNC_REMOTE_SIZE="$SYNC_REMOTE_SIZE_BYTES"
-  return 0
-}
-
-# sync_about_number JSON FIELD - print the top-level numeric FIELD from an
-# `rclone about --json` document (total, used); nothing when it is absent.
-# One awk pass, no jq, like rclone_size_bytes.
-sync_about_number() {
-  printf '%s\n' "${1:-}" | LC_ALL=C awk -v field="${2:-}" '
-    match($0, "\"" field "\"[ \t]*:[ \t]*[0-9]+") {
-      value = substr($0, RSTART, RLENGTH)
-      sub(/.*:[ \t]*/, "", value)
-      print value
-      exit
-    }
-  '
-}
-
-# sync_quota_probe - read the server quota once with `rclone about --json`
-# and set SYNC_QUOTA_TOTAL/SYNC_QUOTA_USED to the parsed byte counts.
-# Returns 0 on success, 1 when the probe or parse fails; the first attempt
-# is cached (SYNC_QUOTA_STATUS), so a run never probes twice and never fails
-# on a quota error.
-sync_quota_probe() {
-  local json=""
-  case "$SYNC_QUOTA_STATUS" in
-    ok) return 0 ;;
-    error) return 1 ;;
-  esac
-  SYNC_QUOTA_STATUS="error"
-  json="$(rclone_cmd about --json "${RCLONE_REMOTE}:" 2>/dev/null)" || json=""
-  SYNC_QUOTA_TOTAL="$(sync_about_number "$json" total)"
-  SYNC_QUOTA_USED="$(sync_about_number "$json" used)"
-  case "$SYNC_QUOTA_TOTAL" in
-    '' | *[!0-9]*) return 1 ;;
-  esac
-  case "$SYNC_QUOTA_USED" in
-    '' | *[!0-9]*) return 1 ;;
-  esac
-  [[ "$SYNC_QUOTA_TOTAL" -gt 0 ]] || return 1
-  SYNC_QUOTA_STATUS="ok"
-  return 0
-}
-
-# sync_quota_used_percent - print the floor percentage of quota used from
-# one cached probe; rc 1 when the quota cannot be read. Shared with doctor.
-sync_quota_used_percent() {
-  sync_quota_probe || return 1
-  printf '%s' "$((10#$SYNC_QUOTA_USED * 100 / 10#$SYNC_QUOTA_TOTAL))"
-}
-
 # sync_quota_warn - run once per sync before the entries: when
-# QUOTA_WARN_PERCENT > 0, probe the server quota once and warn when
-# used/total reaches the threshold. A probe error warns once and never
-# fails the run.
+# QUOTA_WARN_PERCENT > 0, probe the server quota once (lib/sync/quota.sh)
+# and warn when used/total reaches the threshold. A probe error warns once
+# and never fails the run.
 sync_quota_warn() {
   local threshold="${QUOTA_WARN_PERCENT:-0}" percent=0 used_label="" total_label=""
   case "$threshold" in '' | *[!0-9]*) return 0 ;; esac
   [[ "$threshold" -gt 0 ]] || return 0
-  if ! sync_quota_probe; then
+  if ! quota_probe; then
     warn "quota guard: cannot read the server quota (${RCLONE_REMOTE}:); QUOTA_WARN_PERCENT check skipped"
     return 0
   fi
-  percent="$(sync_quota_used_percent)" || return 0
+  percent="$(quota_used_percent)" || return 0
   [[ "$percent" -ge "$threshold" ]] || return 0
-  used_label=${ format_size_bytes "$SYNC_QUOTA_USED";}
-  total_label=${ format_size_bytes "$SYNC_QUOTA_TOTAL";}
+  used_label=${ format_size_bytes "$QUOTA_USED";}
+  total_label=${ format_size_bytes "$QUOTA_TOTAL";}
   warn "quota guard: ${percent}% of ${RCLONE_REMOTE}: used (${used_label} of ${total_label}); QUOTA_WARN_PERCENT=${threshold}"
   return 0
 }
@@ -519,11 +429,11 @@ sync_download_guard() {
   [[ "$ENTRY_MODE" == pull || "$ENTRY_MODE" == bisync ]] || return 0
   [[ -n "${MAX_DOWNLOAD_SIZE:-}" ]] || return 0
   limit=${ size_suffix_bytes "$MAX_DOWNLOAD_SIZE";} || return 0
-  if ! sync_remote_size "$spec"; then
+  if ! remote_size "$spec"; then
     warn "size guard: cannot read or parse the remote size for '${ENTRY_REMOTE}'; continuing"
     return 0
   fi
-  bytes="$SYNC_REMOTE_SIZE"
+  bytes="$REMOTE_SIZE"
   _size_guard_verdict "$bytes" "$limit" && return 0
   # Over the limit on an apply without --yes. When ASK_DOWNLOAD_SIZE enables
   # it, the shared ui_confirm_tty gate asks (rc 0 proceeds, rc 1 is a
@@ -552,7 +462,7 @@ sync_download_guard() {
 # entries commonly share a directory or filesystem, so the df call is
 # memoized for the run. An empty value is cached too (`+x` presence test), so
 # a failed df is not retried per entry.
-declare -A SYNC_DISK_FREE_CACHE=()
+declare -gA SYNC_DISK_FREE_CACHE=()
 
 # _disk_guard_check_setting SETTING RAW FREE - evaluate one free-space
 # setting against FREE bytes available at the destination: rc 0 when RAW
@@ -564,10 +474,7 @@ declare -A SYNC_DISK_FREE_CACHE=()
 _disk_guard_check_setting() {
   local setting="$1" raw="$2" free="$3" limit="" free_label="" limit_label=""
   [[ -n "$raw" ]] || return 0
-  limit=""
-  if type -t size_suffix_bytes >/dev/null 2>&1; then
-    limit=${ size_suffix_bytes "$raw" 2>/dev/null;} || limit=""
-  fi
+  limit=${ size_suffix_bytes "$raw" 2>/dev/null;} || limit=""
   [[ -n "$limit" && "$free" -lt "$limit" ]] || return 0
   free_label=${ format_size_bytes "$free";}
   limit_label=${ format_size_bytes "$limit";}
@@ -829,8 +736,9 @@ sync_e2ee_preflight() {
 # oc:permissions and non-Nextcloud remotes stay silent.
 sync_external_preflight() {
   local policy="${EXTERNAL_STORAGE_POLICY:-ask}" rc=0
-  # POLICY_REMOTE_* are read by policy_remote_paths_apply in lib/policy.sh,
-  # which shellcheck cannot follow through sciebo_require_module.
+  # POLICY_REMOTE_* are read by policy_remote_paths_apply in lib/sync/remote_paths.sh,
+  # which shellcheck cannot follow (no direct `source` line here; lib/sciebo.sh
+  # loads it eagerly at runtime).
   # shellcheck disable=SC2034  # read by policy_remote_paths_apply
   POLICY_REMOTE_ROOT="$ENTRY_REMOTE"
   # shellcheck disable=SC2034  # read by policy_remote_paths_apply
@@ -858,10 +766,10 @@ sync_big_folder_existing_guard() {
   [[ -n "${BIG_FOLDER_SIZE:-}" ]] || return 0
   [[ "$policy" != "allow" ]] || return 0
   limit=${ size_suffix_bytes "$BIG_FOLDER_SIZE" 2>/dev/null;} || return 0
-  if [[ -z "$SYNC_REMOTE_SIZE" ]] && ! sync_remote_size "$spec"; then
+  if [[ -z "$REMOTE_SIZE" ]] && ! remote_size "$spec"; then
     return 0
   fi
-  bytes="$SYNC_REMOTE_SIZE"
+  bytes="$REMOTE_SIZE"
   [[ "$bytes" -gt "$limit" ]] || return 0
   label=${ format_size_bytes "$bytes";}
   if [[ "$policy" == "skip" ]]; then
@@ -1084,7 +992,6 @@ sync_report_conflicts() {
 sync_record_errors() {
   local logfile="$1" path="" path_label="" message="" record_line="" from=$((SYNC_LOG_OFFSET + 1))
   [[ "${BLACKLIST_ENABLED:-1}" == "1" ]] || return 0
-  type blacklist_record_many >/dev/null 2>&1 || return 0
   [[ -n "$logfile" && "$logfile" != "-" && "$logfile" != "/dev/stdout" ]] || return 0
   [[ -f "$logfile" ]] || return 0
   # One blacklist_record_many call for the whole run: parse and sanitize
@@ -1115,21 +1022,19 @@ sync_record_errors() {
 }
 
 # sync_runstate_record STATUS RC LOG DETAIL - best-effort last-run record for
-# the entry currently parsed into ENTRY_*; a missing runstate module and a
-# state-directory problem are both harmless.
+# the entry currently parsed into ENTRY_*; a state-directory problem is
+# harmless.
 sync_runstate_record() {
-  type runstate_write >/dev/null 2>&1 || return 0
   runstate_write "$ENTRY_NAME" "$ENTRY_MODE" "$1" "$2" "$3" "$SYNC_ENTRY_CONFLICTS" "$4" || true
   return 0
 }
 
 # sync_pair_paused_guard - skip an entry whose persisted per-pair paused flag
 # is set (folders pause, account import). Returns 0 to proceed, 2 to skip with
-# SYNC_ENTRY_REASON set; --force overrides. Best effort: a missing manifest
-# helper or flag file means "not paused".
+# SYNC_ENTRY_REASON set; --force overrides. Best effort: a missing flag file
+# means "not paused".
 sync_pair_paused_guard() {
   [[ "$SYNC_FORCE" == true ]] && return 0
-  type -t manifest_pair_paused >/dev/null 2>&1 || return 0
   manifest_pair_paused "$ENTRY_NAME" || return 0
   SYNC_ENTRY_REASON="pair is paused; run '${CLI_NAME} folders resume ${ENTRY_NAME}' to sync it"
   sync_entry_status SKIP "$SYNC_ENTRY_REASON"
@@ -1145,17 +1050,12 @@ sync_run_preflight() {
   SYNC_ENTRY_CONFLICTS=0
   SYNC_ENTRY_REASON=""
   SYNC_POLICY_EXCLUDES=()
-  SYNC_REMOTE_SIZE=""
+  REMOTE_SIZE=""
   SYNC_DELETE_GUARD=false
   SYNC_DELETE_GUARD_OVERRIDE=false
   rc=0
   sync_guard_run sync_pair_paused_guard || return $?
-  # platform.sh is lazy; load it before the `type -t net_gate` probe so the
-  # metered-connection gate is never silently skipped.
-  sciebo_require_module platform net_gate
-  if type -t net_gate >/dev/null 2>&1; then
-    net_gate || rc=$?
-  fi
+  net_gate || rc=$?
   if [[ "$rc" -eq 2 ]]; then
     SYNC_ENTRY_REASON="metered connection (METERED_POLICY=${METERED_POLICY:-allow})"
     sync_entry_status SKIP "$SYNC_ENTRY_REASON"
@@ -1217,9 +1117,7 @@ sync_run_entry() {
   logfile="${LOG_DIR}/${ENTRY_NAME}-${SYNC_TIMESTAMP}${log_suffix}.log"
   sync_build_args "$spec" "$logfile"
   if [[ "$ENTRY_MODE" == pull || "$ENTRY_MODE" == bisync ]] && [[ -n "${BIG_FOLDER_SIZE:-}" ]]; then
-    if type -t bigfolder_notify >/dev/null 2>&1; then
-      bigfolder_notify "$ENTRY_NAME" "$ENTRY_REMOTE" || true
-    fi
+    bigfolder_notify "$ENTRY_NAME" "$ENTRY_REMOTE" || true
   fi
   sync_log_offset
   rc=0
@@ -1302,14 +1200,12 @@ sync_failed_names_summary() {
 # sync_notify - send one macOS notification for an apply run: failures win
 # over conflicts, conflicts over NOTIFY_SUCCESS. A failure body also names
 # any conflict copies the run created, because conflicts need attention even
-# when only failure notifications are enabled. Dry runs, empty runs, and a
-# missing notify module stay silent; never fails the run.
+# when only failure notifications are enabled. Dry runs and empty runs stay
+# silent; never fails the run.
 sync_notify() {
   local names="" body=""
   [[ "$SYNC_APPLY" == true && "$SYNC_TOTAL" -gt 0 ]] || return 0
-  type notify_enabled >/dev/null 2>&1 || return 0
   notify_enabled || return 0
-  type notify_send >/dev/null 2>&1 || return 0
   if [[ "$SYNC_FAILED" -gt 0 ]]; then
     names=${ sync_failed_names_summary;}
     body="${SYNC_FAILED} of ${SYNC_TOTAL} source(s) failed: ${names}"
@@ -1353,10 +1249,7 @@ sync_check_rclone_version() {
 # MAX_CHUNK_SIZE. A changed value is warned about once, naming the original.
 sync_resolve_chunk_size() {
   local raw=""
-  SYNC_CHUNK_SIZE=""
-  if type capabilities_sync_chunk_size >/dev/null 2>&1; then
-    SYNC_CHUNK_SIZE=${ capabilities_sync_chunk_size;} || SYNC_CHUNK_SIZE=""
-  fi
+  SYNC_CHUNK_SIZE=${ capabilities_sync_chunk_size;} || SYNC_CHUNK_SIZE=""
   raw="$SYNC_CHUNK_SIZE"
   SYNC_CHUNK_SIZE="$(policy_chunk_size "$raw")"
   if [[ -n "$raw" && "$SYNC_CHUNK_SIZE" != "$raw" ]]; then
@@ -1375,10 +1268,14 @@ sync_state_init() {
   SYNC_CONFLICTS=0
   SYNC_FAILED_NAMES=""
   SYNC_POLICY_EXCLUDES=()
-  SYNC_REMOTE_SIZE_CACHE=()
-  SYNC_QUOTA_STATUS=""
-  SYNC_QUOTA_TOTAL=""
-  SYNC_QUOTA_USED=""
+  # shellcheck disable=SC2034  # lib/sync/quota.sh state, reset for this run
+  REMOTE_SIZE_CACHE=()
+  # shellcheck disable=SC2034  # lib/sync/quota.sh state, reset for this run
+  QUOTA_STATUS=""
+  # shellcheck disable=SC2034  # lib/sync/quota.sh state, reset for this run
+  QUOTA_TOTAL=""
+  # shellcheck disable=SC2034  # lib/sync/quota.sh state, reset for this run
+  QUOTA_USED=""
 }
 
 # sync_kill_child PID - TERM PID and its direct children. rclone_cmd is a
@@ -1587,7 +1484,6 @@ sync_run_parallel() {
   # inherit the EXIT trap, so a directory first allocated inside a worker
   # would never be cleaned up. Already allocated runs hit the keep-existing
   # path and pay nothing but a revalidation stat.
-  sciebo_require_module policy policy_case_clashes
   _policy_case_cache_new_dir || true
   sync_prewarn_duplicates "$only"
   while IFS= read -r line; do
@@ -1617,16 +1513,12 @@ sync_run_parallel() {
 
 # sync_pause_guard FORCE - when --force was not given and a pause is active,
 # log the paused notice and return 0 so the caller stops; return 1 to
-# continue. A missing pause module continues.
+# continue.
 sync_pause_guard() {
   local force="$1" pause_desc=""
   [[ "$force" == false ]] || return 1
-  type pause_active >/dev/null 2>&1 || return 1
   pause_active || return 1
-  pause_desc="paused"
-  if type pause_describe >/dev/null 2>&1; then
-    pause_desc="$(pause_describe)" || pause_desc="paused"
-  fi
+  pause_desc="$(pause_describe)" || pause_desc="paused"
   [[ -n "$pause_desc" ]] || pause_desc="paused"
   log "sync is paused (${pause_desc}); run 'sciebo resume' or use 'sciebo sync --force'"
   return 0
@@ -1672,69 +1564,29 @@ sync_parse_options() {
 }
 
 # sync_bootstrap - step 2 of cmd_sync: everything between option parsing
-# and the entry walk, in the run's original order. The run dependencies
-# load first (after opt_guard's exits, so `sciebo sync --help` parses
-# none of them), then `--list` dispatches cmd_list (it comes from that
-# require block), then settings, the rclone version gate, the pause gate,
-# the chunk size, the run counters, the state directories, the remote
-# check, the run lock (acquired before the banner and released by
-# bin/sciebo's EXIT trap), the timestamp, the --resync warning, the
-# banner, the quota warning, the manifest index and the --only name
-# check, and finally the INT/TERM traps (installed after the lock, so a
-# signal can arrive only once the handler exists and the lock is held).
+# and the entry walk, in the run's original order: `--list` renders the
+# same rows as `sciebo list` (lib/config/manifest.sh's manifest_list_render;
+# sync --list has no --json option, so it always renders the text table),
+# then settings, the rclone version gate, the pause gate, the chunk size,
+# the run counters, the state directories, the remote check, the run lock
+# (acquired before the banner and released by bin/sciebo's EXIT trap), the
+# timestamp, the --resync warning, the banner, the quota warning, the
+# manifest index and the --only name check, and finally the INT/TERM traps
+# (installed after the lock, so a signal can arrive only once the handler
+# exists and the lock is held).
 # Reads cmd_sync's flow locals (list/resync/no_lock/force/only) through
-# dynamic scope. Returns 0; the two normal stops - `--list` dispatched,
+# dynamic scope. Returns 0; the two normal stops - `--list` rendered,
 # and an active pause - set cmd_sync's `stopped` local to true instead,
 # because both end the run successfully. Failures never return: they die
 # or usage_error, exactly like the old inline body did under errexit.
 sync_bootstrap() {
-  # Run dependencies, loaded here (after opt_guard's --help exit) instead of
-  # at file top so `sciebo sync --help` parses none of them. All idempotent;
-  # cmd_check routes through this function and needs none of its own.
-  # Failure-blacklist helpers; load on demand so the module works whether or
-  # not bin/sciebo sourced lib/blacklist.sh directly.
-  sciebo_require_module blacklist blacklist_record_many
-  # Desktop-parity policy helpers (name/symlink/checksum/trash/delete guards).
-  sciebo_require_module policy policy_case_clashes
-  # The server-facing probes and chunk labels use the http/nc_api and
-  # capabilities helpers.
-  sciebo_require_module http xml_get
-  sciebo_require_module nc_api nc_dav_request_allow
-  sciebo_require_module capabilities capabilities_load
-  # filter_server_filter_enabled: the cheap non-emptiness gate for the
-  # server-exclude filter layered under every source (guarded by `type -t`
-  # in sync_args_add_filters, but it must actually be loaded).
-  sciebo_require_module commands/filters filter_server_filter_enabled
-  # State and prompt helpers: bw feeds sync_args_add_bwlimit (before its
-  # `type -t` probe so --bwlimit is never dropped), manifest feeds the pair
-  # walk and the paused-pair guard (before its `type -t` probe so paused
-  # pairs are never synced), lock loads before acquire_lock (so the EXIT
-  # trap can release it), ui runs the confirm gates, notify delivers the
-  # completion notification (before its `type` probes), pause gates the run
-  # (before its probes), and runstate records each entry's result (before
-  # its probe).
-  sciebo_require_module bw bw_effective_limit
-  sciebo_require_module manifest manifest_pair_paused
-  sciebo_require_module lock acquire_lock
-  sciebo_require_module ui ui_confirm
-  sciebo_require_module notify notify_send
-  sciebo_require_module pause pause_active
-  sciebo_require_module runstate runstate_write
   if [[ "$list" == true ]]; then
-    # cmd_list lives in list.sh and is only needed for `sync --list`, so it
-    # is loaded here instead of on every sync run.
-    sciebo_require_module commands/list cmd_list
-    # shellcheck disable=SC2119  # sync options were parsed above
-    cmd_list
+    load_settings --no-rclone
+    manifest_list_render 0
     stopped=true
     return 0
   fi
   load_settings
-  # The large-folder guard (bigfolder_scan/bigfolder_notify) is only reached
-  # when BIG_FOLDER_SIZE is configured; load_settings has just defaulted it,
-  # so this is the first point where the setting is known. Both call sites
-  # also guard with `type -t`, but the module must be loaded when enabled.
-  [[ -z "${BIG_FOLDER_SIZE:-}" ]] || sciebo_require_module bigfolder bigfolder_scan
   sync_check_rclone_version
   if sync_pause_guard "$force"; then
     stopped=true
@@ -1819,8 +1671,7 @@ cmd_sync() {
 }
 
 # cmd_check - `sciebo check`, the same run as sync with --dry-run forced.
-# It only flips the flag and routes through cmd_sync, which loads every run
-# dependency, so this function needs no sciebo_require_module of its own.
+# It only flips the flag and routes through cmd_sync.
 cmd_check() {
   SYNC_FORCE_DRY=true
   cmd_sync "$@"

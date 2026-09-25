@@ -27,7 +27,13 @@ expect_eq() {
   if [[ "$2" == "$3" ]]; then pass "$1"; else fail "$1" "expected [$2], got [$3]"; fi
 }
 expect_contains() {
-  case "$2" in *"$3"*) pass "$1" ;; *) fail "$1" "missing [$3]" ;; esac
+  case "$2" in
+    *"$3"*) pass "$1" ;;
+    *)
+      fail "$1" "missing [$3]"
+      printf '%s\n' "$2" | head -n 12 | sed 's/^/      | /'
+      ;;
+  esac
 }
 expect_not_contains() {
   case "$2" in *"$3"*) fail "$1" "unexpected [$3]" ;; *) pass "$1" ;; esac
@@ -130,4 +136,12 @@ finish() {
   printf '%d passed, %d failed\n' "$HARNESS_PASS" "$HARNESS_FAIL"
   if [[ "$HARNESS_FAIL" -gt 0 ]]; then exit 1; fi
   exit 0
+}
+
+# show_cli_out_on_mismatch RC WANT - after a failed rc assertion, print the
+# first lines of the captured command output (CLI_OUT) so a failure in the
+# suite log says why the command failed, not only that it did.
+show_cli_out_on_mismatch() {
+  [[ "$1" == "$2" ]] && return 0
+  printf '%s\n' "${CLI_OUT:-}" | head -n 20 | sed 's/^/      | /'
 }

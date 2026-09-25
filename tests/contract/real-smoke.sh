@@ -32,8 +32,8 @@ trap 'rm -rf "$TMP"' EXIT
 # shellcheck source=../harness.sh
 source "${CONTRACT_DIR}/../harness.sh"
 # shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/core.sh
-source "${PROJ}/lib/core.sh"
+# shellcheck source=../../lib/sciebo.sh
+source "${PROJ}/lib/sciebo.sh"
 
 export RCLONE_REMOTE=contractnc RCLONE_CONFIG="${TMP}/rclone.conf" REMOTE_BASE=contract \
   STATE_DIR="${TMP}/state" SETTINGS_LOCAL_FILE="${TMP}/no-local.env" ENV_FILE="${TMP}/no-env.env" \

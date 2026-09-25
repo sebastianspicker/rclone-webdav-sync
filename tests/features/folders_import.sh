@@ -24,7 +24,7 @@ printf '\n# nextcloudcmd --unsyncedfolders migration\none\n  two/  \n' >"$IMPORT
 
 expect_cli "import: rc 0" 0 run_cli folders import "$IMPORT_LIST" --remote import-src --local "${TMP}/import-local" --mode pull
 expect_contains "import: added line" "$CLI_OUT" "Added pull import-src: ${TMP}/import-local -> testremote:backup/import-src"
-expect_contains "import: next-step hint" "$CLI_OUT" "Next: make check (dry run), then make sync"
+expect_contains "import: next-step hint" "$CLI_OUT" "Next: sciebo check (dry run), then sciebo sync"
 expect_contains "import: pair written with its filter" "$(cat "$FOLDERS_FILE")" "pull|${TMP}/import-local|import-src|pair-import-src.txt"
 expect_file "import: pair filter created" "${FILTER_DIR}/pair-import-src.txt"
 import_filter="$(cat "${FILTER_DIR}/pair-import-src.txt")"

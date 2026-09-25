@@ -89,18 +89,6 @@ unset BIG_FOLDER_SIZE
 # refused instead of turned into a pattern. The nc helpers and the
 # Nextcloud probe are stubbed, as in the policy suite.
 # shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/policy.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/nc_api.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/rclone.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/settings.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/manifest.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/ui.sh"
-# shellcheck disable=SC1090,SC1091
 source "${PROJ}/lib/commands/sync.sh"
 
 # shellcheck disable=SC2329  # invoked indirectly by the sync preflights
@@ -290,9 +278,9 @@ expect_eq "disk guard: one df per resolved directory" "2" \
 # prompting and keeps the exact pre-existing messages. The direct calls below
 # simulate the terminal via ui_stdin_tty and feed the reply on stdin.
 # shellcheck disable=SC2329  # the guard's remote-size lookup, stubbed here
-sync_remote_size() {
+remote_size() {
   # shellcheck disable=SC2034  # read by sync_download_guard
-  SYNC_REMOTE_SIZE=1048576
+  REMOTE_SIZE=1048576
   return 0
 }
 # download_probe - run sync_download_guard and print "rc=N reason=..." so the

@@ -167,8 +167,6 @@ mount_filter_match() {
 # remote subdir equals MNT_FOLDER (empty when there is no such entry).
 mount_entry_filter() {
   [[ -n "$MNT_FOLDER" ]] || return 0
-  # manifest.sh is lazy; load it for the entry walk below.
-  sciebo_require_module manifest manifest_each
   manifest_each mount_filter_match "$MNT_FOLDER" || true
   return 0
 }
@@ -220,9 +218,6 @@ record_state() {
 }
 run_foreground_mount() {
   local out="" rc=0
-  # lock.sh is lazy; load it so the EXIT trap's release_lock below exists
-  # exactly as when lock.sh was eager (this command never acquires a lock).
-  sciebo_require_module lock release_lock
   MNT_ACTIVE_STATE="$MNT_STATE"
   # The command overrides the entrypoint's EXIT trap, so it must clean up
   # the registered temp files (netrc, response bodies) itself.
@@ -357,7 +352,6 @@ cmd_umount() {
   opt_into use_sudo sudo
   # Run dependency after the help/usage exits: stopping a recorded rclone
   # checks its liveness through lock.sh's pid_alive.
-  sciebo_require_module lock pid_alive
   load_settings --no-rclone
   if [[ -n "${OPT_all_SET:-}" ]]; then umount_all "$use_sudo" && return 0 || return $?; fi
   if [[ -n "${OPT_folder_SET:-}" ]]; then resolve_folder_target "${OPT_folder}"; else resolve_mountpoint_target "${OPT_mountpoint}"; fi
@@ -407,7 +401,6 @@ cmd_mounts() {
   opt_json_mode
   # Run dependency after the help/usage exit: the per-record liveness check
   # is lock.sh's pid_alive (kill -0 plus the empty/non-numeric guard).
-  sciebo_require_module lock pid_alive
   load_settings --no-rclone
   local only="" found=0 ok=0 unhealthy=0 state mounted alive
   local check=false prune=false prune_list="" prune_state=""

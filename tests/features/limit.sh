@@ -3,8 +3,6 @@
 # shellcheck source-path=SCRIPTDIR
 # shellcheck source=env.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
-# shellcheck source=../../lib/bw.sh
-source "${PROJ}/lib/bw.sh"
 
 MARKER="${STATE_DIR}/bwlimit"
 export BW_LIMIT_FILE="$MARKER" BW_SCHEDULE="" BW_LIMIT_UP="" BW_LIMIT_DOWN=""

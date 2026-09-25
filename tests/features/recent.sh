@@ -98,4 +98,20 @@ expect_contains "recent failure message" "$CLI_OUT" "failed"
 expect_contains "recent failure surfaces rclone stderr" "$CLI_OUT" "listing failed"
 unset RECENT_FAIL
 
+# --- a listing bigger than one pipe buffer must not trip SIGPIPE -----------
+# `sort -r | head -n N` (the old implementation) fails the pipeline under
+# `pipefail` once `head` exits early and closes the pipe on `sort` mid-write.
+{
+  for ((i = 0; i < 20000; i++)); do
+    ss=$((i % 60))
+    mm=$(((i / 60) % 60))
+    hh=$((i / 3600))
+    printf '%8d 2020-01-01 %02d:%02d:%02d.000000000 file%05d.txt\n' "$i" "$hh" "$mm" "$ss" "$i"
+  done
+} >"$LISTING"
+expect_cli "recent large listing rc 0" 0 run_cli_recent recent --limit 5
+expect_eq "recent large listing returns exactly 5 lines" "5" "$(printf '%s\n' "$CLI_OUT" | wc -l | tr -d ' ')"
+expect_contains "recent large listing keeps the newest" "$CLI_OUT" "file19999.txt"
+expect_not_contains "recent large listing caps the list" "$CLI_OUT" "file00000.txt"
+
 finish

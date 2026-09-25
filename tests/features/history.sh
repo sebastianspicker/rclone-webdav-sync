@@ -5,9 +5,6 @@
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
 
 # --- unit: runstate_history against the library directly ------------------
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/runstate.sh
-source "${PROJ}/lib/runstate.sh"
 # Plain assignments (not exports) keep the CLI runs below on the derived
 # state/history path instead of this unit directory.
 RUNSTATE_DIR="${TMP}/runstate-unit"

@@ -127,8 +127,7 @@ mount_args_probe() {
   # shellcheck disable=SC2016  # the -c program expands "$1" itself
   env "MNT_PROBE_FOLDER=$folder" "$@" bash -c '
     set -uo pipefail
-    source "$1/lib/core.sh"
-    source "$1/lib/manifest.sh"
+    source "$1/lib/sciebo.sh"
     source "$1/lib/commands/mount.sh"
     MNT_FOLDER="$MNT_PROBE_FOLDER"
     MNT_NAME=probe MNT_SPEC="remote:base/${MNT_PROBE_FOLDER}"

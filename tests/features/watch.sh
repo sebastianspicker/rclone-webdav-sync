@@ -114,12 +114,6 @@ STUB
 chmod +x "${NOTIFY_BIN}/notify-send"
 
 # shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/platform.sh
-source "${PROJ}/lib/platform.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/notify.sh
-source "${PROJ}/lib/notify.sh"
-# shellcheck source-path=SCRIPTDIR
 # shellcheck source=../../lib/commands/watch.sh
 source "${PROJ}/lib/commands/watch.sh"
 

@@ -8,6 +8,8 @@ body:
       value: |
         Thanks for the report. Before you paste anything, remove credentials,
         private sciebo URLs, and unredacted `rclone.conf` contents.
+        `sciebo support` builds a redacted debug archive if you need to share
+        more context with a maintainer directly.
   - type: textarea
     id: what-happened
     attributes:
@@ -32,9 +34,18 @@ body:
     validations:
       required: false
   - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: "macOS version (e.g. macOS 15.1), or Linux distro and version (e.g. Ubuntu 24.04, Fedora 41)."
+      placeholder: "macOS 15.1 / Ubuntu 24.04"
+    validations:
+      required: true
+  - type: input
     id: versions
     attributes:
       label: Versions
-      description: "macOS version, rclone version (`rclone version`), and bash version (`bash --version | head -1`)."
+      description: "rclone-webdav-sync version (`sciebo --version`), plus `bash --version | head -1` and `rclone version | head -1`."
+      placeholder: "sciebo 0.2.0 / GNU bash, version 5.3.0 / rclone v1.75.1"
     validations:
       required: true

@@ -7,7 +7,7 @@
 #     provisioning is create-or-update (account add refuses an existing
 #     profile) and account add reads ${FILTER_DIR} before load_settings has
 #     derived it (unbound under `set -u` without an environment override).
-#   - The remote is written directly with the lib/rclone.sh helpers instead
+#   - The remote is written directly with the lib/adapters/rclone.sh helpers instead
 #     of spawning `setup`: setup sources .env after the environment, so a
 #     stale .env could silently override --userid/--apppassword. The
 #     password is obscured on rclone's stdin and stored exactly like setup
@@ -48,7 +48,7 @@ EOF
 }
 
 # provision_normalize_url URL USER - print the Nextcloud WebDAV URL for URL
-# and USER through the shared nextcloud_dav_url (lib/core.sh) - the same
+# and USER through the shared nextcloud_dav_url (lib/base/core.sh) - the same
 # helper setup_normalize_url uses, so both commands normalize identically
 # without reaching into another command's internals (docs/architecture.md).
 # The helper reports only rc 1 for a URL that points into /remote.php/ but
@@ -58,7 +58,7 @@ provision_normalize_url() {
   local url="$1" user="$2" normalized=""
   url="$(strip_trailing_slashes "$url")"
   normalized="$(nextcloud_dav_url "$url" "$user")" ||
-    die "server URL '$(printable "$url")' looks like a WebDAV path, but --serverurl needs the Nextcloud base URL (e.g. https://uni-muenster.sciebo.de)"
+    die "server URL '$(printable "$url")' looks like a WebDAV path, but --serverurl needs the Nextcloud base URL (e.g. https://your-university.sciebo.de)"
   printf '%s' "$normalized"
 }
 
@@ -130,7 +130,7 @@ provision_read_password() {
     if [[ -n "${OPT_apppassword:-}" ]]; then
       usage_error provision "--apppassword and --apppassword-fd cannot be combined"
     fi
-    # opt_read_fd_secret (lib/core.sh) owns the shared fd vocabulary, keeping
+    # opt_read_fd_secret (lib/base/core.sh) owns the shared fd vocabulary, keeping
     # provision worded like nextcloudcmd's --password-fd.
     opt_read_fd_secret provision --apppassword-fd out "$fd"
     return 0
@@ -197,7 +197,7 @@ provision_print_summary() {
   log "provisioned profile '$(printable "$profile")'"
   printf '  remote: %s:\n  server: %s\n' "$RCLONE_REMOTE" "$url"
   if [[ "$use_keychain" -eq 1 ]]; then
-    printf '  password: Keychain (%s, %s)\n' "$KEYCHAIN_SERVICE" "$(keychain_account)"
+    printf '  password: Keychain (%s, %s)\n' "$KEYCHAIN_SERVICE" "$(keychain_account_plain)"
   else
     printf '  password: rclone config (obscured)\n'
   fi
@@ -244,11 +244,10 @@ provision_check_duplicates() {
 
 # provision_resolve_keychain OUT - set OUT to 1 when the keychain backend is
 # enabled, else 0. Called in the caller's shell (not through a subshell) so
-# keychain_enabled's memo survives for the rclone calls that follow, and the
-# `type` guard keeps a missing module from aborting.
+# keychain_enabled's memo survives for the rclone calls that follow.
 provision_resolve_keychain() {
   local out="$1"
-  if type keychain_enabled >/dev/null 2>&1 && keychain_enabled; then
+  if keychain_enabled; then
     printf -v "$out" '%s' 1
   else
     printf -v "$out" '%s' 0
@@ -266,9 +265,6 @@ cmd_provision() {
   # append go through the manifest, the keychain probe below runs before
   # its `type` guard (KEYCHAIN=1 is never silently ignored), and lock.sh
   # loads before acquire_lock (so the EXIT trap can release it).
-  sciebo_require_module manifest manifest_each
-  sciebo_require_module keychain keychain_enabled
-  sciebo_require_module lock acquire_lock
 
   [[ -n "${OPT_userid:-}" ]] || usage_error provision "--userid is required"
   provision_read_password pass

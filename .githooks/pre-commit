@@ -21,7 +21,16 @@ else
   printf 'pre-commit: shfmt not found; skipping\n' >&2
 fi
 if command -v shellcheck >/dev/null 2>&1; then
-  shellcheck -x -P SCRIPTDIR "${files[@]}" || status=1
+  # Same split as `make lint`: tests are not followed into lib/ (see Makefile).
+  prod=() tests=()
+  for f in "${files[@]}"; do
+    case "$f" in
+      tests/*) tests+=("$f") ;;
+      *) prod+=("$f") ;;
+    esac
+  done
+  ((${#prod[@]} == 0)) || shellcheck -x -P SCRIPTDIR "${prod[@]}" || status=1
+  ((${#tests[@]} == 0)) || shellcheck -P SCRIPTDIR -e SC1091,SC2154,SC2034,SC2329 "${tests[@]}" || status=1
 else
   printf 'pre-commit: shellcheck not found; skipping\n' >&2
 fi

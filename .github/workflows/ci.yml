@@ -48,7 +48,7 @@ jobs:
           make install PREFIX="$RUNNER_TEMP/prefix"
           "$RUNNER_TEMP/prefix/bin/sciebo" --version
           make dist
-          test -f "dist/rclone-sciebo-$(cat VERSION).tar.gz"
+          test -f "dist/rclone-webdav-sync-$(cat VERSION).tar.gz"
 
   lint-and-test-linux:
     # Bash 5.3 on Linux: proves the CLI does not depend on macOS-only bash
@@ -68,9 +68,28 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update
-          # Install shellcheck and shfmt together: the linter skips a missing
-          # tool, so a partial install would silently drop shfmt on Linux.
-          sudo apt-get install -y shellcheck shfmt rclone
+          sudo apt-get install -y curl ca-certificates unzip xz-utils
+          # Ubuntu's shellcheck (0.9) crashes on Bash 5.3 `${ cmd;}`; pin the
+          # release the repo is linted with. SHA256 of the official asset.
+          curl -fsSL -o /tmp/shellcheck.tar.xz \
+            https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz
+          echo "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  /tmp/shellcheck.tar.xz" |
+            sha256sum -c -
+          tar -xJf /tmp/shellcheck.tar.xz -C /tmp
+          sudo install -m 755 /tmp/shellcheck-v0.11.0/shellcheck /usr/local/bin/shellcheck
+          shellcheck --version
+          # Ubuntu's shfmt is too old to parse Bash 5.3 syntax (`${ cmd;}`)
+          # and formats differently, so pin the release the repo is formatted
+          # with. SHA256 of the official v3.14.1 release asset.
+          curl -fsSL -o /tmp/shfmt \
+            https://github.com/mvdan/sh/releases/download/v3.14.1/shfmt_v3.14.1_linux_amd64
+          echo "76e77641faa025814b77f153b29796b8e6fa2fca03e0c76a691608b86c7ea7bf  /tmp/shfmt" |
+            sha256sum -c -
+          sudo install -m 755 /tmp/shfmt /usr/local/bin/shfmt
+          shfmt --version
+          # Ubuntu's packaged rclone is older than RCLONE_MIN_VERSION (1.69).
+          curl -fsSL https://rclone.org/install.sh | sudo bash
+          rclone version
 
       - name: Version consistency
         run: |

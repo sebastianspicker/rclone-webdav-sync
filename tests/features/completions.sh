@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
-# completions.sh - completions/sciebo.spec and scripts/gen-completions.sh:
-# the generator is clean (--check), the generated zsh/fish files parse (when
-# those shells are installed), and the generated bash completion produces
-# the right candidates for a representative set of commands/options.
+# completions.sh - lib/cli/sciebo.spec and scripts/gen-cli.sh: the generator
+# is clean (--check, which also validates the spec and lib/cli/registry.sh),
+# the generated zsh/fish files parse (when those shells are installed), and
+# the generated bash completion produces the right candidates for a
+# representative set of commands/options.
 # shellcheck source-path=SCRIPTDIR
 # shellcheck source=../harness.sh
 COMPLETIONS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJ="$(cd "${COMPLETIONS_DIR}/../.." && pwd)"
 source "${COMPLETIONS_DIR}/../harness.sh"
 
-# --- the committed completions match the spec -------------------------------
+# --- the committed registry and completions match the spec ------------------
 
-check_out="$(cd "$PROJ" && bash scripts/gen-completions.sh --check 2>&1)"
+check_out="$(cd "$PROJ" && bash scripts/gen-cli.sh --check 2>&1)"
 check_rc=$?
-expect_rc "gen-completions --check: exit 0" "$check_rc" 0
+expect_rc "gen-cli --check: exit 0" "$check_rc" 0
 if [[ "$check_rc" -ne 0 ]]; then
   printf '%s\n' "$check_out" >&2
 fi

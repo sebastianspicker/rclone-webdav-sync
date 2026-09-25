@@ -3,8 +3,6 @@
 # shellcheck source-path=SCRIPTDIR
 # shellcheck source=env.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
-# shellcheck source=../../lib/rclone.sh
-source "${PROJ}/lib/rclone.sh"
 
 # rclone_proxy_resolved - print the _rclone_proxy_resolve out-params as
 # "strip|flag|value|env" so the mapping can be asserted directly.

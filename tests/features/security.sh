@@ -5,13 +5,6 @@
 # shellcheck source=env.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
 
-# The direct http_curl harness below needs remote_secret_plain and the
-# config-dump helpers, exactly like bin/sciebo sources them.
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/rclone.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/keychain.sh"
-
 # --- http_secret + keychain caches stay in the process ----------------------
 # A counting macOS-backend stub shows the forkless chain resolves the Keychain
 # credential once and serves later requests from HTTP_SECRET_CACHE, and that
@@ -32,10 +25,7 @@ STUB
 chmod +x "${KC_COUNT_BIN}/security"
 cat >"${KC_COUNT_BIN}/probe" <<STUB
 #!/bin/bash
-source "${PROJ}/lib/core.sh"
-source "${PROJ}/lib/rclone.sh"
-source "${PROJ}/lib/http.sh"
-source "${PROJ}/lib/keychain.sh"
+source "${PROJ}/lib/sciebo.sh"
 http_secret_invalidate
 : >"\$KC_COUNT_LOG"
 http_secret >/dev/null
@@ -168,7 +158,7 @@ SNAP_PATH="${SNAP_BIN}/netrc.path"
 mkdir -p "$SNAP_BIN"
 cat >"${SNAP_BIN}/curl" <<'STUB'
 #!/bin/bash
-source "${PROJ}/lib/core.sh"
+source "${PROJ}/lib/sciebo.sh"
 prev=""
 for arg in "$@"; do
   if [[ "$prev" == "--netrc-file" ]]; then
@@ -777,7 +767,7 @@ LOGIN_PASS_PATH="${LOGIN_PASS_BIN}/curl-config.path"
 mkdir -p "$LOGIN_PASS_BIN"
 cat >"${LOGIN_PASS_BIN}/curl" <<'STUB'
 #!/bin/bash
-source "${PROJ}/lib/core.sh"
+source "${PROJ}/lib/sciebo.sh"
 dir="$(cd "$(dirname "$0")" && pwd)"
 printf '%s\n' "$*" >>"${dir}/argv.log"
 while [[ $# -gt 0 ]]; do
@@ -845,7 +835,7 @@ LOGIN_TOKEN_VALUE='poll-token-fixture-9f3a'
 mkdir -p "$LOGIN_TOKEN_BIN"
 cat >"${LOGIN_TOKEN_BIN}/curl" <<'STUB'
 #!/bin/bash
-source "${PROJ}/lib/core.sh"
+source "${PROJ}/lib/sciebo.sh"
 dir="$(cd "$(dirname "$0")" && pwd)"
 printf '%s\n' "$*" >>"${dir}/argv.log"
 out_file=""
@@ -993,8 +983,7 @@ UI_GATE_BIN="${TMP}/ui-gate-probe"
 mkdir -p "$UI_GATE_BIN"
 cat >"${UI_GATE_BIN}/probe.sh" <<'PROBE'
 #!/bin/bash
-source "${PROJ}/lib/core.sh"
-source "${PROJ}/lib/ui.sh"
+source "${PROJ}/lib/sciebo.sh"
 CLI_NAME=sciebo
 usage_probe() { :; }
 ui_confirm_mutation probe "probe requires --yes" "proceed? [y/N]: "

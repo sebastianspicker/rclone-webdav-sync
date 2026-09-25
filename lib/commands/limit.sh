@@ -99,8 +99,7 @@ cmd_limit() {
   opt_guard limit
   # Bandwidth-marker helpers load after opt_guard's --help exit so
   # `sciebo limit --help` parses none of them (and the module works whether
-  # or not bin/sciebo sourced lib/bw.sh directly).
-  sciebo_require_module bw bw_effective_limit
+  # or not bin/sciebo sourced lib/state/bw.sh directly).
   opt_json_mode
   up="${OPT_up:-}"
   down="${OPT_down:-}"
@@ -120,7 +119,7 @@ cmd_limit() {
     return 0
   fi
   if [[ -n "${OPT_until_SET:-}" ]]; then
-    # The shared duration_parse_or_usage (lib/duration.sh) owns the grammar
+    # The shared duration_parse_or_usage (lib/base/duration.sh) owns the grammar
     # and the error wording; its EXAMPLES argument carries limit's custom
     # "; 0 = no expiry" tail (the flagless "invalid duration: ..." spelling),
     # so the helper raises the exact old message itself.
@@ -139,7 +138,6 @@ cmd_limit() {
 cmd_unlimited() {
   opt_begin "" unlimited "" "$@"
   opt_guard unlimited
-  sciebo_require_module bw bw_marker_clear
   load_settings --no-rclone
   bw_marker_clear
   printf 'unlimited\n'

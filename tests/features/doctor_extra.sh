@@ -169,8 +169,7 @@ else
   cat >"${TMP}/case-probe.sh" <<'PROBE'
 #!/bin/bash
 set -uo pipefail
-source "$1/lib/core.sh"
-source "$1/lib/policy.sh"
+source "$1/lib/sciebo.sh"
 source "$1/lib/commands/doctor.sh"
 DOCTOR_JSON=0
 DOCTOR_OFFLINE=1
@@ -198,8 +197,7 @@ rm -rf "$CC_PROBE"
 cat >"${TMP}/doctor-each-probe.sh" <<'PROBE'
 #!/bin/bash
 set -uo pipefail
-source "$1/lib/core.sh"
-source "$1/lib/policy.sh"
+source "$1/lib/sciebo.sh"
 source "$1/lib/commands/doctor.sh"
 DOCTOR_JSON=0
 DOCTOR_OFFLINE=1
@@ -262,8 +260,7 @@ expect_contains "doctor --json: external path recorded" "$CLI_OUT" '"external-sr
 cat >"${TMP}/doctor-engine-probe.sh" <<'PROBE'
 #!/bin/bash
 set -uo pipefail
-source "$1/lib/core.sh"
-source "$1/lib/policy.sh"
+source "$1/lib/sciebo.sh"
 source "$1/lib/commands/doctor.sh"
 DOCTOR_JSON=0
 DOCTOR_OFFLINE=0
@@ -311,9 +308,9 @@ expect_contains "delete guard --json: ask default" "$CLI_OUT" '"ask": true'
 expect_contains "delete guard --json: unlimited max_delete" "$CLI_OUT" '"max_delete": -1'
 
 # --- quota warning: doctor report against a stub rclone ----------------------
-# The shared sync_quota_* helpers parse `rclone about --json`; doctor reports
-# WARN at or above QUOTA_WARN_PERCENT, PASS below, and stays silent when the
-# setting is off. A stub rclone binary answers the probe.
+# The shared lib/sync/quota.sh helpers parse `rclone about --json`; doctor
+# reports WARN at or above QUOTA_WARN_PERCENT, PASS below, and stays silent
+# when the setting is off. A stub rclone binary answers the probe.
 QUOTA_STUB="${TMP}/doctor-quota-bin"
 mkdir -p "$QUOTA_STUB"
 cat >"${QUOTA_STUB}/rclone" <<'STUB'
@@ -325,10 +322,7 @@ chmod +x "${QUOTA_STUB}/rclone"
 cat >"${TMP}/doctor-quota-probe.sh" <<'PROBE'
 #!/bin/bash
 set -uo pipefail
-source "$1/lib/core.sh"
-source "$1/lib/rclone.sh"
-source "$1/lib/policy.sh"
-source "$1/lib/commands/sync.sh"
+source "$1/lib/sciebo.sh"
 source "$1/lib/commands/doctor.sh"
 DOCTOR_JSON=0
 DOCTOR_OFFLINE=0
@@ -338,9 +332,9 @@ RCLONE_BIN="$2"
 RCLONE_REMOTE="stub"
 RCLONE_CONFIG="$3"
 QUOTA_WARN_PERCENT="${4:-90}"
-SYNC_QUOTA_STATUS=""
-SYNC_QUOTA_TOTAL=""
-SYNC_QUOTA_USED=""
+QUOTA_STATUS=""
+QUOTA_TOTAL=""
+QUOTA_USED=""
 doctor_check_quota
 sciebo_temp_cleanup || true
 PROBE
@@ -359,10 +353,7 @@ expect_not_contains "doctor quota: off is silent" "$quota_out" "quota:"
 cat >"${TMP}/doctor-quota-shared-probe.sh" <<'PROBE'
 #!/bin/bash
 set -uo pipefail
-source "$1/lib/core.sh"
-source "$1/lib/rclone.sh"
-source "$1/lib/policy.sh"
-source "$1/lib/commands/sync.sh"
+source "$1/lib/sciebo.sh"
 source "$1/lib/commands/doctor.sh"
 DOCTOR_JSON=0
 DOCTOR_OFFLINE=0
@@ -373,9 +364,9 @@ RCLONE_REMOTE="stub"
 RCLONE_CONFIG="$2"
 ABOUT_LOG="$3"
 QUOTA_WARN_PERCENT="${4:-90}"
-SYNC_QUOTA_STATUS=""
-SYNC_QUOTA_TOTAL=""
-SYNC_QUOTA_USED=""
+QUOTA_STATUS=""
+QUOTA_TOTAL=""
+QUOTA_USED=""
 platform_scheduler_backend() { printf ''; }
 rclone_cmd() {
   case "$1" in
@@ -405,10 +396,7 @@ expect_contains "doctor shared quota: one probe backs both lines" "$shared_out" 
 cat >"${TMP}/doctor-runtime-nonfatal-probe.sh" <<'PROBE'
 #!/bin/bash
 set -euo pipefail
-source "$1/lib/core.sh"
-source "$1/lib/rclone.sh"
-source "$1/lib/policy.sh"
-source "$1/lib/commands/sync.sh"
+source "$1/lib/sciebo.sh"
 source "$1/lib/commands/doctor.sh"
 DOCTOR_JSON=0
 DOCTOR_OFFLINE=0
@@ -559,7 +547,7 @@ unset DOCTOR_NAME_SCAN_LIMIT
 cat >"${TMP}/doctor-norm-probe.sh" <<'PROBE'
 #!/bin/bash
 set -uo pipefail
-source "$1/lib/core.sh"
+source "$1/lib/sciebo.sh"
 source "$1/lib/commands/doctor.sh"
 base="$2"
 mkdir -p "${base}/norm-real"

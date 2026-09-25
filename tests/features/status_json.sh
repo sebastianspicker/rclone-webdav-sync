@@ -3,9 +3,6 @@
 # shellcheck source-path=SCRIPTDIR
 # shellcheck source=env.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/runstate.sh
-source "${PROJ}/lib/runstate.sh"
 
 # Two manifest sources; the run records live where the CLI derives them
 # (STATE_DIR/last) so `status` reads the seeded state.

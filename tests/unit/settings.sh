@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# settings.sh - settings precedence and bisync_initialized (lib/settings.sh).
+# settings.sh - settings precedence and bisync_initialized (lib/config/settings.sh).
 # Sourced setup lives in tests/unit/common.sh; run standalone with
 # `bash tests/unit/settings.sh`.
 set -uo pipefail

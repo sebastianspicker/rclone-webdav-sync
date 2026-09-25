@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# output.sh - JSON/bool/field printers (lib/output.sh).
+# output.sh - JSON/bool/field printers (lib/base/output.sh).
 # Sourced setup lives in tests/unit/common.sh; run standalone with
 # `bash tests/unit/output.sh`.
 set -uo pipefail

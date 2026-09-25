@@ -5,7 +5,7 @@
 # shellcheck source=env.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
 
-# Paths derived by lib/settings.sh from the exported test overrides; kept
+# Paths derived by lib/config/settings.sh from the exported test overrides; kept
 # here so the assertions can address them directly.
 SERVER_EXCLUDE_FILE="${TMP}/state/sync-exclude.lst"
 SERVER_EXCLUDE_FILTER="${TMP}/filters/server-exclude.txt"

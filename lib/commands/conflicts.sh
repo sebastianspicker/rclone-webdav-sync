@@ -6,8 +6,8 @@
 # suffix that contains CONFLICT_PATTERN ("conflicted copy" by default), and
 # CASE_CLASH_POLICY=rename quarantines a case-clash loser as
 # "<name> (case conflict)<ext>" (see policy_rename_case_clash in
-# lib/policy.sh). The local scan is purely local: no network, no lock, and
-# no state writes (the state directories are never created here).
+# lib/sync/case_clash.sh). The local scan is purely local: no network, no
+# lock, and no state writes (the state directories are never created here).
 #
 # With --remote the command instead lists remote case clashes: it needs
 # load_settings and require_remote and lists each source's remote subtree
@@ -31,7 +31,7 @@ CONFLICTS_CASE_PATTERN=" (case conflict)"
 # Directories to open (once each) and the set of dirs already recorded, so a
 # folder with many conflicts still opens one window.
 CONFLICTS_OPEN_DIRS=()
-declare -A CONFLICTS_OPEN_SEEN=()
+declare -gA CONFLICTS_OPEN_SEEN=()
 # Resolve counters and the plan collected before an apply run. CONFLICTS_PLAN
 # holds one escaped TAB-separated record per planned action (layout below),
 # built by conflicts_plan_add and read through conflicts_record_read.
@@ -638,8 +638,6 @@ conflicts_print_json() {
 conflicts_launch_dirs() {
   local total="${#CONFLICTS_OPEN_DIRS[@]}" i=0 dir="" opener="" failed=0 p_dir=""
   [[ "$total" -gt 0 ]] || return 0
-  # platform.sh is lazy; load it for platform_opener below.
-  sciebo_require_module platform platform_opener
   opener="$(platform_opener)"
   [[ -n "$opener" ]] ||
     die "cannot open conflicts: neither 'open' (macOS) nor 'xdg-open' (Linux) was found"
@@ -892,9 +890,6 @@ cmd_conflicts() {
   # so `sciebo conflicts --help` parses none of them: the remote case-clash
   # scan uses the policy helpers, the walkers go through the manifest, and
   # the resolve/delete gates prompt through the ui helpers.
-  sciebo_require_module policy policy_case_clashes
-  sciebo_require_module manifest manifest_each
-  sciebo_require_module ui ui_confirm
   if [[ "$remote" == true ]]; then
     # The online scan needs the rclone binary and a configured remote; it is
     # read-only and never resolves anything server-side.

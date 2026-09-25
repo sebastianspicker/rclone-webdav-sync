@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # fixtures.sh - golden-fixture tests for the awk-based Nextcloud response
-# parsers (lib/http.sh, lib/capabilities.sh, lib/nc_api.sh and the command
+# parsers (lib/base/xml.sh, lib/adapters/capabilities.sh, lib/adapters/nc_api.sh and the command
 # modules built on them). Unlike unit.sh's inline XML/JSON snippets, these
 # read realistic captured-shape documents from tests/fixtures/nextcloud/ so
 # a change to real Nextcloud's response shape (property order, namespace
@@ -16,50 +16,8 @@ FIXTURES_DIR="${PROJ_DIR}/tests/fixtures/nextcloud"
 # shellcheck source=../harness.sh
 source "${UNIT_DIR}/../harness.sh"
 # shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/core.sh
-source "${LIB_DIR}/core.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/output.sh
-source "${LIB_DIR}/output.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/rclone.sh
-source "${LIB_DIR}/rclone.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/http.sh
-source "${LIB_DIR}/http.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/keychain.sh
-source "${LIB_DIR}/keychain.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/capabilities.sh
-source "${LIB_DIR}/capabilities.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/settings.sh
-source "${LIB_DIR}/settings.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/lock.sh
-source "${LIB_DIR}/lock.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/manifest.sh
-source "${LIB_DIR}/manifest.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/blacklist.sh
-source "${LIB_DIR}/blacklist.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/ui.sh
-source "${LIB_DIR}/ui.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/pause.sh
-source "${LIB_DIR}/pause.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/runstate.sh
-source "${LIB_DIR}/runstate.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/notify.sh
-source "${LIB_DIR}/notify.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/nc_api.sh
-source "${LIB_DIR}/nc_api.sh"
+# shellcheck source=../../lib/sciebo.sh
+source "${LIB_DIR}/sciebo.sh"
 # shellcheck source-path=SCRIPTDIR
 # shellcheck source=../../lib/commands/trash.sh
 source "${LIB_DIR}/commands/trash.sh"

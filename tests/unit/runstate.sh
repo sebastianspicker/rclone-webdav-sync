@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# runstate.sh - runstate records and history (lib/runstate.sh).
+# runstate.sh - runstate records and history (lib/state/runstate.sh).
 # Sourced setup lives in tests/unit/common.sh; run standalone with
 # `bash tests/unit/runstate.sh`.
 set -uo pipefail

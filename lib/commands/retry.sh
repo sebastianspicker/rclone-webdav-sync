@@ -44,8 +44,6 @@ cmd_retry() {
   # `sciebo retry --help` parses none of them: the record walkers live in
   # blacklist.sh, and the `--name` filter goes through the manifest index
   # (both work whether or not bin/sciebo sourced them directly).
-  sciebo_require_module blacklist blacklist_record_many
-  sciebo_require_module manifest manifest_index_load
   opt_into list list
   opt_into all all
   split_positionals "${OPT_EXTRA:-}"

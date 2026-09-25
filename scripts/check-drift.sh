@@ -1,20 +1,36 @@
 #!/usr/bin/env bash
 # check-drift.sh - detect drift between the CLI's sources of truth.
 #
+# lib/cli/sciebo.spec is the single declarative source scripts/gen-cli.sh
+# generates lib/cli/registry.sh (SCIEBO_COMMANDS, the command-to-module and
+# tier maps, and _SCIEBO_GLOBAL_SPECS) and completions/{sciebo.bash,_sciebo,
+# sciebo.fish} from; `scripts/gen-cli.sh --check` (part of `make lint`) is
+# what catches the registry or the completions drifting from the spec, and
+# validates the spec itself (every COMMAND's module file exists, every
+# lib/commands/*.sh is used, and usage_main's Commands:/Extra commands
+# sections match the spec's tiers in order). This script therefore reads the
+# command list from the generated lib/cli/registry.sh instead of
+# sed-parsing lib/cli/main.sh, and no longer compares SCIEBO_COMMANDS or
+# _SCIEBO_GLOBAL_SPECS against the spec directly - only what remains a live
+# behavioral question: whether the implementation (usage_<name>() text, the
+# man page, docs/commands.md, and the real `--help` output) still matches
+# what the spec/registry declare.
+#
 # Hard failures (exit 1):
-#   - a name in the COMMANDS string of bin/sciebo has only one of
+#   - a name in the generated SCIEBO_COMMANDS has only one of
 #     usage_<name>() / cmd_<name>() under lib/commands/,
-#   - a key in lib/settings.sh's require_setting call is missing from
+#   - a key in lib/config/settings.sh's require_setting call is missing from
 #     config/settings.env.
 # Warnings (still exit 0):
-#   - a COMMANDS entry with neither definition (a planned command; the
-#     implemented set may legitimately lag the dispatch list),
+#   - a SCIEBO_COMMANDS entry with neither definition (a planned command;
+#     the implemented set may legitimately lag the dispatch list),
 #   - a config/settings.env key not mentioned in docs/settings.md or in
 #     config/settings.local.env.example,
-#   - a COMMANDS entry missing from man/sciebo.1,
-#   - a docs/commands.md `### <command>` heading that is not in COMMANDS,
-#     or a COMMANDS entry (other than `help`) with no such heading,
-#   - a global option in bin/sciebo's _SCIEBO_GLOBAL_SPECS not mentioned in
+#   - a SCIEBO_COMMANDS entry missing from man/sciebo.1,
+#   - a docs/commands.md `### <command>` heading that is not in
+#     SCIEBO_COMMANDS, or a SCIEBO_COMMANDS entry (other than `help`) with no
+#     such heading,
+#   - a global option in the generated _SCIEBO_GLOBAL_SPECS not mentioned in
 #     docs/commands.md or man/sciebo.1,
 #   - a long option in a command's usage_<name>() heredoc not mentioned in
 #     that command's `### <name>` section of docs/commands.md (best effort),
@@ -24,18 +40,12 @@
 #   - a subcommand named under a `Subcommands:`/`Commands:` heading in a
 #     command's usage_<name>() heredoc not mentioned in docs/commands.md
 #     (best effort),
-#   - a _SCIEBO_COMMAND_MODULE_SPECS entry whose target file is missing or
-#     does not define the mapped cmd_/usage_, or which restates the default
-#     module for a single-command file (best effort),
 #   - a subcommand named under a `Subcommands:`/`Commands:` heading in a
 #     command's usage_<name>() heredoc missing from man/sciebo.1 (best
 #     effort),
-#   - completions/sciebo.spec's extra-tier commands differ from usage_main's
-#     "Extra commands" section (hard failure),
-#   - a COMMANDS entry not in completions/sciebo.spec, or a long option that
-#     `bin/sciebo <name> --help` prints but completions/sciebo.spec does not
-#     declare for that command, or vice versa (best effort; hard failures in
-#     DRIFT_STRICT mode - see below),
+#   - a long option that `bin/sciebo <name> --help` prints but
+#     lib/cli/sciebo.spec does not declare for that command, or vice versa
+#     (best effort; hard failures in DRIFT_STRICT mode - see below),
 #   - a function defined in lib/*.sh or lib/commands/*.sh that is referenced
 #     nowhere in lib/, bin/, or tests/ (best effort),
 #   - a function defined in lib/*.sh or lib/commands/*.sh whose only
@@ -47,16 +57,9 @@
 #     effort - a coincidental prefix match is possible, so this never fails
 #     hard).
 #
-# completions/sciebo.bash, completions/_sciebo, and completions/sciebo.fish
-# are generated from completions/sciebo.spec by scripts/gen-completions.sh;
-# `scripts/gen-completions.sh --check` (part of `make lint`) is what catches
-# those three files drifting from the spec, so this script no longer compares
-# COMMANDS/subcommands/options against them directly - only against the spec
-# itself and, through it, the live `--help` output.
-#
 # Set DRIFT_STRICT=1 to turn the "planned command" and "spec vs --help"
 # warnings into hard failures, which is what a release/CI check wants once
-# every COMMANDS entry is implemented and the spec is complete.
+# every SCIEBO_COMMANDS entry is implemented and the spec is complete.
 
 set -uo pipefail
 
@@ -104,11 +107,16 @@ usage_subcommands() {
   ' <<<"$body" | sort -u
 }
 
-# --- COMMANDS vs usage_/cmd_ definitions ------------------------------------
+# --- SCIEBO_COMMANDS vs usage_/cmd_ definitions -----------------------------
+# lib/cli/registry.sh is generated by scripts/gen-cli.sh from
+# lib/cli/sciebo.spec; it is data only (see its own header), so sourcing it
+# here is safe and replaces the previous sed-parse of lib/cli/main.sh.
 
-commands="$(sed -n 's/^COMMANDS="\(.*\)"$/\1/p' "$ROOT/bin/sciebo" | head -n 1)"
+# shellcheck source=../lib/cli/registry.sh
+source "$ROOT/lib/cli/registry.sh"
+commands="$SCIEBO_COMMANDS"
 if [ -z "$commands" ]; then
-  hard "cannot read the COMMANDS string from bin/sciebo"
+  hard "cannot read SCIEBO_COMMANDS from lib/cli/registry.sh"
   printf 'check-drift: %d hard failure(s), %d warning(s)\n' "$hard_failures" "$warnings"
   exit 1
 fi
@@ -210,44 +218,11 @@ for name in $commands; do
   fi
 done
 
-# --- _SCIEBO_COMMAND_MODULE_SPECS vs lib/commands/ (warning) ----------------
-# bin/sciebo resolves each command through the static table in
-# _SCIEBO_COMMAND_MODULE_SPECS (default lib/commands/<command>.sh, overrides
-# for a module that defines several commands). A stale entry points at a
-# missing file or one that no longer defines the mapped cmd_/usage_ function;
-# an idempotent entry restates the default for a single-command file. A
-# multi-command module lists its namesake command next to the other commands
-# it serves, so those self-mappings are expected and not flagged.
-module_specs="$(sed -n '/^_SCIEBO_COMMAND_MODULE_SPECS=(/,/^)/p' "$ROOT/bin/sciebo" |
-  sed -n "s/^[[:space:]]*'\([^|]*\)|\([^']*\)'.*$/\1|\2/p")"
-for spec in $module_specs; do
-  spec_name="${spec%%|*}"
-  spec_file="${spec#*|}"
-  [ -n "$spec_name" ] || continue
-  spec_target="$ROOT/lib/commands/${spec_file}"
-  if [ ! -f "$spec_target" ]; then
-    warn "module spec '${spec_name}|${spec_file}' points to a missing file"
-    continue
-  fi
-  spec_cmds=" $(grep -hoE '^cmd_[A-Za-z0-9_]+\(\)' "$spec_target" 2>/dev/null | sed 's/()$//' | tr '\n' ' ')"
-  spec_usages=" $(grep -hoE '^usage_[A-Za-z0-9_]+\(\)' "$spec_target" 2>/dev/null | sed 's/()$//' | tr '\n' ' ')"
-  case "$spec_cmds" in
-    *" cmd_${spec_name} "*) ;;
-    *) warn "module spec '${spec_name}|${spec_file}' does not define cmd_${spec_name}()" ;;
-  esac
-  case "$spec_usages" in
-    *" usage_${spec_name} "*) ;;
-    *) warn "module spec '${spec_name}|${spec_file}' does not define usage_${spec_name}()" ;;
-  esac
-  if [ "$spec_file" = "${spec_name}.sh" ]; then
-    spec_other=""
-    for spec_defined in $spec_cmds; do
-      [ "$spec_defined" = "cmd_${spec_name}" ] || spec_other="$spec_defined"
-    done
-    [ -n "$spec_other" ] ||
-      warn "module spec '${spec_name}|${spec_file}' is idempotent with the default module"
-  fi
-done
+# (The previous check of the old hand-written command-to-module override
+# table against lib/commands/ is gone: scripts/gen-cli.sh --check now
+# validates every COMMAND row's module file exists and every
+# lib/commands/*.sh is used by at least one COMMAND row, straight from the
+# generator that builds SCIEBO_COMMAND_MODULE.)
 
 # --- require_setting keys vs config/settings.env ----------------------------
 
@@ -263,12 +238,12 @@ required_keys="$(awk '
     }
     if ($0 !~ /\\[[:space:]]*$/) collecting = 0
   }
-' "$ROOT/lib/settings.sh")"
+' "$ROOT/lib/config/settings.sh")"
 
 for key in $required_keys; do
   if ! grep -qF "\${${key}:" "$ROOT/config/settings.env" &&
     ! grep -qF "\${${key}}" "$ROOT/config/settings.env"; then
-    hard "setting '${key}' is required by lib/settings.sh but missing from config/settings.env"
+    hard "setting '${key}' is required by lib/config/settings.sh but missing from config/settings.env"
   fi
 done
 
@@ -324,13 +299,17 @@ fi
 
 # --- _SCIEBO_GLOBAL_SPECS vs docs and man (warning) -------------------------
 # The completions' own global-option coverage is checked against
-# completions/sciebo.spec by scripts/gen-completions.sh --check instead (part
-# of `make lint`): the generated files mirror the spec exactly, so a spec row
-# missing an alias would already fail that check.
+# lib/cli/sciebo.spec by scripts/gen-cli.sh --check instead (part of `make
+# lint`): the generated files mirror the spec exactly, so a spec row missing
+# an alias would already fail that check. _SCIEBO_GLOBAL_SPECS itself is
+# generated into lib/cli/registry.sh (sourced above), so this reads that
+# real bash array instead of sed-parsing lib/cli/main.sh.
 
 if [ -f "$ROOT/docs/commands.md" ]; then
-  global_specs="$(sed -n '/^_SCIEBO_GLOBAL_SPECS=(/,/^)/p' "$ROOT/bin/sciebo" |
-    sed -n "s/^[[:space:]]*'\([^']*\)'.*/\1/p" | sed 's/|.*//')"
+  global_specs=""
+  for spec in "${_SCIEBO_GLOBAL_SPECS[@]}"; do
+    global_specs+="${global_specs:+ }${spec%%|*}"
+  done
   for spec in $global_specs; do
     # A spec is a comma-separated alias list; every alias must be documented.
     IFS=',' read -r -a flags <<<"$spec"
@@ -350,9 +329,8 @@ fi
 
 # --- COMMANDS vs man page (warning) ------------------------------------------
 # The completions' own command coverage is checked against
-# completions/sciebo.spec by scripts/gen-completions.sh --check instead (see
-# the note above); the spec-vs-COMMANDS and spec-vs---help checks further
-# below cover the spec itself.
+# lib/cli/sciebo.spec by scripts/gen-cli.sh --check instead (see the note
+# above); the spec-vs---help check further below covers the spec itself.
 
 for name in $commands; do
   if [ "$have_man" -eq 1 ]; then
@@ -363,8 +341,8 @@ done
 
 # (The old "empty completions/_sciebo description" check is gone: the spec
 # requires a non-empty description for every GLOBAL/COMMAND/SUB/OPT row - see
-# completions/sciebo.spec's format doc - so scripts/gen-completions.sh can
-# never produce an empty one.)
+# lib/cli/sciebo.spec's format doc - so scripts/gen-cli.sh can never produce
+# an empty one.)
 
 # --- usage_<command> options vs that command's docs section (warning) --------
 
@@ -397,13 +375,12 @@ fi
 # documented once in the man page's global section, so they are exempt here.
 if [ -f "$ROOT/man/sciebo.1" ]; then
   global_alias_flags=""
-  while IFS= read -r spec; do
+  for spec in "${_SCIEBO_GLOBAL_SPECS[@]}"; do
     spec_first="${spec%%|*}"
     for alias in ${spec_first//,/ }; do
       case "$alias" in -*) global_alias_flags+=" $alias" ;; esac
     done
-  done < <(sed -n '/^_SCIEBO_GLOBAL_SPECS=(/,/^)/p' "$ROOT/bin/sciebo" |
-    sed -n "s/^[[:space:]]*'\([^']*\)'.*/\1/p")
+  done
   for name in $commands; do
     [ "$name" = "help" ] && continue
     usage_body="${USAGE_BODY[$name]:-}"
@@ -445,7 +422,7 @@ fi
 # from the man page is a documentation gap. Best effort, and the man page
 # escapes option hyphens (copy\-link), so strip backslashes before matching
 # it. The completions' own subcommand coverage is checked against
-# completions/sciebo.spec by scripts/gen-completions.sh --check instead.
+# lib/cli/sciebo.spec by scripts/gen-cli.sh --check instead.
 for name in share account folders filters trash config logs; do
   subcommands="$(usage_subcommands "$name")"
   [ -n "$subcommands" ] || continue
@@ -458,37 +435,26 @@ for name in share account folders filters trash config logs; do
   done
 done
 
-# --- COMMANDS vs completions/sciebo.spec, and the spec vs `--help` (warning,
-# hard failures in DRIFT_STRICT) -----------------------------------------
-# completions/sciebo.spec is the single declarative source completions/
-# {sciebo.bash,_sciebo,sciebo.fish} are generated from (scripts/
-# gen-completions.sh); this is the check that keeps IT honest. Every COMMANDS
-# entry must have a COMMAND row, and (since a subcommand's own --help just
+# --- the spec vs `--help` (warning, hard failures in DRIFT_STRICT) ----------
+# lib/cli/sciebo.spec is the single declarative source scripts/gen-cli.sh
+# generates the registry and the completions from; this is the check that
+# keeps the spec's OPT rows honest against the live implementation (every
+# COMMANDS entry is guaranteed to have a COMMAND row - SCIEBO_COMMANDS is
+# generated from the spec, so that can no longer drift; gen-cli.sh --check
+# is what validates the spec itself). Since a subcommand's own --help just
 # reprints its command's whole usage_<name>() text - there is no narrower
-# text to compare against) every long option `bin/sciebo <name> --help`
+# text to compare against - every long option `bin/sciebo <name> --help`
 # prints must be one of that command's OPT rows (summed over every
 # subcommand, plus the always-available GLOBAL rows) or vice versa. Only
 # options that begin an indented usage line count (matching the man-page
 # check above), which skips inline prose mentions of another command's flag
 # (nextcloudcmd's "--silent, -s errors only (--log-level ERROR --stats 0)",
 # schedule's "runs `sciebo sync --apply --quiet`", ...).
-spec_file="$ROOT/completions/sciebo.spec"
+spec_file="$ROOT/lib/cli/sciebo.spec"
 if [ -f "$spec_file" ]; then
-  spec_commands=" $(awk -F'|' '$1=="COMMAND"{print $2}' "$spec_file" | tr '\n' ' ') "
   global_opts=" $(awk -F'|' '$1=="GLOBAL"{print $2}' "$spec_file" |
     tr ',' '\n' | grep -E '^--' | sort -u | tr '\n' ' ') "
   for name in $commands; do
-    case "$spec_commands" in
-      *" $name "*) ;;
-      *)
-        if [ "$STRICT" = "1" ]; then
-          hard "command '${name}' is in COMMANDS but not in completions/sciebo.spec"
-        else
-          warn "command '${name}' is in COMMANDS but not in completions/sciebo.spec"
-        fi
-        continue
-        ;;
-    esac
     spec_opts_own=" $(awk -F'|' -v cmd="$name" '$1=="OPT" && $2==cmd{print $4}' "$spec_file" |
       tr ',' '\n' | grep -E '^--' | sort -u | tr '\n' ' ') "
     spec_opts_with_global="${spec_opts_own% }${global_opts}"
@@ -503,9 +469,9 @@ if [ -f "$spec_file" ]; then
         *" $flag "*) ;;
         *)
           if [ "$STRICT" = "1" ]; then
-            hard "long option '${flag}' in 'sciebo ${name} --help' is not in completions/sciebo.spec"
+            hard "long option '${flag}' in 'sciebo ${name} --help' is not in lib/cli/sciebo.spec"
           else
-            warn "long option '${flag}' in 'sciebo ${name} --help' is not in completions/sciebo.spec"
+            warn "long option '${flag}' in 'sciebo ${name} --help' is not in lib/cli/sciebo.spec"
           fi
           ;;
       esac
@@ -517,16 +483,16 @@ if [ -f "$spec_file" ]; then
         *" $flag "*) ;;
         *)
           if [ "$STRICT" = "1" ]; then
-            hard "option '${flag}' in completions/sciebo.spec for '${name}' is not printed by 'sciebo ${name} --help'"
+            hard "option '${flag}' in lib/cli/sciebo.spec for '${name}' is not printed by 'sciebo ${name} --help'"
           else
-            warn "option '${flag}' in completions/sciebo.spec for '${name}' is not printed by 'sciebo ${name} --help'"
+            warn "option '${flag}' in lib/cli/sciebo.spec for '${name}' is not printed by 'sciebo ${name} --help'"
           fi
           ;;
       esac
     done
   done
 else
-  warn "completions/sciebo.spec not found; skipping the spec/--help drift check"
+  warn "lib/cli/sciebo.spec not found; skipping the spec/--help drift check"
 fi
 
 # --- dead helpers across lib/ (warning) --------------------------------------
@@ -543,8 +509,7 @@ fi
 # can neither define symbols under lib/ nor count its own patterns as refs.
 #
 # Exemptions: cmd_*/usage_* are dispatched dynamically by bin/sciebo
-# ("cmd_${command}"/"usage_$1", probed by have_function, and located by
-# _sciebo_module_path's ^cmd_NAME() content grep) and cleanup_do_* is invoked
+# ("cmd_${command}"/"usage_$1") and cleanup_do_* is invoked
 # as "cleanup_do_${target}" from lib/commands/cleanup.sh, so an absence of
 # literal callers proves nothing for those prefixes. Comment-only lines never
 # count as references — including the helper's own doc comment above its
@@ -560,7 +525,7 @@ dead_helpers="$(
         line = $0
         sub(/^[^:]*:[0-9]+:/, "", line)
         if (line ~ /^[[:space:]]*#/) next
-        if (file ~ /^lib\/[^\/]+\.sh$/ || file ~ /^lib\/commands\/[^\/]+\.sh$/) {
+        if (file ~ /^lib\/[^\/]+\.sh$/ || file ~ /^lib\/[^\/]+\/[^\/]+\.sh$/) {
           if (match(line, /^[A-Za-z_][A-Za-z0-9_]*\(\)/)) {
             name = substr(line, 1, RLENGTH - 2)
             if (name !~ /^(cmd|usage)_/ && name !~ /^cleanup_do_/) def[name] = file
@@ -605,9 +570,9 @@ done <<<"$dead_helpers"
 # bodies (the usage_<name>() text, always `<<'EOF'`/`<<'APPLESCRIPT'` in this
 # tree) are skipped so example lines cannot be mistaken for assignments, and
 # a coincidental prefix match is possible, so this never fails hard.
-module_names="$( (cd "$ROOT" && ls lib/*.sh lib/commands/*.sh 2>/dev/null) |
+module_names="$( (cd "$ROOT" && ls lib/*.sh lib/*/*.sh 2>/dev/null) |
   xargs -n1 basename | sed 's/\.sh$//' | sort -u)"
-for lib_file in "$ROOT"/lib/*.sh "$ROOT"/lib/commands/*.sh; do
+for lib_file in "$ROOT"/lib/*.sh "$ROOT"/lib/*/*.sh; do
   [ -f "$lib_file" ] || continue
   rel="${lib_file#"$ROOT"/}"
   mod="$(basename "$lib_file" .sh)"
@@ -630,17 +595,10 @@ for lib_file in "$ROOT"/lib/*.sh "$ROOT"/lib/commands/*.sh; do
   done
 done
 
-# --- command tiers: spec vs `sciebo help` (hard failure) --------------------
-# completions/sciebo.spec's COMMAND tier column (core/extra) and the
-# "Extra commands" section of bin/sciebo's usage_main must name the same
-# extra commands, so the help never presents an extra as core or vice versa.
-spec_extras="$(awk -F'|' '$1 == "COMMAND" && $3 == "extra" { print $2 }' \
-  "$ROOT/completions/sciebo.spec" | sort)"
-help_extras="$(sed -n '/^usage_main()/,/^}/p' "$ROOT/bin/sciebo" |
-  awk '/^Extra commands/ { on = 1; next } on && /^$/ { exit } on && /^  [a-z]/ { print $1 }' | sort)"
-if [ "$spec_extras" != "$help_extras" ]; then
-  hard "extra-tier commands differ between completions/sciebo.spec and usage_main's Extra commands section: spec [${spec_extras//$'\n'/ }] vs help [${help_extras//$'\n'/ }]"
-fi
+# (The previous "command tiers: spec vs `sciebo help`" check is gone:
+# scripts/gen-cli.sh --check now validates that usage_main's Commands:/Extra
+# commands sections list exactly the spec's core/extra commands, in spec
+# order - a stronger check than the tier-only, unordered comparison here.)
 
 printf 'check-drift: %d hard failure(s), %d warning(s)\n' "$hard_failures" "$warnings"
 if [ "$hard_failures" -gt 0 ]; then

@@ -1,14 +1,21 @@
 <!doctype html>
-<!-- GitHub Pages demo for rclone-sciebo-webdav.
-     Serve this folder with Pages: Settings -> Pages -> Deploy from a branch
-     -> main -> /docs. Screenshots are real CLI output; run `make screenshots`
-     to regenerate them. TODO: add the repository URL once it is public. -->
+<!-- GitHub Pages demo for rclone-webdav-sync.
+     Served from main:/docs (Settings -> Pages -> Deploy from a branch ->
+     main -> /docs). Screenshots are real CLI output; run `make screenshots`
+     to regenerate them. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>rclone-sciebo-webdav — folders and git repos to sciebo, without the mess</title>
-<meta name="description" content="Mirror local folders and git repositories to sciebo (Nextcloud) with rclone. Per-source direction, dry-run first, a folder wizard, filters, scheduling, and on-demand mounts.">
+<title>rclone-webdav-sync — an unofficial sciebo and Nextcloud client</title>
+<meta name="description" content="rclone-webdav-sync is an unofficial command-line client for sciebo (Hochschulcloud.NRW) and other Nextcloud servers, built on rclone. Per-source direction, dry-run first, a folder wizard, filters, scheduling, and on-demand mounts.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="rclone-webdav-sync — an unofficial sciebo and Nextcloud client">
+<meta property="og:description" content="rclone-webdav-sync is an unofficial command-line client for sciebo (Hochschulcloud.NRW) and other Nextcloud servers, built on rclone. Per-source direction, dry-run first, a folder wizard, filters, scheduling, and on-demand mounts.">
+<meta property="og:image" content="https://sebastianspicker.github.io/rclone-webdav-sync/assets/screenshots/sync.svg">
+<meta property="og:url" content="https://sebastianspicker.github.io/rclone-webdav-sync/">
+<link rel="canonical" href="https://sebastianspicker.github.io/rclone-webdav-sync/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%230d1117'/%3E%3Cg fill='none' stroke='%2358a6ff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='23 4 23 10 17 10'/%3E%3Cpolyline points='1 20 1 14 7 14'/%3E%3Cpath d='M3.51 9a9 9 0 0 1 14.85-3.36L23 10'/%3E%3Cpath d='M20.49 15a9 9 0 0 1-14.85 3.36L1 14'/%3E%3C/g%3E%3C/svg%3E">
 <style>
   :root {
     --bg: #0d1117;
@@ -154,10 +161,12 @@
 <header class="hero">
   <div class="wrap">
     <p class="kicker">rclone · sciebo · Nextcloud · macOS | Linux</p>
-    <h1>rclone-sciebo-webdav</h1>
+    <h1>rclone-webdav-sync</h1>
     <p class="tagline">
-      Mirror local folders and git repositories to sciebo without clutter or
-      leftover temporary files. Dry-run first, apply when it looks right.
+      An unofficial command-line client for sciebo (Hochschulcloud.NRW) and
+      other Nextcloud servers. Mirrors local folders and git repositories
+      without clutter or leftover temporary files. Dry-run first, apply when
+      it looks right.
     </p>
     <div class="badges">
       <span>MIT</span>
@@ -169,6 +178,7 @@
     <div class="actions">
       <a class="btn primary" href="#quick-start">Quick start</a>
       <a class="btn" href="#tour">Screenshot tour</a>
+      <a class="btn" href="https://github.com/sebastianspicker/rclone-webdav-sync">GitHub</a>
     </div>
   </div>
 </header>
@@ -256,6 +266,17 @@
         <p>A launchd agent (macOS) or systemd <code>--user</code> agent (Linux) runs a quiet sync daily, on an interval, with jitter, or when a watched path changes. On demand, <code>sciebo mount</code> exposes the remote as a filesystem via <code>nfsmount</code> — no macFUSE on macOS, and the kernel NFS client on Linux (usually root).</p>
       </div>
     </div>
+    <h3>Compared with nextcloudcmd</h3>
+    <ul class="checks">
+      <li><code>nextcloudcmd</code>, bundled with the desktop client, runs one sync of one folder and exits; <code>sciebo sync</code> covers every configured pair, and <code>watch</code> / <code>schedule install</code> add opt-in live or periodic runs.</li>
+      <li>Needs only bash, rclone, and curl, not the desktop client packages.</li>
+      <li>Keeps credentials out of the process list: platform keychain, a netrc temp file, or <code>--password-fd</code> for <code>sciebo nextcloudcmd</code>, instead of <code>-p PASSWORD</code> on the command line.</li>
+      <li>Adds a dry-run <code>check</code>, a delete guard, and local conflict copies, none of which nextcloudcmd's manual documents.</li>
+      <li><code>sciebo nextcloudcmd</code> accepts nextcloudcmd's own option names, and <code>scripts/nextcloudcmd</code> is a drop-in shim for existing cron jobs.</li>
+    </ul>
+    <p class="lede" style="margin-top:12px;font-size:13.5px">
+      Full comparison in the <a href="https://github.com/sebastianspicker/rclone-webdav-sync#compared-with-nextcloudcmd">README</a>, based on the <a href="https://docs.nextcloud.com/server/stable/user_manual/en/desktop/commandline.html">Nextcloud user manual</a>.
+    </p>
   </div>
 </section>
 
@@ -264,7 +285,7 @@
     <h2>Quick start</h2>
     <p class="lede">You need macOS or Linux, Bash 5.3 or newer (macOS ships 3.2 as <code>/bin/bash</code>, so <code>brew install bash</code> and put it first on <code>PATH</code>), <a href="https://rclone.org/downloads/">rclone 1.69 or newer</a>, curl, and a sciebo account.</p>
 <pre><span class="c"># 1. Get the code</span>
-git clone &lt;your-fork-url&gt; rclone-sciebo-webdav &amp;&amp; cd rclone-sciebo-webdav
+git clone https://github.com/sebastianspicker/rclone-webdav-sync.git &amp;&amp; cd rclone-webdav-sync
 
 <span class="c"># 2. Connect your account — Login Flow in the browser, Keychain by default</span>
 bin/sciebo setup --login    <span class="c"># or: cp .env.example .env, then bin/sciebo setup</span>
@@ -290,30 +311,30 @@ bin/sciebo status           <span class="c"># last run per source</span>
 <section id="commands">
   <div class="wrap">
     <h2>Commands</h2>
-    <p class="lede">Common commands have a matching <code>make</code> target; <code>make help</code> lists them. The CLI is the full interface. Settings in <code>config/settings.env</code> and <code>config/settings.local.env</code> drive the safe-by-default policies, bandwidth caps, scheduling, and mounts.</p>
+    <p class="lede">Several commands also have a matching <code>make</code> target (<code>make help</code> lists them), but the CLI below is the complete interface. Settings in <code>config/settings.env</code> and <code>config/settings.local.env</code> drive the safe-by-default policies, bandwidth caps, scheduling, and mounts. Full option tables and examples are in <a href="https://github.com/sebastianspicker/rclone-webdav-sync/blob/main/docs/commands.md">docs/commands.md</a>.</p>
     <table>
-      <thead><tr><th>Command</th><th>Purpose</th></tr></thead>
+      <thead><tr><th>Group</th><th>Commands</th></tr></thead>
       <tbody>
-        <tr><td><code>sciebo setup [--login]</code></td><td>create or update the sciebo rclone remote (Login Flow optional)</td></tr>
-        <tr><td><code>sciebo provision</code></td><td>non-interactive account and folder setup (desktop provisioning flags)</td></tr>
-        <tr><td><code>sciebo doctor [--offline]</code></td><td>preflight checks with a PASS/WARN/FAIL report, including the parity policies</td></tr>
-        <tr><td><code>sciebo discover [--write]</code></td><td>find git repositories under <code>roots.conf</code></td></tr>
-        <tr><td><code>sciebo list</code></td><td>list configured sources</td></tr>
-        <tr><td><code>sciebo check</code></td><td>dry run of all sources, with a <code>plan:</code> line each</td></tr>
-        <tr><td><code>sciebo sync [options]</code></td><td>apply sync/pull/bisync for all sources</td></tr>
-        <tr><td><code>sciebo verify [options]</code></td><td>compare sources with destinations (<code>rclone check</code>)</td></tr>
-        <tr><td><code>sciebo status</code> · <code>pause</code> · <code>resume</code></td><td>last run per source; pause or resume sync/check runs</td></tr>
-        <tr><td><code>sciebo folders</code></td><td>choose / add / list / remove folder pairs</td></tr>
-        <tr><td><code>sciebo mount</code> · <code>umount</code> · <code>mounts</code></td><td>on-demand mounts via <code>rclone nfsmount</code></td></tr>
-        <tr><td><code>sciebo edit SUB</code> · <code>hydrate SUB</code></td><td>download, edit, and upload one file; pre-download a remote path</td></tr>
-        <tr><td><code>sciebo ignored</code> · <code>logs</code></td><td>list what sync leaves out ("Not synced"); show per-source sync logs</td></tr>
-        <tr><td><code>sciebo cleanup</code></td><td>old logs, stale chunk uploads, orphaned state (dry run by default)</td></tr>
-        <tr><td><code>sciebo schedule</code></td><td>install / uninstall / status of the launchd or systemd --user agent</td></tr>
-        <tr><td><code>sciebo watch</code></td><td>sync sources when they change (foreground, not a daemon)</td></tr>
-        <tr><td><code>sciebo limit</code> · <code>unlimited</code> · <code>network</code></td><td>runtime bandwidth caps; active interface, metered state, proxy mode</td></tr>
-        <tr><td><code>sciebo locks</code> · <code>quota</code> · <code>conflicts</code> · <code>config</code></td><td>WebDAV locks, account quota, conflict review, effective settings</td></tr>
-        <tr><td><code>sciebo announcements</code> · <code>preview</code> · <code>download</code> · <code>update</code></td><td>server news, thumbnails, resumable downloads, self-update</td></tr>
-        <tr><td><code>sciebo trash</code> · <code>versions SUB</code></td><td>Nextcloud trashbin (list/restore/rm/empty) and file versions (download/restore/delete)</td></tr>
+        <tr>
+          <td>Account &amp; setup</td>
+          <td><code>setup</code> · <code>provision</code> · <code>account</code> · <code>logout</code> · <code>config</code></td>
+        </tr>
+        <tr>
+          <td>Sync</td>
+          <td><code>doctor</code> · <code>discover</code> · <code>list</code> · <code>check</code> · <code>sync</code> · <code>verify</code> · <code>status</code> · <code>pause</code> · <code>resume</code> · <code>watch</code> · <code>nextcloudcmd</code> · <code>edit</code> · <code>hydrate</code> · <code>ignored</code> · <code>filters</code> · <code>download</code> · <code>limit</code> · <code>unlimited</code> · <code>network</code> · <code>update</code></td>
+        </tr>
+        <tr>
+          <td>Folders &amp; mounts</td>
+          <td><code>folders</code> · <code>mount</code> · <code>umount</code> · <code>mounts</code> · <code>open</code> · <code>conflicts</code></td>
+        </tr>
+        <tr>
+          <td>Server features</td>
+          <td><code>share</code> · <code>notifications</code> · <code>activity</code> · <code>presence</code> · <code>lock</code> · <code>unlock</code> · <code>locks</code> · <code>quota</code> · <code>file</code> · <code>search</code> · <code>recent</code> · <code>comments</code> · <code>favorites</code> · <code>tags</code> · <code>server</code> · <code>trash</code> · <code>versions</code> · <code>announcements</code> · <code>preview</code></td>
+        </tr>
+        <tr>
+          <td>Housekeeping &amp; scheduling</td>
+          <td><code>cleanup</code> · <code>logs</code> · <code>schedule</code> · <code>support</code> · <code>retry</code></td>
+        </tr>
       </tbody>
     </table>
   </div>
@@ -329,12 +350,14 @@ bin/sciebo status           <span class="c"># last run per source</span>
       <li>Bisync conflict copies stay local by default (<code>CONFLICT_UPLOAD=0</code>); <code>conflicts --resolve</code> reviews and resolves them, and <code>keep-both</code> renames a copy so the next run uploads it.</li>
       <li>Safe-by-default policies exclude non-portable names, local case-only collisions, and E2EE folders, and gate external storages and big folders; an apply that would delete more than <code>DELETE_FILES_THRESHOLD</code> files stops unless <code>sync --yes</code> is given.</li>
       <li>Multi-account setups are supported through profiles (<code>--profile</code>, <code>account import</code>). Not implemented: Nextcloud E2EE, a native file-provider/virtual-files overlay, and a background daemon or notify_push.</li>
-      <li>sciebo does not officially support WebDAV and offers no support for related issues. Keep backups.</li>
+      <li>This tool is not supported by the sciebo operators; report problems with it here, not to sciebo support. Keep backups.</li>
     </ul>
     <p class="lede" style="margin-top:24px">
-      The repository's README is the full reference: configuration precedence,
-      manifest format, scheduling, mounts, housekeeping, and the compatibility
-      shim for the old <code>scripts/sync.sh</code> entrypoint.
+      The <a href="https://github.com/sebastianspicker/rclone-webdav-sync#readme">repository's README</a>
+      is the full reference: configuration precedence, manifest format,
+      scheduling, mounts, housekeeping, and the compatibility shim for the
+      old <code>scripts/sync.sh</code> entrypoint. Settings are documented in
+      <a href="https://github.com/sebastianspicker/rclone-webdav-sync/blob/main/docs/settings.md">docs/settings.md</a>.
     </p>
   </div>
 </section>
@@ -343,8 +366,17 @@ bin/sciebo status           <span class="c"># last run per source</span>
 
 <footer>
   <div class="wrap">
-    <span>MIT licensed. Built for sciebo; works with any Nextcloud instance.</span>
-    <span>Screenshots: <code>make screenshots</code></span>
+    <span>
+      <a href="https://github.com/sebastianspicker/rclone-webdav-sync">GitHub</a> ·
+      <a href="https://github.com/sebastianspicker/rclone-webdav-sync#readme">README</a> ·
+      <a href="https://github.com/sebastianspicker/rclone-webdav-sync/blob/main/docs/commands.md">Commands</a> ·
+      <a href="https://github.com/sebastianspicker/rclone-webdav-sync/blob/main/docs/settings.md">Settings</a> ·
+      <a href="https://github.com/sebastianspicker/rclone-webdav-sync/blob/main/LICENSE">MIT license</a>
+    </span>
+    <span>Works with sciebo (Hochschulcloud.NRW) and any other Nextcloud server. Screenshots: <code>make screenshots</code></span>
+  </div>
+  <div class="wrap" style="margin-top:12px">
+    <span style="color:var(--muted);font-size:13px">Independent project, not affiliated with, endorsed by, or supported by Nextcloud GmbH or the operators of <a href="https://hochschulcloud.nrw/">sciebo – die Hochschulcloud.NRW</a>. Nextcloud and sciebo are trademarks/names of their respective owners.</span>
   </div>
 </footer>
 

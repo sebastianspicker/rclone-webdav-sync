@@ -25,9 +25,9 @@ LOGS_ALL_NAMES=""
 # logs_name_from_file outputs: the derived source name and its log kind.
 LOGS_NAME_FROM_FILE=""
 LOGS_KIND_FROM_FILE=""
-declare -A LOGS_MODE_BY_NAME=()
-declare -A LOGS_NORMAL_INDEX=()
-declare -A LOGS_DRYRUN_INDEX=()
+declare -gA LOGS_MODE_BY_NAME=()
+declare -gA LOGS_NORMAL_INDEX=()
+declare -gA LOGS_DRYRUN_INDEX=()
 # Result of logs_select: path to show/tail and whether it is a dry-run log.
 LOGS_SELECTED_PATH=""
 LOGS_SELECTED_DRYRUN=0
@@ -97,8 +97,6 @@ logs_each_entry() {
 # logs_build_manifest_index - one manifest walk filling LOGS_MODE_BY_NAME and
 # LOGS_MANIFEST_NAMES, so no caller re-parses the manifest for names or modes.
 logs_build_manifest_index() {
-  # manifest.sh is lazy; load it for the entry walk below.
-  sciebo_require_module manifest manifest_each
   manifest_each logs_each_entry
   return 0
 }
@@ -208,14 +206,9 @@ logs_die_unknown() {
 }
 
 # logs_read_state NAME - fill RUNSTATE_STATUS, RUNSTATE_MODE, and
-# RUNSTATE_LOG from NAME's record. rc 1 when runstate.sh is absent or NAME
-# never ran; the runstate module is never required by logs.
+# RUNSTATE_LOG from NAME's record. rc 1 when NAME never ran.
 logs_read_state() {
   RUNSTATE_STATUS="" RUNSTATE_MODE="" RUNSTATE_LOG=""
-  # runstate.sh is lazy; load it before the probe so a recorded last run
-  # is never silently dropped from the report.
-  sciebo_require_module runstate runstate_read
-  type runstate_read >/dev/null 2>&1 || return 1
   runstate_read "${1:-}" || return 1
   return 0
 }

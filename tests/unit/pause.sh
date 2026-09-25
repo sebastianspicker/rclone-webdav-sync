@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pause.sh - pause marker round trip (lib/pause.sh).
+# pause.sh - pause marker round trip (lib/state/pause.sh).
 # Sourced setup lives in tests/unit/common.sh; run standalone with
 # `bash tests/unit/pause.sh`.
 set -uo pipefail

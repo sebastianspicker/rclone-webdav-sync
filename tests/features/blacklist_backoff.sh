@@ -9,10 +9,6 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
 export BLACKLIST_DIR="${TMP}/blacklist-backoff"
 export BLACKLIST_ENABLED=1 BLACKLIST_MAX_FAILS=2 BLACKLIST_MODE=backoff
 export BLACKLIST_TIME_MIN=10 BLACKLIST_TIME_MAX=60
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/duration.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/blacklist.sh"
 
 # Test-local readers for the blacklist record file. The production module no
 # longer exposes blacklist_read/blacklist_record, so read the file directly

@@ -14,21 +14,9 @@
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
 
 # shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/policy.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/nc_api.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/rclone.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/settings.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/manifest.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/ui.sh"
-# shellcheck disable=SC1090,SC1091
 source "${PROJ}/lib/commands/sync.sh"
 
-# policy.sh allocates its case-scan cache directory lazily on the first
+# case_clash.sh allocates its case-scan cache directory lazily on the first
 # read/write; prime it in this shell so the cache assertions below and the
 # command-substitution scans (which inherit this shell's directory) share one
 # directory, exactly as the CLI's main shell does after its first scan.
@@ -768,9 +756,10 @@ poly_preflight sync_case_clash_preflight "$cc_tree"
 expect_file "case_clash dry run: nothing renamed" "${cc_tree}/a/Clash/x.txt"
 expect_contains "case_clash dry run: would rename" "$(cat "$POLY_OUT")" "would rename"
 unset CASE_CLASH_POLICY
-# Restore the real helper shadowed by the branch stub above.
+# Restore the real helper shadowed by the branch stub above (policy_case_clashes
+# lives in lib/sync/case_clash.sh, split out of lib/sync/policy.sh).
 # shellcheck source=/dev/null
-source "${PROJ}/lib/policy.sh"
+source "${PROJ}/lib/sync/case_clash.sh"
 
 # --- sync_build_args carries the policy arguments -------------------------
 # poly_build_args MODE [ENV=...]... - one SYNC_ARGS entry per line from a
@@ -781,11 +770,7 @@ poly_build_args() {
   # shellcheck disable=SC2016  # the -c program expands "$1" itself
   env "POLY_MODE=$mode" "$@" bash -c '
     set -uo pipefail
-    source "$1/lib/core.sh"
-    source "$1/lib/rclone.sh"
-    source "$1/lib/settings.sh"
-    source "$1/lib/manifest.sh"
-    source "$1/lib/ui.sh"
+    source "$1/lib/sciebo.sh"
     source "$1/lib/commands/sync.sh"
     : "${TRANSFERS:=1}" "${CHECKERS:=4}" "${TPSLIMIT:=8}" "${RETRIES:=3}" "${LOW_LEVEL_RETRIES:=10}"
     : "${TIMEOUT:=10m}" "${CONTIMEOUT:=30s}" "${STATS:=30s}" "${LOG_LEVEL:=INFO}"

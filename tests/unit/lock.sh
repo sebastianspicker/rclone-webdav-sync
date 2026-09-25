@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lock.sh - acquire_lock and pid_alive (lib/lock.sh).
+# lock.sh - acquire_lock and pid_alive (lib/state/lock.sh).
 # Sourced setup lives in tests/unit/common.sh; run standalone with
 # `bash tests/unit/lock.sh`.
 set -uo pipefail

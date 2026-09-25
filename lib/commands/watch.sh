@@ -247,7 +247,7 @@ watch_scan_all() {
 # with the run lock held here; a paused watcher skips with a warning.
 watch_run_sync() {
   local name="${1:-}" rc=0
-  if type pause_active >/dev/null 2>&1 && pause_active; then
+  if pause_active; then
     warn "watch: sync is paused; not syncing '${name}' (run '${CLI_NAME} resume')"
     return 0
   fi
@@ -272,9 +272,7 @@ watch_notify() {
   elif [[ "$WATCH_RUN_NOTIFY" == true ]]; then
     NOTIFY=1
   fi
-  if type notify_send >/dev/null 2>&1; then
-    notify_send "${1:-}" "${2:-}" || true
-  fi
+  notify_send "${1:-}" "${2:-}" || true
   NOTIFY="$saved"
   return 0
 }
@@ -520,7 +518,7 @@ watch_on_signal() {
   watch_kill_children
   watch_pid_release
   rm -f "$WATCH_FIFO" 2>/dev/null || true
-  if type release_lock >/dev/null 2>&1; then release_lock || true; fi
+  release_lock || true
   exit "$status"
 }
 
@@ -528,7 +526,7 @@ watch_on_exit() {
   watch_kill_children
   watch_pid_release
   rm -f "$WATCH_FIFO" 2>/dev/null || true
-  if type release_lock >/dev/null 2>&1; then release_lock || true; fi
+  release_lock || true
   # The command overrides the entrypoint's EXIT trap, so it must clean up
   # the registered temp files itself.
   if type sciebo_temp_cleanup >/dev/null 2>&1; then sciebo_temp_cleanup || true; fi
@@ -545,11 +543,6 @@ cmd_watch() {
   # through notify.sh (both before their `type` probes so neither silently
   # skips), the source walk goes through the manifest, and the pid guard
   # (plus the backend liveness check) uses lock.sh's shared pid_alive.
-  sciebo_require_module duration now_mono
-  sciebo_require_module pause pause_active
-  sciebo_require_module notify notify_send
-  sciebo_require_module manifest manifest_each
-  sciebo_require_module lock pid_alive
 
   # The option values are validated once below, after load_settings fills
   # the defaults. The three integer checks go through opt_require_uint with

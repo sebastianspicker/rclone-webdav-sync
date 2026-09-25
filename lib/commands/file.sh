@@ -2,7 +2,7 @@
 # file.sh command module - details, activity, and shares for one remote path.
 #
 # `info` and `activity` resolve SUB below <RCLONE_REMOTE>:<REMOTE_BASE>/ and
-# talk to the Nextcloud DAV/OCS endpoints through lib/nc_api.sh (no jq, no
+# talk to the Nextcloud DAV/OCS endpoints through lib/adapters/nc_api.sh (no jq, no
 # direct curl). `shares` is a thin spawn of `share list SUB` because commands
 # never call each other in-process. Read-only: no lock and no local state.
 # Module-private globals use the FILE_ prefix.
@@ -233,8 +233,6 @@ cmd_file() {
   # Run dependencies load after opt_begin's --help exit, so
   # `sciebo file --help` parses none of them: the DAV/OCS lookups use
   # http/nc_api; the argument split is core's split_command_args.
-  sciebo_require_module http xml_get
-  sciebo_require_module nc_api nc_dav_request_allow
   file_split_args "${OPT_EXTRA:-}"
   sub="$FILE_SUB"
   case "$sub" in

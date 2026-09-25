@@ -2,7 +2,7 @@
 # lock.sh command module - manual WebDAV file locks (Nextcloud files_lock).
 # `lock` records the server's Lock-Token locally, `unlock` releases it, and
 # `locks` lists (and optionally prunes) the recorded locks. Server traffic
-# goes through lib/http.sh; records are parsed, never sourced.
+# goes through lib/adapters/http.sh; records are parsed, never sourced.
 
 LOCK_PROPFIND_BODY='<?xml version="1.0"?>
 <d:propfind xmlns:d="DAV:" xmlns:nc="http://nextcloud.org/ns">
@@ -197,8 +197,6 @@ lock_parse_sub() {
 # kept, so a later run can retry it.
 lock_unlock_all() {
   local command="$1" flag="$2" file="" path="" token="" url="" rc=0 detail="" count=0 failed=0
-  # ui.sh is lazy; load it before the confirmation gate below.
-  sciebo_require_module ui ui_confirm_mutation
   ui_confirm_mutation "$command" \
     "${flag} requires --yes when not running interactively" \
     "release every recorded lock? [y/N]: " ||
@@ -253,10 +251,6 @@ lock_unlock_all() {
 cmd_lock() {
   local sub="" url="" file="" token=""
   opt_begin "" lock "" "$@"
-  # The WebDAV lock calls use the http/nc_api helpers; load them after
-  # opt_begin's --help exit so `sciebo lock --help` parses none of them.
-  sciebo_require_module http xml_get
-  sciebo_require_module nc_api nc_dav_request_allow
   lock_parse_sub lock "${OPT_EXTRA:-}"
   sub="$LOCK_SUB"
   http_load_context
@@ -289,8 +283,6 @@ cmd_unlock() {
   local sub="" url="" file="" token="" rc=0
   opt_begin "all:b yes:b" unlock "" "$@"
   # See cmd_lock: the WebDAV unlock calls use http/nc_api.
-  sciebo_require_module http xml_get
-  sciebo_require_module nc_api nc_dav_request_allow
   if [[ -n "${OPT_all:-}" ]]; then
     [[ -z "${OPT_EXTRA:-}" ]] || usage_error unlock "unexpected argument: ${OPT_EXTRA%%$'\n'*}"
     lock_unlock_all unlock --all
@@ -372,8 +364,6 @@ cmd_locks() {
   opt_guard locks
   # The unlock-all release (and prune follow-ups) go over WebDAV; see
   # cmd_lock for the --help placement.
-  sciebo_require_module http xml_get
-  sciebo_require_module nc_api nc_dav_request_allow
   if [[ -n "${OPT_prune:-}" && -n "${OPT_unlock_all:-}" ]]; then
     usage_error locks "--prune and --unlock-all cannot be combined"
   fi

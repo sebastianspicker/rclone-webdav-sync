@@ -4,8 +4,6 @@
 # shellcheck source=env.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
 # platform_open is exercised directly for the leading-dash argv check.
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/platform.sh"
 
 export FOLDERS_LOCAL_ROOT="${TMP}/folders"
 BROWSER_BIN="${TMP}/browser-bin"

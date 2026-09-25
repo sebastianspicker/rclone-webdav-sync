@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# blacklist.sh - blacklist record iteration (lib/blacklist.sh).
+# blacklist.sh - blacklist record iteration (lib/state/blacklist.sh).
 # Sourced setup lives in tests/unit/common.sh; run standalone with
 # `bash tests/unit/blacklist.sh`.
 set -uo pipefail

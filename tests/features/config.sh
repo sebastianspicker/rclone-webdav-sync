@@ -103,6 +103,26 @@ expect_contains "config edit prints the path without a TTY" "$CLI_OUT" "$LOCAL_F
 # shellcheck source=../../lib/commands/config.sh
 source "${PROJ}/lib/commands/config.sh"
 
+# config_env_exported without the SCIEBO_EXPORTED snapshot reads the live
+# export attribute: exported-with-value counts, a plain or valueless export
+# does not. (No subshell: harness counters must see these results.)
+cfg_saved_exported="${SCIEBO_EXPORTED-__unset__}"
+unset SCIEBO_EXPORTED
+export CFG_EXPORTED_VALUE=1
+# shellcheck disable=SC2034  # read indirectly by config_env_exported
+CFG_PLAIN_VALUE=1
+declare -x CFG_EXPORTED_NOVALUE
+config_env_exported CFG_EXPORTED_VALUE
+expect_rc "config_env_exported: exported value" "$?" 0
+config_env_exported CFG_PLAIN_VALUE
+expect_rc "config_env_exported: unexported value" "$?" 1
+config_env_exported CFG_EXPORTED_NOVALUE
+expect_rc "config_env_exported: exported without value" "$?" 1
+config_env_exported CFG_NEVER_SET
+expect_rc "config_env_exported: unset" "$?" 1
+unset CFG_EXPORTED_VALUE CFG_PLAIN_VALUE CFG_EXPORTED_NOVALUE
+[[ "$cfg_saved_exported" == "__unset__" ]] || SCIEBO_EXPORTED="$cfg_saved_exported"
+
 CACHE_KEYS="${TMP}/config-cache-keys.env"
 cat >"$CACHE_KEYS" <<'EOF'
 # a comment and a blank line below

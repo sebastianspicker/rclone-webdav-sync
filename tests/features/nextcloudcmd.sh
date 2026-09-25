@@ -249,12 +249,10 @@ expect_cli "nextcloudcmd: --silent suppresses progress rc 0" 0 run_nc nextcloudc
 expect_eq "nextcloudcmd: silent adds no -P" "0" "$(nc_progress_count)"
 
 # The argv builder appends -P when the TTY check says so. ncc_append_progress
-# goes through the shared progress_append_args now, so source lib/rclone.sh
-# here (env.sh loads only core/http, like hydrate's direct-drive block) and
-# stub the shared terminal probe instead of the removed ncc_progress_tty.
+# goes through the shared progress_append_args (lib/adapters/rclone.sh, already loaded
+# by env.sh); stub the shared terminal probe instead of the removed
+# ncc_progress_tty.
 source "${PROJ}/lib/commands/nextcloudcmd.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/rclone.sh"
 # shellcheck disable=SC2329  # invoked by progress_append_args
 progress_stdout_tty() { return 0; }
 # shellcheck disable=SC2034  # read by the sourced argv builder

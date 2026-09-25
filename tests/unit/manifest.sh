@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# manifest.sh - sources.conf parsing, iteration, and mutation (lib/manifest.sh).
+# manifest.sh - sources.conf parsing, iteration, and mutation (lib/config/manifest.sh).
 # Sourced setup lives in tests/unit/common.sh; run standalone with
 # `bash tests/unit/manifest.sh`.
 set -uo pipefail

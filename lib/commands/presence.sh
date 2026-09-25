@@ -1,6 +1,6 @@
 #!/bin/bash
 # presence.sh command module - show, set, or clear the Nextcloud user status.
-# Talks to the OCS user_status app through lib/http.sh; no local state.
+# Talks to the OCS user_status app through lib/adapters/http.sh; no local state.
 
 # Filled by presence_parse_data from the <data> block of a status response.
 PRESENCE_STATUS=""
@@ -124,13 +124,12 @@ presence_validate_options() {
   PRESENCE_SECONDS=""
   if [[ "$PRESENCE_ACTION" == "set" ]]; then
     if [[ -n "$PRESENCE_OPT_CLEAR_AFTER" ]]; then
-      # The shared duration_parse_or_usage (lib/duration.sh, eager) owns the
+      # The shared duration_parse_or_usage (lib/base/duration.sh, eager) owns the
       # grammar and now the wording: its EXAMPLES argument carries presence's
       # "30m, 4h, 1d" list and its FLAG gives the "invalid --clear-after
       # duration: ..." spelling. The require also keeps sourced-alone use
-      # working; it replaces the old lazy lib/pause.sh load that existed only
+      # working; it replaces the old lazy lib/state/pause.sh load that existed only
       # for pause_parse_duration's wrapper over the same grammar.
-      sciebo_require_module duration duration_parse_or_usage
       PRESENCE_SECONDS=${ duration_parse_or_usage presence --clear-after "$PRESENCE_OPT_CLEAR_AFTER" invalid "30m, 4h, 1d";}
       if [[ "$PRESENCE_SECONDS" -gt 0 && -z "$PRESENCE_OPT_MESSAGE" && -z "$PRESENCE_OPT_EMOJI" ]]; then
         usage_error presence "--clear-after requires --message or --emoji"
@@ -180,7 +179,6 @@ cmd_presence() {
   presence_parse_action "$@"
   # http loads after the parse (whose opt_begin consumed --help), so
   # `sciebo presence --help` parses none of it.
-  sciebo_require_module http xml_get
   presence_validate_options
 
   http_load_context

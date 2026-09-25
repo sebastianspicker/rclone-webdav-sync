@@ -101,10 +101,6 @@ cmd_open() {
   # `sciebo open --help` parses none of them: nc_api/http provide the
   # non-fatal DAV probe and its XML helpers, the resolution walks the
   # manifest, and the launch uses the platform opener.
-  sciebo_require_module http xml_get
-  sciebo_require_module nc_api nc_dav_request_allow
-  sciebo_require_module manifest manifest_each
-  sciebo_require_module platform platform_opener
   # SUB is optional (MIN 0); a second positional is rejected with the same
   # wording the inline check used. No strip/path-safety pass follows here:
   # open resolves SUB against the manifest or below FOLDERS_LOCAL_ROOT and

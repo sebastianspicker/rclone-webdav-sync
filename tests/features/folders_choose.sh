@@ -7,31 +7,12 @@
 # shellcheck source=env.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
 
-# The wizard's policy helpers build on these libraries (env.sh has core.sh
-# and http.sh already).
+# The direct label/gate assertions below call _bigfolder_label and
+# choose_policy_decision in this process; env.sh already loaded every
+# library (lib/sciebo.sh), so only the command module itself needs sourcing.
+# folders_choose.sh was merged into folders.sh (one command, one module).
 # shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/rclone.sh"
-# The direct label/gate assertions below call _bigfolder_label in this
-# process and expect capabilities' human label ("2Ki"/"2Mi"). That used to
-# arrive through folders_choose.sh's file-top require; the require moved
-# into cmd_choose with the lazy-deps pass (so `--help` parses none of it),
-# and the direct calls source capabilities.sh here instead. The CLI paths
-# still load it through cmd_choose, never through a test-only pre-source.
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/capabilities.sh"
-# policy.sh backs the direct choose_policy_decision calls below; it loads in
-# cmd_choose now (its file-top require moved with the lazy-deps pass), so the
-# direct-call tests source it here.
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/policy.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/nc_api.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/bigfolder.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/ui.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/commands/folders_choose.sh"
+source "${PROJ}/lib/commands/folders.sh"
 
 # choose_capture CMD... - combined output in CLI_OUT, rc in CLI_RC, with
 # stdin closed so an "ask" gate cannot prompt.
@@ -77,51 +58,10 @@ expect_eq "decision: ask confirmed proceeds" "proceed 0" "$(decide ask 1)"
 expect_eq "decision: unset proceeds" "proceed 0" "$(decide "" 0)"
 expect_eq "decision: unknown policy proceeds" "proceed 0" "$(decide nonsense 0)"
 
-# --- sciebo_require_module / have_function / label dependency --------------
-# have_function detects loaded helpers and rejects missing ones.
-have_function _bigfolder_label
-expect_rc "have_function: finds a loaded helper" "$?" 0
-have_function choose_helper_that_does_not_exist
-expect_rc "have_function: rejects a missing helper" "$?" 1
-
-# sciebo_require_module is a clean no-op (rc 0) when the module is absent or
-# unreadable: a genuinely optional dependency never aborts the caller, and its
-# sentinel stays undefined.
-CHOOSE_REQUIRE_DIR="${TMP}/require-modules"
-mkdir -p "$CHOOSE_REQUIRE_DIR"
-printf ':\n' >"${CHOOSE_REQUIRE_DIR}/unreadable_module.sh"
-chmod 000 "${CHOOSE_REQUIRE_DIR}/unreadable_module.sh"
-CHOOSE_SAVED_LIB_DIR="$LIB_DIR"
-LIB_DIR="$CHOOSE_REQUIRE_DIR"
-sciebo_require_module definitely_absent_module no_such_sentinel
-expect_rc "require_module: absent module is a clean no-op" "$?" 0
-sciebo_require_module unreadable_module no_such_sentinel
-expect_rc "require_module: unreadable module is a clean no-op" "$?" 0
-have_function no_such_sentinel
-expect_rc "require_module: missing module defines no sentinel" "$?" 1
-LIB_DIR="$CHOOSE_SAVED_LIB_DIR"
-
-# _bigfolder_label prefers capabilities' human label and falls back to raw
-# bytes. The human label appears because capabilities.sh is sourced above
-# for the direct calls; the raw-bytes case unsets the helper (in the
-# command-substitution subshell) to simulate capabilities being absent.
-expect_eq "bigfolder label: raw bytes without capabilities" "2048B" \
-  "$(
-    unset -f capabilities_size_label
-    _bigfolder_label 2048
-  )"
-expect_eq "bigfolder label: human label once capabilities is required" "2Ki" \
-  "$(_bigfolder_label 2048)"
-
-# choose_bigfolder_label's round-5 guard reports a genuinely missing helper
-# instead of silently printing an empty size.
-unset -f _bigfolder_label
-choose_capture choose_bigfolder_label 2097152
-expect_rc "choose_bigfolder_label: missing helper dies" "$CLI_RC" 1
-expect_contains "choose_bigfolder_label: missing helper names it" "$CLI_OUT" "_bigfolder_label"
-expect_not_contains "choose_bigfolder_label: never emits an empty size" "$CLI_OUT" "is  "
-# shellcheck source=../../lib/bigfolder.sh
-source "${PROJ}/lib/bigfolder.sh"
+# _bigfolder_label always renders capabilities' human label: lib/sciebo.sh
+# loads lib/adapters/capabilities.sh eagerly, so the raw-bytes fallback for a caller
+# that skipped it no longer exists (see lib/sync/bigfolder.sh).
+expect_eq "bigfolder label: human label" "2Ki" "$(_bigfolder_label 2048)"
 
 # --- choose_bigfolder_gate: bounded size, policy verdicts ------------------
 # The direct calls need the derived remote prefix (load_settings does this
@@ -178,27 +118,13 @@ expect_eq "bigfolder gate: disabled setting does no size lookup" "" "$(cat "$BIG
 # so the failing fetch is actually attempted.
 BIGFOLDER_STUB_BYTES=2097152 BIGFOLDER_STUB_FAIL=1
 export BIG_FOLDER_SIZE=1Mi BIG_FOLDER_POLICY=skip
-CHOOSE_REMOTE_SIZE_CACHE=()
+REMOTE_SIZE_CACHE=()
 : >"$BIGFOLDER_CALLS"
 choose_capture choose_bigfolder_gate bigpair
 expect_rc "bigfolder gate: unreadable size proceeds" "$CLI_RC" 0
 expect_eq "bigfolder gate: unreadable size is silent" "" "$CLI_OUT"
 expect_eq "bigfolder gate: unreadable size still looked up" "1" "$(wc -l <"$BIGFOLDER_CALLS" | tr -d ' ')"
 unset BIGFOLDER_STUB_FAIL
-
-# A missing label helper (a broken/partial install the lazy require missed)
-# must abort loudly instead of printing an empty size: the gate is reached
-# through a `|| rc=$?`, so a bare `command not found` would be swallowed.
-unset -f _bigfolder_label
-BIGFOLDER_STUB_BYTES=2097152
-export BIG_FOLDER_SIZE=1Mi BIG_FOLDER_POLICY=skip
-choose_capture choose_bigfolder_gate bigpair
-expect_rc "bigfolder gate: missing label helper fails" "$CLI_RC" 1
-expect_contains "bigfolder gate: missing label helper names it" "$CLI_OUT" "_bigfolder_label"
-expect_not_contains "bigfolder gate: missing label helper never empties the size" \
-  "$CLI_OUT" "is  (limit"
-# shellcheck source=../../lib/bigfolder.sh
-source "${PROJ}/lib/bigfolder.sh"
 
 # --- remote_dir_exists: one lsd per distinct spec per process ---------------
 # The helper memoizes both positive and negative answers, so repeated checks
@@ -208,10 +134,10 @@ CHOOSE_LSD_RESULT=0
 CHOOSE_SHARED_SIZE=0
 CHOOSE_SHARED_CALLS="${TMP}/choose-shared-size.log"
 # shellcheck disable=SC2329  # invoked indirectly by choose_remote_size
-sync_remote_size_lookup() {
+remote_size_lookup() {
   printf '%s\n' "$1" >>"$CHOOSE_SHARED_CALLS"
   # shellcheck disable=SC2034  # read by choose_remote_size
-  SYNC_REMOTE_SIZE_BYTES="$CHOOSE_SHARED_SIZE"
+  REMOTE_SIZE_BYTES="$CHOOSE_SHARED_SIZE"
   return 0
 }
 # shellcheck disable=SC2329  # invoked indirectly by remote_dir_exists
@@ -223,7 +149,7 @@ rclone_cmd() {
   esac
   return "$CHOOSE_LSD_RESULT"
 }
-# shellcheck disable=SC2034  # read by remote_dir_exists in lib/rclone.sh
+# shellcheck disable=SC2034  # read by remote_dir_exists in lib/adapters/rclone.sh
 REMOTE_DIR_EXISTS_CACHE=()
 : >"$CHOOSE_LSD_LOG"
 remote_dir_exists testremote:backup/a
@@ -239,38 +165,19 @@ expect_eq "remote_dir_exists: one lsd per distinct spec" "2" \
   "$(wc -l <"$CHOOSE_LSD_LOG" | tr -d ' ')"
 CHOOSE_LSD_RESULT=0
 
-# choose_remote_size reuses sync's per-process size cache whenever that module
-# is loaded, and falls back to the bounded rclone_remote_size otherwise.
+# choose_remote_size routes through lib/sync/quota.sh's shared
+# remote_size_lookup (always loaded), scoped to the pair's remote spec.
 : >"$CHOOSE_SHARED_CALLS"
 CHOOSE_SHARED_SIZE=4242
 expect_eq "choose_remote_size: routes through the shared lookup" "4242" \
   "$(choose_remote_size routedpair)"
 expect_eq "choose_remote_size: scopes the shared lookup to the pair" \
   "testremote:backup/routedpair" "$(cat "$CHOOSE_SHARED_CALLS")"
-unset -f sync_remote_size_lookup
-BIGFOLDER_STUB_BYTES=4242
-: >"$BIGFOLDER_CALLS"
-expect_eq "choose_remote_size: falls back to the bounded lookup" "4242" \
-  "$(choose_remote_size fallbackpair)"
-expect_contains "choose_remote_size: fallback is the scoped rclone size" \
-  "$(cat "$BIGFOLDER_CALLS")" "size --json testremote:backup/fallbackpair/"
-
-# The fallback wraps the bounded lookup in a local per-run cache keyed by
-# spec, so repeated gates for the same subtree re-fetch nothing. The calls
-# deliberately avoid a command substitution so the cache survives in this
-# shell (a subshell would drop it).
-# shellcheck disable=SC2034  # read by choose_remote_size
-CHOOSE_REMOTE_SIZE_CACHE=()
-BIGFOLDER_STUB_BYTES=4242
-: >"$BIGFOLDER_CALLS"
-choose_remote_size cachedpair >/dev/null
-expect_eq "choose_remote_size: fallback fills the per-run cache" "4242" \
-  "$CHOOSE_REMOTE_SIZE_BYTES"
-choose_remote_size cachedpair >/dev/null
-expect_eq "choose_remote_size: fallback cache hit keeps the bytes" "4242" \
-  "$CHOOSE_REMOTE_SIZE_BYTES"
-expect_eq "choose_remote_size: fallback re-fetches only once per spec" "1" \
-  "$(wc -l <"$BIGFOLDER_CALLS" | tr -d ' ')"
+# Restore the real remote_size_lookup (lib/sync/quota.sh has no lazy guard,
+# so re-sourcing it only redefines its functions/state) for the rest of the
+# suite.
+# shellcheck disable=SC1091
+source "${PROJ}/lib/sync/quota.sh"
 
 # --- choose_external_gate: allow/warn/ask/skip over stubbed probes ----------
 NC_STUB_EXTERNAL_PATHS=""
@@ -557,14 +464,14 @@ _bigfolder_label() {
 
 BIGFOLDER_STUB_BYTES=2097152
 export BIG_FOLDER_SIZE=1Mi BIG_FOLDER_POLICY=skip
-CHOOSE_REMOTE_SIZE_CACHE=()
+REMOTE_SIZE_CACHE=()
 choose_remote_size forkpair >/dev/null
 expect_eq "choose_remote_size: remote_spec is forkless" "1" "$remote_spec_calls"
 choose_bigfolder_label 2097152
 expect_eq "choose_bigfolder_label: label helper is forkless" "1" "$bigfolder_label_calls"
 size_suffix_calls=0
 # shellcheck disable=SC2034  # read by choose_remote_size through the gate
-CHOOSE_REMOTE_SIZE_CACHE=()
+REMOTE_SIZE_CACHE=()
 choose_bigfolder_gate forkpair >/dev/null 2>&1 || true
 expect_eq "choose_bigfolder_gate: size parser is forkless" "1" "$size_suffix_calls"
 

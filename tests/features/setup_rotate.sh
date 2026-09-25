@@ -4,9 +4,6 @@
 # shellcheck source-path=SCRIPTDIR
 # shellcheck source=env.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
-# shellcheck source=../../lib/rclone.sh
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/rclone.sh"
 
 OLD_PASSWORD="old-password"
 NEW_PASSWORD="rotated-app-password"

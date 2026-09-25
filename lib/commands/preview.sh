@@ -1,15 +1,10 @@
 #!/bin/bash
 # preview.sh command module - fetch a Nextcloud preview thumbnail.
 #
-# Resolves the remote file id through lib/nc_api.sh and downloads the image
+# Resolves the remote file id through lib/adapters/nc_api.sh and downloads the image
 # the core preview endpoint generates for it. The bytes are written to a file
 # (or standard output) unchanged. Not every file has a preview, so a 404 is
 # reported as "previews are not available for this file".
-
-# Settings defaults (config/settings.env is the shipped layer; these keep the
-# module usable when it is sourced on its own). Never print secrets here.
-: "${PREVIEW_SIZE:=256}"
-: "${DEFAULT_PREVIEW_FILE:=./preview}"
 
 usage_preview() {
   usage_emit <<'EOF'
@@ -64,7 +59,7 @@ preview_fetch() {
     return 0
   fi
   [[ ! -L "$target" ]] || die "refusing to write preview through symlink: ${target}"
-  # shellcheck disable=SC2034  # read by http_fetch_to_file in lib/http.sh
+  # shellcheck disable=SC2034  # read by http_fetch_to_file in lib/adapters/http.sh
   HTTP_FETCH_EMPTY_MSG="the server returned an empty preview for $(printable "$sub")"
   http_fetch_to_file "$url" "$target" \
     "previews are not available for this file: $(printable "$sub") (GET ${url}: HTTP 404)"
@@ -73,11 +68,6 @@ preview_fetch() {
 cmd_preview() {
   local sub="" size="" fileid="" url="" target="" to_stdout=0
   opt_begin "output:s size:s" preview "" "$@"
-  # The file-id lookup and preview download use the http/nc_api helpers;
-  # load them after opt_begin's --help exit so `sciebo preview --help`
-  # parses none of them.
-  sciebo_require_module http xml_get
-  sciebo_require_module nc_api nc_dav_request_allow
   opt_require_sub preview SUB "${OPT_EXTRA:-}"
   sub="${POSITIONAL_ARGS[0]}"
   sub=${ strip_trailing_slashes "$sub";}
@@ -86,7 +76,7 @@ cmd_preview() {
   http_load_context
   fileid="$(nc_fileid "${REMOTE_BASE}/${sub}")"
   url="$(preview_url "$fileid" "$size")"
-  target="${OPT_output:-$DEFAULT_PREVIEW_FILE}"
+  target="${OPT_output:-${DEFAULT_PREVIEW_FILE:-./preview}}"
   if [[ "$target" == "-" ]]; then
     to_stdout=1
   fi

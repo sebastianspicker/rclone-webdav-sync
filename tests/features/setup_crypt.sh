@@ -24,10 +24,6 @@ exec "$(cat "${dir}/real-rclone")" "$@"
 STUB
 chmod +x "${CRYPT_STUB_BIN}/rclone"
 
-# shellcheck source=../../lib/rclone.sh
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/rclone.sh"
-
 export RCLONE_REMOTE=webtest KEYCHAIN=0
 export PATH="${CRYPT_STUB_BIN}:$PATH"
 

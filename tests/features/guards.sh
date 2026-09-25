@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # guards.sh - run the repository guards from the repo root and require clean
-# exits. check-bash-min enforces the Bash 5.3 floor and rejects post-Bash-5.3
-# constructs; check-drift reports command and settings drift; both must exit 0
-# and print a summary. check-drift may print WARN lines (planned commands,
+# exits. check-drift reports command and settings drift and must exit 0 and
+# print a summary; it may print WARN lines (planned commands,
 # docs/completions/man lag) without failing, which this test accepts as long as
 # the hard checks pass.
 set -uo pipefail
@@ -26,7 +25,6 @@ expect_guard() {
   fi
 }
 
-expect_guard "check-bash-min" "scripts/check-bash-min.sh"
 expect_guard "check-drift" "scripts/check-drift.sh"
 
 # DRIFT_STRICT turns a planned-command warning into a hard failure; with the
@@ -61,34 +59,12 @@ expect_rc "check-drift injection: exits 0" "$rc" 0
 expect_contains "check-drift injection: warns about the missing option" "$out" "--injected-bogus-flag"
 
 # --- command-module mapping -------------------------------------------------
-# bin/sciebo resolves each command through the static mapping in
-# _SCIEBO_COMMAND_MODULE_SPECS (default lib/commands/<command>.sh, overrides
-# for modules that define several commands), with the old content scan kept
-# only as a fallback for a stale table. Parse the specs from the script so
-# this check tracks that single source of truth, then require every COMMANDS
-# entry to map to an existing file and a sample of multi-command modules to
-# answer `help`.
-commands="$(sed -n 's/^COMMANDS="\(.*\)"$/\1/p' "$PROJ/bin/sciebo" | head -n 1)"
-overrides="$(
-  sed -n '/^_SCIEBO_COMMAND_MODULE_SPECS=(/,/^)/p' "$PROJ/bin/sciebo" |
-    sed -n "s/^[[:space:]]*'\([^|]*\)|\([^']*\)'.*$/\1|\2/p"
-)"
-declare -A module_of=()
-while IFS='|' read -r _name _file; do
-  [[ -n "$_name" ]] && module_of["$_name"]="$_file"
-done <<<"$overrides"
-
-missing=""
-for cmd in $commands; do
-  file="${module_of[$cmd]:-${cmd}.sh}"
-  [[ -f "${PROJ}/lib/commands/${file}" ]] || missing="${missing} ${cmd}->${file}"
-done
-if [[ -z "$missing" ]]; then
-  pass "module mapping: every COMMANDS entry resolves to a module file"
-else
-  fail "module mapping: every COMMANDS entry resolves to a module file" "missing:${missing}"
-fi
-
+# bin/sciebo resolves each command through lib/sciebo.sh's
+# sciebo_command_module, driven by the generated SCIEBO_COMMAND_MODULE map
+# (lib/cli/registry.sh, built by scripts/gen-cli.sh from lib/cli/sciebo.spec;
+# `scripts/gen-cli.sh --check`, part of `make lint`, already validates that
+# every COMMAND row's module file exists). This restates that behaviorally:
+# a representative set of multi-command modules must actually answer `help`.
 for cmd in list check sync pause resume mount umount mounts lock unlock locks limit unlimited; do
   out="$(bash "${PROJ}/bin/sciebo" help "$cmd" 2>&1)"
   rc=$?
@@ -96,9 +72,9 @@ for cmd in list check sync pause resume mount umount mounts lock unlock locks li
   expect_contains "module mapping: help ${cmd} prints usage" "$out" "Usage: sciebo "
 done
 
-# --- early --version short-circuit ------------------------------------------
-# --version/-V prints "sciebo VERSION" before any library is sourced, so it
-# must answer directly (and still does when combined with other globals).
+# --- --version / -V --------------------------------------------------------
+# --version/-V prints "sciebo VERSION" and exits 0, including when combined
+# with other globals.
 version_file="$(tr -d '[:space:]' <"${PROJ}/VERSION" 2>/dev/null || true)"
 expect_eq "version: --version prints the version" "sciebo ${version_file}" \
   "$(bash "${PROJ}/bin/sciebo" --version 2>&1)"
@@ -111,11 +87,10 @@ expect_eq "version: --profile=x --version prints the version" "sciebo ${version_
 bash "${PROJ}/bin/sciebo" --version=foo >/dev/null 2>&1
 expect_rc "version: --version=foo stays an unknown command" "$?" 2
 
-# --- bare-help short-circuit -------------------------------------------------
-# `help`/`-h`/`--help` with no command argument print the main usage and exit 0
-# before the eager libraries are sourced, including when global options precede
-# them. `help <command>` stays on the normal path and prints that command's own
-# usage.
+# --- bare help ---------------------------------------------------------------
+# `help`/`-h`/`--help` with no command argument print the main usage and exit
+# 0, including when global options precede them. `help <command>` prints that
+# command's own usage.
 for helpflag in help -h --help; do
   out="$(bash "${PROJ}/bin/sciebo" "$helpflag" 2>&1)"
   rc=$?

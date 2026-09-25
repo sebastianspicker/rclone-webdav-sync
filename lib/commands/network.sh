@@ -23,10 +23,6 @@ cmd_network() {
   local interface="" ssid="" metered="no" policy="" proxy_label=""
   opt_begin "json:b" network "" "$@"
   opt_guard network
-  # platform.sh is lazy; load it for the metered/connection probes below
-  # (after opt_guard's --help exit, so `sciebo network --help` parses
-  # none of it).
-  sciebo_require_module platform platform_os
   opt_json_mode
   load_settings --no-rclone
   if net_is_metered; then metered="yes"; fi

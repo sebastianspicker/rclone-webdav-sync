@@ -13,6 +13,8 @@ printf '%s\n' "$*" >>"$(dirname "$0")/calls.log"
 exit 0
 STUB
 chmod +x "${NOTIFY_BIN}/osascript"
+# Pin the backend the stub stands in for, so Linux runs use it too.
+export SCIEBO_NOTIFY_BACKEND=osascript
 rm -f "${NOTIFY_BIN}/calls.log"
 
 NOTIFICATIONS_SEEN_PATH="${STATE_DIR}/notifications-seen"

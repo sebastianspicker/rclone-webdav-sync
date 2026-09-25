@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
-# keychain.sh - keychain backends (stub `security` in a private bin dir) (lib/keychain.sh).
+# keychain.sh - keychain backends (stub `security` in a private bin dir) (lib/adapters/keychain.sh).
 # Sourced setup lives in tests/unit/common.sh; run standalone with
 # `bash tests/unit/keychain.sh`.
 set -uo pipefail
 # shellcheck source-path=SCRIPTDIR
 # shellcheck source=common.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
+
+# These cases exercise the macOS `security` backend through a stub, so they
+# pin the platform instead of probing the host (Linux would pick
+# secret-tool/pass).
+PLATFORM_OS=macos
 
 # --- keychain (stub `security` in a private bin dir) --------------------
 # `security` is resolved through PATH, so a stub only exists for the calls

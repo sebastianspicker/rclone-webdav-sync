@@ -205,7 +205,6 @@ cmd_verify() {
   opt_guard verify
   # Run dependencies load after opt_guard's --help exit, so
   # `sciebo verify --help` parses none of them.
-  sciebo_require_module manifest manifest_each
   only="${OPT_only:-}"
   VERIFY_DOWNLOAD=false
   opt_into VERIFY_DOWNLOAD download

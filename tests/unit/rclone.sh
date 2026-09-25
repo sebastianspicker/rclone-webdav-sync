@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# rclone.sh - remote_spec, config introspection, rclone discovery, remote_is_nextcloud, filter excludes (lib/rclone.sh).
+# rclone.sh - remote_spec, config introspection, rclone discovery, remote_is_nextcloud, filter excludes (lib/adapters/rclone.sh).
 # Sourced setup lives in tests/unit/common.sh; run standalone with
 # `bash tests/unit/rclone.sh`.
 set -uo pipefail
@@ -149,5 +149,23 @@ if [[ -z "$saved_conflict_upload" ]]; then unset CONFLICT_UPLOAD; else CONFLICT_
 if [[ -z "$saved_skip_hidden" ]]; then unset SKIP_HIDDEN; else SKIP_HIDDEN="$saved_skip_hidden"; fi
 unset BLACKLIST_DIR
 rm -rf "$bl_unit_dir"
+
+# remote_configured must not depend on scheduling: rclone may still be writing
+# later remotes when the configured one has already matched. The old
+# `rclone_cmd listremotes | grep -q` form failed here under pipefail (SIGPIPE),
+# reporting a configured remote as missing.
+rc_unit_saved_remote="${RCLONE_REMOTE:-}"
+rclone_cmd() {
+  printf 'alpha:\ntestremote:\n'
+  sleep 0.2
+  printf 'zulu:\n'
+}
+RCLONE_REMOTE=testremote REMOTE_CONFIGURED_CACHE=""
+if remote_configured; then rc_unit=0; else rc_unit=1; fi
+expect_eq "remote_configured: match before later remotes" "0" "$rc_unit"
+RCLONE_REMOTE=missing REMOTE_CONFIGURED_CACHE=""
+if remote_configured; then rc_unit=0; else rc_unit=1; fi
+expect_eq "remote_configured: absent remote" "1" "$rc_unit"
+RCLONE_REMOTE="$rc_unit_saved_remote" REMOTE_CONFIGURED_CACHE=""
 
 finish

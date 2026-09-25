@@ -57,8 +57,8 @@ def build_sandbox():
     obscured = sh([RCLONE, "obscure", "demo-app-password"]).stdout.decode().strip()
     sh([
         RCLONE, "config", "create", "sciebo", "webdav",
-        "url=https://demo.sciebo.de/remote.php/dav/files/demo/",
-        "vendor=nextcloud", "user=demo@uni-demo.de", "pass=" + obscured,
+        "url=https://cloud.example.org/remote.php/dav/files/alice/",
+        "vendor=nextcloud", "user=alice", "pass=" + obscured,
         "--config", doctor_conf,
     ])
 
@@ -103,7 +103,12 @@ def build_sandbox():
         os.path.join(root, "filters", "clutter.txt"),
     )
     write(os.path.join(root, "no-local.env"), "")
-    write(os.path.join(root, "no-env.env"), "")
+    # doctor warns about settings files that are group/other readable, so
+    # this placeholder (it is never read; it just has to exist) must not be
+    # world-readable itself or the doctor screenshot shows a spurious WARN.
+    no_env = os.path.join(root, "no-env.env")
+    write(no_env, "")
+    os.chmod(no_env, 0o600)
     write(os.path.join(root, "sources.conf"), (
         "# Sources to sync to sciebo.\n"
         "sync|~/Projects/website|repos/website\n"
@@ -402,7 +407,7 @@ MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospac
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "Render the README screenshots.").splitlines()[0])
     parser.add_argument("--out", default=os.path.join(REPO, "docs", "assets", "screenshots"))
     parser.add_argument("--only", nargs="*", default=None, help="render only these screenshot names")
     args = parser.parse_args()

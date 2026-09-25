@@ -29,14 +29,11 @@ cmd_pause() {
   local duration="" seconds="" until="" desc=""
   opt_begin "for:s" pause "" "$@"
   opt_guard pause
-  # lib/pause.sh is lazy; load it after opt_guard's --help exit so
-  # `sciebo pause --help` parses none of it.
-  sciebo_require_module pause pause_set
   duration="${OPT_for:-}"
   load_settings --no-rclone
   until=0
   if [[ -n "$duration" ]]; then
-    # duration_parse_or_usage (lib/duration.sh) owns the grammar and the
+    # duration_parse_or_usage (lib/base/duration.sh) owns the grammar and the
     # wording; its EXAMPLES argument carries pause's "90m, 24h, 1d" list.
     seconds=${ duration_parse_or_usage pause "" "$duration" invalid "90m, 24h, 1d";}
     until=$(($(now_epoch) + seconds))
@@ -52,11 +49,8 @@ cmd_resume() {
   local was_paused=false
   opt_begin "" resume "" "$@"
   opt_guard resume
-  # lib/pause.sh is lazy; load it before the `type pause_active` probe (and
-  # pause_clear) so an active pause is never reported as "not paused".
-  sciebo_require_module pause pause_active
   load_settings --no-rclone
-  if type pause_active >/dev/null 2>&1 && pause_active; then
+  if pause_active; then
     was_paused=true
   fi
   pause_clear

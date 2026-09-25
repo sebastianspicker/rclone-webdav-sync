@@ -103,10 +103,8 @@ rm -f "${FILTER_DIR}/server-exclude.txt"
 # --- --progress: rclone's -P only on a TTY ----------------------------------
 # Drive the shared argv builder directly. Command substitution gives it a
 # non-TTY stdout, so the result does not depend on how the suite is run.
-# rclone.sh used to arrive through hydrate.sh's file-top require; that
-# require moved into cmd_hydrate, so the direct call sources it here.
+# rclone.sh is already loaded by env.sh (via lib/sciebo.sh).
 # shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/rclone.sh"
 source "${PROJ}/lib/commands/hydrate.sh"
 hydrate_progress_args() {
   local quiet="$1"

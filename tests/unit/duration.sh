@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# duration.sh - epoch formatting and duration parsing (lib/duration.sh).
+# duration.sh - epoch formatting and duration parsing (lib/base/duration.sh).
 # Sourced setup lives in tests/unit/common.sh; run standalone with
 # `bash tests/unit/duration.sh`.
 set -uo pipefail

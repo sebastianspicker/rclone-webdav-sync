@@ -1,14 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1198" height="557" viewBox="0 0 1198 557" role="img" aria-label="bin/sciebo doctor --offline">
+<svg xmlns="http://www.w3.org/2000/svg" width="1502" height="746" viewBox="0 0 1502 746" role="img" aria-label="bin/sciebo doctor --offline">
 <title>bin/sciebo doctor --offline</title>
-<defs><clipPath id="win"><rect x="0.5" y="0.5" width="1197" height="556" rx="10"/></clipPath></defs>
+<defs><clipPath id="win"><rect x="0.5" y="0.5" width="1501" height="745" rx="10"/></clipPath></defs>
 <g clip-path="url(#win)">
-<rect x="0.5" y="0.5" width="1197" height="556" rx="10" fill="#0d1117" stroke="#30363d"/>
-<rect x="0.5" y="0.5" width="1197" height="36" fill="#161b22"/>
-<line x1="0.5" y1="36.5" x2="1197.5" y2="36.5" stroke="#30363d"/>
+<rect x="0.5" y="0.5" width="1501" height="745" rx="10" fill="#0d1117" stroke="#30363d"/>
+<rect x="0.5" y="0.5" width="1501" height="36" fill="#161b22"/>
+<line x1="0.5" y1="36.5" x2="1501.5" y2="36.5" stroke="#30363d"/>
 <circle cx="20.0" cy="18.5" r="6" fill="#ff5f56"/>
 <circle cx="40.0" cy="18.5" r="6" fill="#ffbd2e"/>
 <circle cx="60.0" cy="18.5" r="6" fill="#27c93f"/>
-<text x="599.0" y="23" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12.5" fill="#8b949e">bin/sciebo doctor --offline</text>
+<text x="751.0" y="23" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12.5" fill="#8b949e">bin/sciebo doctor --offline</text>
 <text x="22.0" y="66.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#3fb950" font-weight="600" xml:space="preserve">$ </text>
 <text x="39.4" y="66.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#f0f6fc" font-weight="600" xml:space="preserve">bin/sciebo doctor --offline</text>
 <text x="22.0" y="87.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#3fb950" xml:space="preserve">PASS</text>
@@ -26,30 +26,48 @@
 <text x="22.0" y="213.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#3fb950" xml:space="preserve">PASS</text>
 <text x="56.7" y="213.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  state dir is writable (~/sciebo-demo/state)</text>
 <text x="22.0" y="234.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#3fb950" xml:space="preserve">PASS</text>
-<text x="56.7" y="234.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  cached server capabilities: Nextcloud 30.0.5, chunked uploads enabled (max chunk 10Mi), trashbin available, checksums available</text>
+<text x="56.7" y="234.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  174038151168 bytes free on ~/sciebo-demo/state (MIN_FREE_SPACE=unset, FREE_SPACE_DOWNLOAD=unset)</text>
 <text x="22.0" y="255.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#3fb950" xml:space="preserve">PASS</text>
-<text x="56.7" y="255.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  scheduler backend: launchd</text>
+<text x="56.7" y="255.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  cached server capabilities: Nextcloud 30.0.5, chunked uploads enabled (max chunk 10Mi), trashbin available, checksums available</text>
 <text x="22.0" y="276.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#3fb950" xml:space="preserve">PASS</text>
-<text x="56.7" y="276.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  keychain backend: security</text>
+<text x="56.7" y="276.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  scheduler backend: launchd</text>
 <text x="22.0" y="297.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#3fb950" xml:space="preserve">PASS</text>
-<text x="56.7" y="297.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  notifications backend: osascript</text>
+<text x="56.7" y="297.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  keychain backend: security</text>
 <text x="22.0" y="318.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#3fb950" xml:space="preserve">PASS</text>
-<text x="56.7" y="318.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  app password stored in the rclone config (obscured)</text>
-<text x="22.0" y="339.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#d29922" xml:space="preserve">WARN</text>
-<text x="56.7" y="339.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  ~/sciebo-demo/no-env.env is group/other readable or writable (mode 644); run 'chmod 600 ~/sciebo-demo/no-env.env'</text>
+<text x="56.7" y="318.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  notifications backend: osascript</text>
+<text x="22.0" y="339.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#3fb950" xml:space="preserve">PASS</text>
+<text x="56.7" y="339.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  app password stored in the rclone config (obscured)</text>
 <text x="22.0" y="360.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#3fb950" xml:space="preserve">PASS</text>
-<text x="56.7" y="360.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  ~/.config/rclone/rclone.conf permissions are private (mode 600)</text>
+<text x="56.7" y="360.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  ~/sciebo-demo/no-env.env permissions are private (mode 600)</text>
 <text x="22.0" y="381.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#3fb950" xml:space="preserve">PASS</text>
-<text x="56.7" y="381.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  rclone filter validation passed (1 file(s))</text>
-<text x="22.0" y="402.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#3fb950" xml:space="preserve">PASS</text>
-<text x="56.7" y="402.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  manifests parsed (4 valid entries)</text>
+<text x="56.7" y="381.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  ~/.config/rclone/rclone.conf permissions are private (mode 600)</text>
+<text x="22.0" y="402.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#d29922" xml:space="preserve">WARN</text>
+<text x="56.7" y="402.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  no proxy configured and none in the environment</text>
 <text x="22.0" y="423.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#3fb950" xml:space="preserve">PASS</text>
-<text x="56.7" y="423.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  name hygiene: 16 path(s) scanned, no platform-invalid or case-colliding names</text>
+<text x="56.7" y="423.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  no client certificate, custom CA, or User-Agent configured</text>
 <text x="22.0" y="444.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#3fb950" xml:space="preserve">PASS</text>
-<text x="56.7" y="444.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  no conflict copies found in local trees</text>
-<text x="22.0" y="465.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#8b949e" xml:space="preserve">[2026-09-19 23:41:23]</text>
-<text x="204.3" y="465.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve"> offline mode: skipping network checks</text>
-<text x="22.0" y="486.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#d29922" xml:space="preserve">WARN</text>
-<text x="56.7" y="486.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  launchd agent not installed ('make schedule-install')</text>
-<text x="22.0" y="528.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">17 passed, 2 warning(s), 0 failure(s)</text>
+<text x="56.7" y="444.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  rclone filter validation passed (1 file(s))</text>
+<text x="22.0" y="465.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#3fb950" xml:space="preserve">PASS</text>
+<text x="56.7" y="465.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  manifests parsed (4 valid entries)</text>
+<text x="22.0" y="486.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#3fb950" xml:space="preserve">PASS</text>
+<text x="56.7" y="486.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  name hygiene: 16 path(s) scanned, no platform-invalid or case-colliding names</text>
+<text x="22.0" y="507.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#3fb950" xml:space="preserve">PASS</text>
+<text x="56.7" y="507.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  no conflict copies found in local trees</text>
+<text x="22.0" y="528.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#3fb950" xml:space="preserve">PASS</text>
+<text x="56.7" y="528.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  not metered: en5</text>
+<text x="22.0" y="549.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#8b949e" xml:space="preserve">[2026-09-25 05:28:43]</text>
+<text x="204.3" y="549.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve"> offline mode: skipping network checks</text>
+<text x="22.0" y="570.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#d29922" xml:space="preserve">WARN</text>
+<text x="56.7" y="570.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  launchd agent not installed ('sciebo schedule install')</text>
+<text x="22.0" y="591.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#3fb950" xml:space="preserve">PASS</text>
+<text x="56.7" y="591.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  policies: invalid names=exclude, case clashes=exclude, E2EE=exclude, external storage=ask, symlinks=skip, checksum=off, trash=off, delete guard=on (threshold 100)</text>
+<text x="22.0" y="612.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#3fb950" xml:space="preserve">PASS</text>
+<text x="56.7" y="612.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  case clashes: no case-only collisions in 4 local dir(s) (CASE_CLASH_POLICY=exclude)</text>
+<text x="22.0" y="633.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#3fb950" xml:space="preserve">PASS</text>
+<text x="56.7" y="633.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  e2ee: E2EE_POLICY=exclude (offline; encrypted folders not scanned)</text>
+<text x="22.0" y="654.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#3fb950" xml:space="preserve">PASS</text>
+<text x="56.7" y="654.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  external storage: EXTERNAL_STORAGE_POLICY=ask (offline; mounts not scanned)</text>
+<text x="22.0" y="675.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#3fb950" xml:space="preserve">PASS</text>
+<text x="56.7" y="675.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  delete guard: ASK_DELETE=1, DELETE_FILES_THRESHOLD=100 (runs stop after 100 deletion(s) unless --yes)</text>
+<text x="22.0" y="717.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">26 passed, 2 warning(s), 0 failure(s)</text>
 </g></svg>

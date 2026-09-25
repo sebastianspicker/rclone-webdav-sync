@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# integration.sh - end-to-end tests for the sciebo CLI.
+# integration.sh - end-to-end tests for the `sciebo` command.
 # Run from any directory: bash tests/integration.sh
 #
 # Isolation: the CLI runs as `bash "$PROJ/bin/sciebo" ...` (Bash
@@ -49,11 +49,14 @@ trap cleanup EXIT
 # shellcheck source-path=SCRIPTDIR
 # shellcheck source=harness.sh
 source "${INTEGRATION_DIR}/harness.sh"
-# file_mode/file_mtime/file_stamp come from the portable core helpers, which
-# probe stat(1) once for the BSD vs GNU spelling instead of hardcoding one.
+# file_mode/file_mtime/file_stamp come from lib/base/fsutil.sh's portable
+# helpers, which probe stat(1) once for the BSD vs GNU spelling instead of
+# hardcoding one; lib/sciebo.sh (the same loader bin/sciebo uses) sources
+# every ranked lib/*/*.sh file eagerly, so this suite calls any library
+# function directly too.
 # shellcheck source-path=SCRIPTDIR
-# shellcheck source=../lib/core.sh
-source "${PROJ}/lib/core.sh"
+# shellcheck source=../lib/sciebo.sh
+source "${PROJ}/lib/sciebo.sh"
 
 # Isolation: state, manifests, filters, and the remote live under $TMP.
 # TRANSFERS/RETRIES/CONTIMEOUT are the CLI's own settings (turned into
@@ -118,12 +121,14 @@ expect_cli() {
   shift 2
   capture "$@"
   expect_rc "$name" "$CLI_RC" "$want"
+  show_cli_out_on_mismatch "$CLI_RC" "$want"
 }
 expect_cli_pipe() {
   local name="$1" want="$2" input="$3"
   shift 3
   capture_pipe "$input" "$@"
   expect_rc "$name" "$CLI_RC" "$want"
+  show_cli_out_on_mismatch "$CLI_RC" "$want"
 }
 
 # The `local` remote has no root, so commands that browse relative remote
@@ -848,9 +853,7 @@ rclone config create dumpremote webdav url="http://127.0.0.1:9/remote.php/dav/fi
 # shellcheck disable=SC2016  # single quotes are intentional inside bash -c
 got="$(
   env PROJ_PATH="$PROJ" bash -c '
-    source "${PROJ_PATH}/lib/core.sh"
-    source "${PROJ_PATH}/lib/rclone.sh"
-    source "${PROJ_PATH}/lib/settings.sh"
+    source "${PROJ_PATH}/lib/sciebo.sh"
     load_settings --no-rclone
     dump="$(remote_config_dump)"
     config_dump_value dumpremote pass "$dump"
@@ -859,22 +862,49 @@ got="$(
 expect_eq "config dump: obscured pass extracted" "$OBSCURED" "$got"
 
 # --- capabilities: OCS probe plumbing against a stub curl ---------------
+# The stub honors -D/-o/-w like http_curl's real invocation (see the
+# NC_STUB_BIN below), since capabilities_fetch_raw now always goes through
+# http_curl (lib/adapters/http.sh, always loaded).
 CAPS_STUB_BIN="${TMP}/capabilities-bin"
 mkdir -p "$CAPS_STUB_BIN"
 cat >"$CAPS_STUB_BIN/curl" <<'STUB'
 #!/bin/bash
-printf '%s\n' "$*" >>"$(dirname "$0")/curl.log"
-for arg in "$@"; do
-  case "$arg" in
-    *cloud/capabilities*)
-      cat <<'JSON'
-{"ocs":{"meta":{"status":"ok","statuscode":200,"message":"OK"},"data":{"version":{"major":31,"minor":0,"micro":2,"string":"31.0.2","edition":"","extendedSupport":false},"capabilities":{"core":{"pollinterval":60,"webdav-root":"remote.php\/webdav"},"files":{"bigfilechunking":true,"undelete":true,"chunked_upload":{"max_size":104857600,"max_parallel":3}},"dav":{"chunking":"1.0"},"checksums":{"supportedTypes":["SHA256"]}}}}}
-JSON
-      exit 0
+dir="$(cd "$(dirname "$0")" && pwd)"
+printf '%s\n' "$*" >>"${dir}/curl.log"
+url="" headers_file="" body_file="" write_format=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -D) headers_file="$2"; shift 2 ;;
+    -o) body_file="$2"; shift 2 ;;
+    -w) write_format="$2"; shift 2 ;;
+    -u | --netrc-file | -X | --max-time | --retry | --data-binary) shift 2 ;;
+    -*) shift ;;
+    *)
+      url="$1"
+      shift
       ;;
   esac
 done
-exit 1
+code=404
+body=""
+case "$url" in
+  *cloud/capabilities*)
+    code=200
+    body='{"ocs":{"meta":{"status":"ok","statuscode":200,"message":"OK"},"data":{"version":{"major":31,"minor":0,"micro":2,"string":"31.0.2","edition":"","extendedSupport":false},"capabilities":{"core":{"pollinterval":60,"webdav-root":"remote.php\/webdav"},"files":{"bigfilechunking":true,"undelete":true,"chunked_upload":{"max_size":104857600,"max_parallel":3}},"dav":{"chunking":"1.0"},"checksums":{"supportedTypes":["SHA256"]}}}}}'
+    ;;
+esac
+if [[ -n "$body_file" && "$body_file" != "-" ]]; then
+  printf '%s' "$body" >"$body_file"
+else
+  printf '%s' "$body"
+fi
+if [[ -n "$headers_file" ]]; then
+  printf 'HTTP/1.1 %s Stub\r\n' "$code" >"$headers_file"
+fi
+if [[ -n "$write_format" ]]; then
+  printf '%s' "$write_format" | sed "s/%{http_code}/${code}/g"
+fi
+exit 0
 STUB
 chmod +x "$CAPS_STUB_BIN/curl"
 CAPS_CACHE="${TMP}/caps-probe/capabilities.env"
@@ -886,10 +916,11 @@ caps_probe_out="$(
     CAPABILITIES_CACHE="$CAPS_CACHE" CAPABILITIES_JSON="$CAPS_JSON" \
     bash -c '
       set -uo pipefail
-      source "$1/lib/core.sh"
-      source "$1/lib/rclone.sh"
-      source "$1/lib/settings.sh"
-      source "$1/lib/capabilities.sh"
+      # capabilities_fetch_raw always uses http_curl (lib/adapters/http.sh,
+      # always loaded by lib/sciebo.sh); the standalone plain-curl fallback
+      # was removed once http.sh stopped being optional, so this probes the
+      # normal path.
+      source "$1/lib/sciebo.sh"
       load_settings
       capabilities_probe --force || exit 1
       capabilities_show
@@ -1078,6 +1109,16 @@ dump="$(rclone --config "$RCLONE_CONFIG" config dump 2>/dev/null)"
 expect_contains "setup: url normalized" "$dump" "http://127.0.0.1:9/remote.php/dav/files/alice@example.org/"
 expect_not_contains "setup: plaintext password not stored" "$dump" "integration-secret"
 
+# --- setup: a plain Nextcloud username (no '@') is accepted, not rejected --
+# shellcheck disable=SC2030,SC2031  # per-run overrides live in a subshell
+SCIEBO_URL="http://127.0.0.1:9" SCIEBO_USER="alice" \
+  SCIEBO_APP_PASSWORD="integration-secret" RCLONE_REMOTE=setupplain \
+  expect_cli "setup: plain username fails only on the dead endpoint" 1 run_cli setup
+expect_not_contains "setup: plain username not rejected as malformed" "$CLI_OUT" "does not look like an ID"
+plain_dump="$(rclone --config "$RCLONE_CONFIG" config dump 2>/dev/null)"
+expect_contains "setup: plain username normalized and stored" "$plain_dump" \
+  "http://127.0.0.1:9/remote.php/dav/files/alice/"
+
 # --- setup --login: Login Flow v2 against stub curl/open -----------------
 # The stub answers the init POST with escaped-slash JSON, then 404 on the
 # first poll and 200 with the credentials on the second; the state counter
@@ -1192,8 +1233,7 @@ env PROJ_PATH="$PROJ" PATH="$KEYCHAIN_STUB_BIN:$PATH" KEYCHAIN=1 \
   SCIEBO_KEYCHAIN_BACKEND=security \
   RCLONE_REMOTE=webtest KEYCHAIN_SERVICE=rclone-sciebo bash -c '
     set -uo pipefail
-    source "$1/lib/core.sh"
-    source "$1/lib/keychain.sh"
+    source "$1/lib/sciebo.sh"
     keychain_store_plain "obscured-round-trip-value"
   ' keychain-store "$PROJ" || keychain_store_rc=$?
 expect_rc "keychain round-trip: store rc 0" "$keychain_store_rc" 0
@@ -1204,8 +1244,7 @@ keychain_lookup_out="$(
     SCIEBO_KEYCHAIN_BACKEND=security \
     RCLONE_REMOTE=webtest KEYCHAIN_SERVICE=rclone-sciebo bash -c '
       set -uo pipefail
-      source "$1/lib/core.sh"
-      source "$1/lib/keychain.sh"
+      source "$1/lib/sciebo.sh"
       keychain_lookup_plain
     ' keychain-lookup "$PROJ"
 )" || keychain_lookup_rc=$?

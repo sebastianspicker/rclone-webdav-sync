@@ -4,8 +4,6 @@
 # shellcheck source-path=SCRIPTDIR
 # shellcheck source=env.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
-# shellcheck source=../../lib/platform.sh
-source "${PROJ}/lib/platform.sh"
 
 STUB="${TMP}/net-stub"
 mkdir -p "$STUB"

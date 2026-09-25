@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# notify.sh - notification stubs (lib/notify.sh).
+# notify.sh - notification stubs (lib/adapters/notify.sh).
 # Sourced setup lives in tests/unit/common.sh; run standalone with
 # `bash tests/unit/notify.sh`.
 set -uo pipefail
@@ -24,6 +24,8 @@ dir="$(cd "$(dirname "$0")" && pwd)"
 exit 0
 STUB
 chmod +x "${NOTIFY_BIN}/osascript"
+# These cases exercise the macOS backend through the stub on any host.
+PLATFORM_OS=macos
 saved_path="$PATH"
 saved_notify="${NOTIFY:-0}"
 PATH="${NOTIFY_BIN}:$PATH"

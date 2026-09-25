@@ -103,7 +103,7 @@ expect_contains "notifications: id" "$(cat "$BODY")" "<notification_id>11</notif
 expect_contains "notifications: app" "$(cat "$BODY")" "<app>files_sharing</app>"
 
 # The whole CLI against the faknc remote that fake_server_start created:
-# rclone config introspection, lib/http.sh's netrc auth, and XML parsing.
+# rclone config introspection, lib/adapters/http.sh's netrc auth, and XML parsing.
 out="$(fake_cli notifications 2>&1)"
 expect_rc "fake_cli: notifications rc 0" "$?" 0
 expect_contains "fake_cli: subject" "$out" "Alice shared report.txt with you"

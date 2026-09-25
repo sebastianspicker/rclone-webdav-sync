@@ -18,7 +18,7 @@ TESTS_DIR="$(cd "${FEATURE_ENV_DIR}/.." && pwd)"
 
 # The feature tree is created before any library is sourced and TMPDIR is
 # redirected into it, so every child `mktemp` (probe subprocesses, and
-# lib/policy.sh's scan cache) lands under $TMP and is removed in one shot.
+# lib/sync/case_clash.sh's scan cache) lands under $TMP and is removed in one shot.
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/sciebo-feature.XXXXXX")"
 export TMPDIR="$TMP"
 # shellcheck disable=SC2329  # invoked through the EXIT trap
@@ -35,12 +35,12 @@ trap feature_cleanup EXIT
 # shellcheck source-path=SCRIPTDIR
 # shellcheck source=../harness.sh
 source "${TESTS_DIR}/harness.sh"
-# Feature scripts may call the pure helpers and the HTTP/XML API directly;
-# bin/sciebo is what shellcheck follows for these libraries.
+# Feature scripts may call any library function directly; lib/sciebo.sh
+# sources every lib/*.sh eagerly (the same loader bin/sciebo uses), so this
+# one source gives every feature script the whole library surface without
+# each script listing its own dependencies.
 # shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/core.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/http.sh"
+source "${PROJ}/lib/sciebo.sh"
 
 command -v rclone >/dev/null 2>&1 || {
   echo "SKIP: rclone not installed"
@@ -85,6 +85,7 @@ expect_cli() {
   shift 2
   capture "$@"
   expect_rc "$name" "$CLI_RC" "$want"
+  show_cli_out_on_mismatch "$CLI_RC" "$want"
 }
 # shellcheck disable=SC2329  # invoked indirectly via capture/expect_cli
 run_cli() { (cd "$TMP" && bash "${PROJ}/bin/sciebo" "$@"); }
@@ -92,7 +93,7 @@ run_cli() { (cd "$TMP" && bash "${PROJ}/bin/sciebo" "$@"); }
 # --- stub curl --------------------------------------------------------------
 # Routes: METHOD<TAB>URL_GLOB<TAB>BODY_FILE<TAB>CODE<TAB>HEADERS_FILE (the
 # last two optional). First match wins; METHOD may be `*`. The stub emulates
-# the curl flags lib/http.sh uses (-D/-o/-w/-X/-H/--data*) and appends every
+# the curl flags lib/adapters/http.sh uses (-D/-o/-w/-X/-H/--data*) and appends every
 # call to calls.log with method, url, and request-body bytes in data.log.
 STUB_BIN="${TMP}/stub-bin"
 STUB_ROUTES="${TMP}/stub-routes.tsv"

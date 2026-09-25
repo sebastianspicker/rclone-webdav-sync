@@ -5,12 +5,6 @@
 # shellcheck source-path=SCRIPTDIR
 # shellcheck source=env.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
-# shellcheck disable=SC1090,SC1091  # paths are documented and overridable
-source "${PROJ}/lib/platform.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/keychain.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/notify.sh"
 # shellcheck disable=SC1090,SC1091
 source "${PROJ}/lib/commands/schedule.sh"
 
@@ -47,9 +41,7 @@ rm -f "${NOTIFY_BIN}/calls.log"
 # shellcheck disable=SC2016  # the -c program expands "$1" itself
 env PATH="${NOTIFY_BIN}:$PATH" SCIEBO_NOTIFY_BACKEND=notify-send NOTIFY=1 \
   bash -c '
-    source "$1/lib/core.sh"
-    source "$1/lib/platform.sh"
-    source "$1/lib/notify.sh"
+    source "$1/lib/sciebo.sh"
     notify_send "title here" "message here"
   ' notify-probe "$PROJ" >/dev/null
 expect_contains "notify-send: app name and argv" "$(cat "${NOTIFY_BIN}/calls.log" 2>/dev/null)" \
@@ -109,8 +101,7 @@ kc_probe() {
     KEYCHAIN_CACHE="" KEYCHAIN_CACHE_SET=0 \
     bash -c '
       set -uo pipefail
-      source "$1/lib/core.sh"
-      source "$1/lib/keychain.sh"
+      source "$1/lib/sciebo.sh"
       case "$2" in
         store) keychain_store_plain "$3" ;;
         lookup) keychain_lookup_plain ;;
@@ -125,10 +116,10 @@ rm -f "${KC_BIN}/secret" "${KC_BIN}/stdin.log"
 : >"${KC_BIN}/args.log"
 out="$(kc_probe secret-tool store "$secret")"
 expect_contains "keychain secret-tool: store rc 0" "$out" "rc=0"
-args="$(cat "${KC_BIN}/args.log")"
-expect_contains "keychain secret-tool: label and attributes" "$args" \
+kc_args="$(cat "${KC_BIN}/args.log")"
+expect_contains "keychain secret-tool: label and attributes" "$kc_args" \
   $'store\n--label\nsciebo-platform-test (platform-acct#plain)\nservice\nsciebo-platform-test\naccount\nplatform-acct#plain'
-expect_not_contains "keychain secret-tool: secret never in argv" "$args" "$secret"
+expect_not_contains "keychain secret-tool: secret never in argv" "$kc_args" "$secret"
 expect_eq "keychain secret-tool: secret on stdin" "$secret" "$(cat "${KC_BIN}/stdin.log")"
 
 : >"${KC_BIN}/args.log"
@@ -149,10 +140,10 @@ rm -f "${KC_BIN}/secret" "${KC_BIN}/stdin.log"
 : >"${KC_BIN}/args.log"
 out="$(kc_probe pass store "$secret")"
 expect_contains "keychain pass: store rc 0" "$out" "rc=0"
-args="$(cat "${KC_BIN}/args.log")"
-expect_contains "keychain pass: store under rclone-sciebo/<service>/<account>" "$args" \
+kc_args="$(cat "${KC_BIN}/args.log")"
+expect_contains "keychain pass: store under rclone-sciebo/<service>/<account>" "$kc_args" \
   $'insert\n-m\n-f\nrclone-sciebo/sciebo-platform-test/platform-acct#plain'
-expect_not_contains "keychain pass: secret never in argv" "$args" "$secret"
+expect_not_contains "keychain pass: secret never in argv" "$kc_args" "$secret"
 expect_eq "keychain pass: secret on stdin" "$secret" "$(cat "${KC_BIN}/stdin.log")"
 
 : >"${KC_BIN}/args.log"

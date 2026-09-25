@@ -4,9 +4,6 @@
 # filters, and state under state/profiles/<name>/. The default profile is
 # the project-wide layout and cannot be added or removed.
 
-ACCOUNT_PROFILES_DIR="${PROFILES_DIR}"
-ACCOUNT_STATE_DIR="${PROFILES_STATE_DIR}"
-
 usage_account() {
   usage_emit <<'EOF'
 Usage: sciebo account <list|add|import|remove|use|info|avatar|status> [options]
@@ -67,7 +64,7 @@ EOF
 }
 
 # account_dir NAME - print the config directory of a named profile.
-account_dir() { printf '%s/%s' "$ACCOUNT_PROFILES_DIR" "$1"; }
+account_dir() { printf '%s/%s' "$PROFILES_DIR" "$1"; }
 
 # account_manifest_paths PROFILE - point the manifest globals at PROFILE's
 # files ("default" is the project-wide layout). The caller must declare
@@ -173,8 +170,8 @@ account_list() {
   p_service=${ printable "${service:-?}";}
   printf '%-16s %-14s %-14s %-7s %s\n' "default" "$p_remote" \
     "$p_base" "$count" "$p_service"
-  [[ -d "$ACCOUNT_PROFILES_DIR" ]] || return 0
-  for dir in "$ACCOUNT_PROFILES_DIR"/*/; do
+  [[ -d "$PROFILES_DIR" ]] || return 0
+  for dir in "$PROFILES_DIR"/*/; do
     [[ -d "$dir" ]] || continue
     name="${dir%/}"
     name="${name##*/}"
@@ -188,7 +185,7 @@ account_list() {
     base="${values%%$'\t'*}"
     service="${values#*$'\t'}"
     count="$(account_source_count "$dir")"
-    if [[ -d "${ACCOUNT_STATE_DIR}/${name}" ]]; then state="ready"; else state="no state yet"; fi
+    if [[ -d "${PROFILES_STATE_DIR}/${name}" ]]; then state="ready"; else state="no state yet"; fi
     p_name=${ printable "$name";}
     p_remote=${ printable "${remote:-?}";}
     p_base=${ printable "${base:-?}";}
@@ -207,7 +204,7 @@ account_list() {
 account_init_profile() {
   local name="$1" remote="${2:-}" base="${3:-}" dir="" state_dir="" f=""
   dir="$(account_dir "$name")"
-  state_dir="${ACCOUNT_STATE_DIR}/${name}"
+  state_dir="${PROFILES_STATE_DIR}/${name}"
   mkdir -p "${dir}/filters" "$state_dir" || return 1
   for f in sources.conf folders.conf roots.conf; do
     [[ -e "${dir}/${f}" ]] || : >"${dir}/${f}"
@@ -269,7 +266,7 @@ account_remove() {
   validate_profile_name "$name"
   account_exists "$name" || die "no such profile: $(printable "$name")"
   dir="$(account_dir "$name")"
-  state_dir="${ACCOUNT_STATE_DIR}/${name}"
+  state_dir="${PROFILES_STATE_DIR}/${name}"
   # Soft confirmation gate, previously account_confirm_soft: --yes skips
   # the question, a non-interactive run without --yes fails the usage with
   # the same message, and a declined prompt logs "aborted, nothing changed"
@@ -318,12 +315,12 @@ IMPORT_ACCOUNT_INDICES=""
 IMPORT_ACCOUNT_URL=()
 IMPORT_ACCOUNT_USER=()
 IMPORT_FOLDERS=()
-declare -A IMPORT_ACCOUNT_INDICES_SEEN=()
-declare -A IMPORT_FOLDER_INDICES_SEEN=()
+declare -gA IMPORT_ACCOUNT_INDICES_SEEN=()
+declare -gA IMPORT_FOLDER_INDICES_SEEN=()
 # The [General] section, keyed by normalized key (last assignment wins),
 # filled once by account_import_collect so account_import_general is O(1)
 # instead of rescanning IMPORT_ENTRIES per key.
-declare -A IMPORT_GENERAL=()
+declare -gA IMPORT_GENERAL=()
 IMPORT_TARGET_NAMES=()
 IMPORT_PLAN_NAMES=""
 IMPORT_SELECTED=""
@@ -1486,8 +1483,6 @@ account_status() {
   local json=0 configured="no" reach="FAIL" backend="" age="" stamp=""
   opt_begin "json:b" account "status: " "$@"
   opt_guard account "status: "
-  # keychain.sh is lazy; load it for keychain_backend below.
-  sciebo_require_module keychain keychain_backend
   opt_into json json 1
   load_settings
   if remote_configured; then configured="yes"; fi
@@ -1533,11 +1528,6 @@ cmd_account() {
   # consumed sub-level --help): the server-facing helpers use
   # http/nc_api/capabilities, the confirmations prompt through ui's soft
   # and tty gates, and the import path walks the manifest.
-  sciebo_require_module http xml_get
-  sciebo_require_module nc_api nc_dav_request_allow
-  sciebo_require_module capabilities capabilities_load
-  sciebo_require_module ui ui_confirm_mutation_soft
-  sciebo_require_module manifest manifest_each
   case "$sub" in
     list)
       [[ $# -eq 0 ]] || usage_error account "unknown option: $1"

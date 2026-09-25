@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# core.sh - pure string/path helpers, safe_source, curl/proxy classifiers, JSON/XML escaping, opt_parse and friends (lib/core.sh).
+# core.sh - pure string/path helpers, safe_source, curl/proxy classifiers, JSON/XML escaping, opt_parse and friends (lib/base/core.sh).
 # Sourced setup lives in tests/unit/common.sh; run standalone with
 # `bash tests/unit/core.sh`.
 set -uo pipefail
@@ -391,23 +391,46 @@ expect_eq "sanitize_stream: drops a stray continuation 80" "ab" \
 # A multi-hundred-KB single line must stay linear: the old byte-by-byte
 # concatenation hung here. The line carries a TAB, an ESC, and a valid
 # two-byte character, so the fast path and the UTF-8 rules are both used.
+# Linearity is checked as a ratio against a 64 KB line timed in the same
+# run: 16x the input takes ~16x the time when linear and ~256x when
+# quadratic, so the bound is 128x. A busy machine slows both samples alike
+# instead of failing a fixed deadline.
+sanitize_big_line() {
+  {
+    head -c "$1" /dev/zero | tr '\0' 'a'
+    printf '\t\033\303\274\n'
+  } >"$2"
+}
+sanitize_elapsed_us() {
+  local start="$EPOCHREALTIME"
+  sanitize_stream <"$1" >"$2"
+  printf "%s" "$((${EPOCHREALTIME/./} - ${start/./}))"
+}
 big_line="${TMP}/sanitize-big-line"
 big_out="${TMP}/sanitize-big-out"
-{
-  head -c 1048576 /dev/zero | tr '\0' 'a'
-  printf '\t\033ü'
-} >"$big_line"
-printf '\n' >>"$big_line"
-big_start="$EPOCHREALTIME"
-sanitize_stream <"$big_line" >"$big_out"
-big_end="$EPOCHREALTIME"
-big_elapsed_ms=$(((${big_end/./} - ${big_start/./}) / 1000))
+small_line="${TMP}/sanitize-small-line"
+small_out="${TMP}/sanitize-small-out"
+sanitize_big_line 65536 "$small_line"
+sanitize_big_line 1048576 "$big_line"
+small_us="$(sanitize_elapsed_us "$small_line" "$small_out")"
+big_us="$(sanitize_elapsed_us "$big_line" "$big_out")"
 expect_eq "sanitize_stream: large line output keeps TAB and valid UTF-8" \
   "1048580" "$(wc -c <"$big_out" | tr -d ' ')"
-if [[ "$big_elapsed_ms" -lt 2000 ]]; then
-  pass "sanitize_stream: 1MB single line completes quickly (${big_elapsed_ms}ms)"
+((small_us > 0)) || small_us=1
+big_ratio=$((big_us / small_us))
+if ((big_ratio < 128)); then
+  pass "sanitize_stream: 1MB line scales linearly (${big_ratio}x the 64KB time)"
 else
-  fail "sanitize_stream: 1MB single line completes quickly" "${big_elapsed_ms}ms"
+  fail "sanitize_stream: 1MB line scales linearly" "${big_ratio}x the 64KB time (${big_us}us vs ${small_us}us)"
+fi
+
+# The awk preludes must parse in any locale: gawk compiles regex literals at
+# parse time and, in a UTF-8 locale, rejects byte ranges such as \302[...].
+# Runs wherever gawk exists (GitHub's Linux runners); skipped otherwise.
+if command -v gawk >/dev/null 2>&1; then
+  gawk_out="$(printf 'a\001<b>x</b>\n' | LC_ALL=C.UTF-8 gawk "${_AWK_XML_LIB}"'{ print ctrl_strip($0, 1) }' 2>&1)"
+  expect_eq "awk preludes: parse under gawk in a UTF-8 locale" "0" "$?"
+  expect_not_contains "awk preludes: no collation error under gawk" "$gawk_out" "collation"
 fi
 
 # --- url_redact_userinfo -------------------------------------------------
@@ -431,6 +454,54 @@ expect_eq "file_mtime: missing file is empty" "" "$(file_mtime "${TMP}/no-such-f
 chmod 600 "$FM_TIME"
 expect_eq "file_mode: octal mode" "600" "$(file_mode "$FM_TIME")"
 expect_eq "file_mode: missing file is empty" "" "$(file_mode "${TMP}/no-such-file")"
+
+# _stat_flavor must not cache a guess after a failed probe: a transient stat
+# failure (e.g. a fork failing under load) used to cache "gnu" on macOS for
+# the whole process, after which safe_source refused safe settings files.
+stat_saved_flavor="$_SCIEBO_STAT_FLAVOR"
+_SCIEBO_STAT_FLAVOR=""
+# shellcheck disable=SC2329  # stub called by _stat_flavor
+stat() { return 1; }
+_stat_flavor >/dev/null
+expect_eq "_stat_flavor: failed probes rc 1" "1" "$?"
+expect_eq "_stat_flavor: failed probes cache nothing" "" "$_SCIEBO_STAT_FLAVOR"
+unset -f stat
+stat_expected_flavor="gnu"
+[[ "$(uname -s)" != "Darwin" && "$(uname -s)" != *BSD ]] || stat_expected_flavor="bsd"
+expect_eq "_stat_flavor: next call detects the real flavor" "$stat_expected_flavor" "$(_stat_flavor)"
+_SCIEBO_STAT_FLAVOR=""
+stat() { return 1; }
+_stat_flavor >/dev/null || true
+unset -f stat
+stat_safe_file="${TMP}/stat-flavor-safe.env"
+printf 'STAT_FLAVOR_PROBE=ok\n' >"$stat_safe_file"
+chmod 600 "$stat_safe_file"
+STAT_FLAVOR_PROBE=""
+safe_source "$stat_safe_file"
+expect_eq "safe_source: works after a transient stat failure" "ok" "$STAT_FLAVOR_PROBE"
+_SCIEBO_STAT_FLAVOR="$stat_saved_flavor"
+
+# safe_source revalidates on a fresh descriptor when one check fails
+# transiently, and still refuses when every check fails.
+eval "saved_fd_looks_safe() $(declare -f _fd_looks_safe | tail -n +2)"
+fd_check_calls=0
+# shellcheck disable=SC2329  # stub called by _safe_source_open_checked
+_fd_looks_safe() {
+  fd_check_calls=$((fd_check_calls + 1))
+  [[ "$fd_check_calls" -gt 1 ]] && saved_fd_looks_safe "$@"
+}
+STAT_FLAVOR_PROBE=""
+safe_source "$stat_safe_file"
+expect_eq "safe_source: one transient check failure is retried" "ok" "$STAT_FLAVOR_PROBE"
+expect_eq "safe_source: retried exactly once" "2" "$fd_check_calls"
+# shellcheck disable=SC2329  # stub called by _safe_source_open_checked
+_fd_looks_safe() { return 1; }
+STAT_FLAVOR_PROBE=""
+safe_source "$stat_safe_file" 2>/dev/null
+expect_eq "safe_source: persistent check failure rc 1" "1" "$?"
+expect_eq "safe_source: persistent failure sources nothing" "" "$STAT_FLAVOR_PROBE"
+eval "_fd_looks_safe() $(declare -f saved_fd_looks_safe | tail -n +2)"
+unset -f saved_fd_looks_safe
 SEEN_FILE="${TMP}/seen-probe"
 printf '41\n42\n' >"$SEEN_FILE"
 expect_ok "seen_contains: finds a recorded id" seen_contains "$SEEN_FILE" 41

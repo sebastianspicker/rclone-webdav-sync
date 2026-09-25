@@ -47,6 +47,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
-            "dist/rclone-sciebo-$(cat VERSION).tar.gz" \
+            "dist/rclone-webdav-sync-$(cat VERSION).tar.gz" \
             --title "sciebo $(cat VERSION)" \
             --notes-file "$RUNNER_TEMP/notes.md"

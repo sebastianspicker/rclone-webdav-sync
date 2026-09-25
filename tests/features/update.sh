@@ -6,9 +6,6 @@
 # shellcheck source=env.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
 # cmd_update is called in-process with PROJECT_DIR overridden, so the JSON
-# output helpers bin/sciebo normally sources have to be loaded here too.
-# shellcheck source=../../lib/output.sh
-source "${PROJ}/lib/output.sh"
 # shellcheck source=../../lib/commands/update.sh
 source "${PROJ}/lib/commands/update.sh"
 

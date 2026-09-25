@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# capabilities.sh - capability detection and chunk sizing (lib/capabilities.sh).
+# capabilities.sh - capability detection and chunk sizing (lib/adapters/capabilities.sh).
 # Sourced setup lives in tests/unit/common.sh; run standalone with
 # `bash tests/unit/capabilities.sh`.
 set -uo pipefail

@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
 # blacklist.sh - failure-blacklist records, `sciebo retry`, and BACKUP_DIR.
-# The unit section sources lib/blacklist.sh directly; the end-to-end runs use
-# a stub rclone that fails with rclone's plain ERROR log format, and the
-# BACKUP_DIR check pulls with the real local testremote.
+# The unit section calls lib/state/blacklist.sh (loaded by env.sh) directly; the
+# end-to-end runs use a stub rclone that fails with rclone's plain ERROR log
+# format, and the BACKUP_DIR check pulls with the real local testremote.
 # shellcheck source-path=SCRIPTDIR
 # shellcheck source=env.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
 
 export BLACKLIST_DIR="${TMP}/blacklist" BLACKLIST_ENABLED=1 BLACKLIST_MAX_FAILS=3
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/blacklist.sh"
 
 # blacklist_cat NAME - print NAME's raw TSV records (the record file is a
 # plain text store).

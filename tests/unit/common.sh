@@ -14,47 +14,8 @@ LIB_DIR="${PROJ_DIR}/lib"
 # shellcheck source=../harness.sh
 source "${UNIT_DIR}/../harness.sh"
 # shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/core.sh
-source "${LIB_DIR}/core.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/output.sh
-source "${LIB_DIR}/output.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/rclone.sh
-source "${LIB_DIR}/rclone.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/http.sh
-source "${LIB_DIR}/http.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/keychain.sh
-source "${LIB_DIR}/keychain.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/capabilities.sh
-source "${LIB_DIR}/capabilities.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/settings.sh
-source "${LIB_DIR}/settings.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/lock.sh
-source "${LIB_DIR}/lock.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/manifest.sh
-source "${LIB_DIR}/manifest.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/blacklist.sh
-source "${LIB_DIR}/blacklist.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/ui.sh
-source "${LIB_DIR}/ui.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/pause.sh
-source "${LIB_DIR}/pause.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/runstate.sh
-source "${LIB_DIR}/runstate.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/notify.sh
-source "${LIB_DIR}/notify.sh"
+# shellcheck source=../../lib/sciebo.sh
+source "${LIB_DIR}/sciebo.sh"
 # shellcheck source-path=SCRIPTDIR
 # shellcheck source=../../lib/commands/sync.sh
 source "${LIB_DIR}/commands/sync.sh"
@@ -129,8 +90,7 @@ settings_probe() {
   # shellcheck disable=SC2016  # the -c program expands "$1"/"$2" itself
   env "$@" bash -c '
     set -uo pipefail
-    source "$1/lib/core.sh"
-    source "$1/lib/settings.sh"
+    source "$1/lib/sciebo.sh"
     load_settings --no-rclone
     printf "%s" "${!2}"
   ' sciebo-unit-probe "$PROJ_DIR" "$var" 2>&1
@@ -158,8 +118,7 @@ write_filter_probe() {
   # shellcheck disable=SC2016  # the -c program expands "$1" itself
   env FILTER_DIR="$FILTER_DIR" bash -c '
     set -uo pipefail
-    source "$1/lib/core.sh"
-    source "$1/lib/manifest.sh"
+    source "$1/lib/sciebo.sh"
     manifest_write_pair_filter "$2" "$3" "${@:4}"
   ' probe "$PROJ_DIR" "$name" "$sub" "$@" 2>&1
 }
@@ -171,9 +130,7 @@ lock_probe() {
   env STATE_DIR="$STATE_DIR" LOG_DIR="$LOG_DIR" LOCK_DIR="$LOCK_DIR" BISYNC_DIR="$BISYNC_DIR" \
     bash -c '
       set -uo pipefail
-      source "$1/lib/core.sh"
-      source "$1/lib/settings.sh"
-      source "$1/lib/lock.sh"
+      source "$1/lib/sciebo.sh"
       acquire_lock
     ' lock-probe "$PROJ_DIR" 2>&1
 }

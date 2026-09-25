@@ -195,19 +195,6 @@ export BIG_FOLDER_SIZE=1M
 export STATE_DIR="${TMP}/bigfolder-state"
 export RCLONE_BIN="${BF_BIN}/rclone"
 export REMOTE_PREFIX=testremote:backup
-# The libraries bigfolder_notify relies on (bin/sciebo already loaded the
-# rest; this suite runs the functions directly, without the entrypoint).
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/manifest.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/rclone.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/capabilities.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/notify.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/bigfolder.sh"
-
 capture bigfolder_notify bigroot bigroot
 expect_rc "bigfolder: first scan rc 0" "$CLI_RC" 0
 expect_contains "bigfolder: large folder warned" "$CLI_OUT" "big folder: bigroot/videos is 5Mi"

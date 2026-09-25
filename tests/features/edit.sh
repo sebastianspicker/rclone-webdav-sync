@@ -173,7 +173,7 @@ old_ifs="$IFS"
 IFS=:
 for dir in $PATH; do
   [ -d "$dir" ] || continue
-  find "$dir" -maxdepth 1 -type f -perm -u+x ! -name open ! -name xdg-open \
+  find "$dir" -maxdepth 1 \( -type f -o -type l \) -perm -u+x ! -name open ! -name xdg-open \
     -exec sh -c 'dest="$1"; shift; for f in "$@"; do ln -sf "$f" "$dest/"; done' sh "$NO_OPENER_BIN" {} + 2>/dev/null
 done
 IFS="$old_ifs"

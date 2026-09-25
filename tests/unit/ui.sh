@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ui.sh - selection parsing and confirmation prompts (lib/ui.sh).
+# ui.sh - selection parsing and confirmation prompts (lib/base/ui.sh).
 # Sourced setup lives in tests/unit/common.sh; run standalone with
 # `bash tests/unit/ui.sh`.
 set -uo pipefail

@@ -4,9 +4,6 @@
 # shellcheck source-path=SCRIPTDIR
 # shellcheck source=env.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../lib/runstate.sh
-source "${PROJ}/lib/runstate.sh"
 
 # Fixtures: manifest sources with run records, scanned normal logs, plain
 # and timestamped dry-run logs, a log whose recorded path vanished, a

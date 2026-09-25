@@ -238,7 +238,7 @@ schedule_render_template() {
   local line label project rclone_dir log_dir command schedule watch_paths run_at_load bash_path
   label="$(schedule_xml_escape "${1:-$LAUNCHD_LABEL}")" project="$(schedule_xml_escape "$PROJECT_DIR")"
   rclone_dir="$(schedule_xml_escape "$SCHEDULE_RCLONE_DIR")"
-  # shellcheck disable=SC2153  # LOG_DIR is derived by lib/settings.sh
+  # shellcheck disable=SC2153  # LOG_DIR is derived by lib/config/settings.sh
   log_dir="$(schedule_xml_escape "$LOG_DIR")"
   bash_path="$(schedule_xml_escape "${SCIEBO_BASH:-/bin/bash}")"
   command="$(schedule_xml_escape "$(schedule_command "${2:-}")")"
@@ -593,8 +593,6 @@ schedule_systemd_status() {
 # backend selected by platform_scheduler_backend. cron is detected but not
 # managed; the user keeps ownership of that crontab entry.
 schedule_install() {
-  # platform.sh is lazy; load it for the scheduler-backend dispatch below.
-  sciebo_require_module platform platform_scheduler_backend
   case "$(platform_scheduler_backend)" in
     launchd) schedule_launchd_install ;;
     systemd) schedule_systemd_install ;;
@@ -604,8 +602,6 @@ schedule_install() {
 }
 
 schedule_uninstall() {
-  # platform.sh is lazy; see schedule_install.
-  sciebo_require_module platform platform_scheduler_backend
   case "$(platform_scheduler_backend)" in
     launchd) schedule_launchd_uninstall ;;
     systemd) schedule_systemd_uninstall ;;
@@ -615,8 +611,6 @@ schedule_uninstall() {
 }
 
 schedule_status() {
-  # platform.sh is lazy; see schedule_install.
-  sciebo_require_module platform platform_scheduler_backend
   case "$(platform_scheduler_backend)" in
     launchd) schedule_launchd_status ;;
     systemd) schedule_systemd_status ;;

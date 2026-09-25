@@ -39,11 +39,10 @@ EOF
 }
 
 # status_read_state NAME - fill RUNSTATE_* from NAME's record. rc 1 with
-# the status fields empty when runstate.sh is absent or has no record.
+# the status fields empty when NAME has no record.
 status_read_state() {
   RUNSTATE_STATUS="" RUNSTATE_STAMP="" RUNSTATE_RC=""
   RUNSTATE_CONFLICTS="" RUNSTATE_LOG="" RUNSTATE_DETAIL=""
-  type runstate_read >/dev/null 2>&1 || return 1
   runstate_read "$1" || return 1
   return 0
 }
@@ -74,11 +73,10 @@ status_print_row() {
 }
 
 # status_print_history NAME N - indented recent history records for NAME
-# (newest first). Prints nothing when the history module is absent or the
-# source has no history; never fails.
+# (newest first). Prints nothing when the source has no history; never
+# fails.
 status_print_history() {
   local name="$1" limit="$2" line=""
-  type runstate_history >/dev/null 2>&1 || return 0
   while IFS= read -r line; do
     [[ -n "$line" ]] || continue
     printf '    history: %s\n' "$line"
@@ -152,10 +150,7 @@ status_process_line() {
 status_text_report() {
   local only="$1" line="" pause_line="" history_on=false
   [[ "$STATUS_HISTORY_ON" == true ]] && history_on=true
-  pause_line=""
-  if type pause_describe >/dev/null 2>&1; then
-    pause_line="$(pause_describe)"
-  fi
+  pause_line="$(pause_describe)"
   [[ -n "$pause_line" ]] || pause_line="not paused"
   if [[ "$STATUS_QUIET" == false || "$history_on" == false ]]; then
     printf '%s\n' "$pause_line"
@@ -184,7 +179,6 @@ status_text_report() {
 status_json_pause() {
   STATUS_PAUSED=false
   STATUS_PAUSE_UNTIL=""
-  type pause_active >/dev/null 2>&1 || return 0
   pause_active || return 0
   STATUS_PAUSED=true
   if [[ "$PAUSE_UNTIL" == "0" ]]; then
@@ -267,9 +261,6 @@ cmd_status() {
   # from runstate.sh (before its `type` probes so they are never silently
   # skipped), the pause line from pause.sh (same), and the source walk goes
   # through the manifest.
-  sciebo_require_module runstate runstate_read
-  sciebo_require_module pause pause_active
-  sciebo_require_module manifest manifest_each
   only="${OPT_only:-}"
   opt_into STATUS_QUIET quiet
   if [[ -n "${OPT_history_SET:-}" ]]; then

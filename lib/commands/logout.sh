@@ -59,9 +59,6 @@ cmd_logout() {
   # through http.sh, the soft confirmation gate through ui, and the removal
   # path probes keychain.sh (loaded before its `type` guard so a Keychain
   # item is never silently kept).
-  sciebo_require_module http xml_get
-  sciebo_require_module ui ui_confirm_mutation_soft
-  sciebo_require_module keychain keychain_delete
   revoke="${OPT_revoke:-0}"
   load_settings
 
@@ -92,7 +89,7 @@ cmd_logout() {
     log "rclone remote '${RCLONE_REMOTE}:' is not configured"
   fi
 
-  if type keychain_delete >/dev/null 2>&1 && keychain_enabled; then
+  if keychain_enabled; then
     if keychain_delete; then
       log "removed the Keychain item (service '${KEYCHAIN_SERVICE}', account '${RCLONE_REMOTE}')"
       removed=1

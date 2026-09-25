@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# http.sh - json_string_field (lib/http.sh).
+# http.sh - json_string_field (lib/base/xml.sh).
 # Sourced setup lives in tests/unit/common.sh; run standalone with
 # `bash tests/unit/http.sh`.
 set -uo pipefail

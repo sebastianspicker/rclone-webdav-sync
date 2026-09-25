@@ -6,18 +6,8 @@
 # shellcheck source=env.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
 
-# bigfolder_notify builds on these libraries; bin/sciebo loads the rest, so
-# this suite runs the functions directly.
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/manifest.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/rclone.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/capabilities.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/notify.sh"
-# shellcheck disable=SC1090,SC1091
-source "${PROJ}/lib/bigfolder.sh"
+# bigfolder_notify builds on the libraries env.sh already loaded (via
+# lib/sciebo.sh), so this suite runs the functions directly.
 
 BF_STATE="${TMP}/bigfolder-state"
 BF_CALLS="${TMP}/bigfolder-calls.log"
