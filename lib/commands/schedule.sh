@@ -16,9 +16,9 @@ SCHEDULE_WATCH_PATH changes (see config/settings.env). SCHEDULE_JITTER adds a
 random delay before each run.
 
 Commands:
-  install     render the unit(s) and start the agent/timer
-  uninstall   stop the agent/timer and remove the unit(s)
-  status      show whether the agent/timer is installed and loaded
+  install     render/start requested unit(s); remove stale profile unit(s)
+  uninstall   stop and remove all installed unit(s), including profiles
+  status      show all configured or installed agent/timer unit(s)
 
 Options for install:
   --at-login       start the agent at login/boot (RunAtLoad on launchd,
@@ -74,7 +74,49 @@ schedule_each_agent() {
   "$action" "" || rc=1
   while IFS= read -r profile; do
     "$action" "$profile" || rc=1
+  done < <(schedule_profile_list | LC_ALL=C sort -u)
+  return "$rc"
+}
+
+# schedule_each_known_agent ACTION_FUNC DISCOVERY_FUNC - visit the active
+# agent plus the union of configured profiles and profiles discovered from
+# installed unit files. This makes status/uninstall authoritative even when
+# the profiles were supplied only through `schedule install --profiles` or
+# were later removed from SCHEDULE_PROFILES.
+schedule_each_known_agent() {
+  local action="$1" discover="$2" profile="" rc=0
+  "$action" "" || rc=1
+  while IFS= read -r profile; do
+    [[ -n "$profile" ]] || continue
+    "$action" "$profile" || rc=1
+  done < <({
+    schedule_profile_list
+    "$discover"
+  } | LC_ALL=C sort -u)
+  return "$rc"
+}
+
+# schedule_profile_configured PROFILE - literal membership in the current
+# SCHEDULE_PROFILES list. Profile names cannot contain newlines or whitespace,
+# so the line-oriented comparison is unambiguous after validation.
+schedule_profile_configured() {
+  local wanted="$1" profile=""
+  while IFS= read -r profile; do
+    [[ "$profile" == "$wanted" ]] && return 0
   done < <(schedule_profile_list)
+  return 1
+}
+
+# schedule_each_stale_agent ACTION_FUNC DISCOVERY_FUNC - run ACTION_FUNC for
+# installed profile agents that are absent from the current configuration.
+# The active (unprofiled) agent is never stale.
+schedule_each_stale_agent() {
+  local action="$1" discover="$2" profile="" rc=0
+  while IFS= read -r profile; do
+    [[ -n "$profile" ]] || continue
+    schedule_profile_configured "$profile" && continue
+    "$action" "$profile" || rc=1
+  done < <("$discover" | LC_ALL=C sort -u)
   return "$rc"
 }
 
@@ -265,6 +307,30 @@ schedule_render_template() {
 
 # --- launchd backend ---------------------------------------------------------
 
+# schedule_launchd_installed_profile_list - discover profile suffixes from
+# plists in launchd's per-user agent directory. Only names this command can
+# have produced are returned; the base (unprofiled) label is handled
+# separately by schedule_each_known_agent.
+schedule_launchd_installed_profile_list() {
+  local dir="${HOME}/Library/LaunchAgents" path="" filename="" profile=""
+  [[ -d "$dir" ]] || return 0
+  while IFS= read -r -d '' path; do
+    filename="${path##*/}"
+    case "$filename" in
+      "$LAUNCHD_LABEL".*.plist)
+        profile="${filename#"$LAUNCHD_LABEL".}"
+        profile="${profile%.plist}"
+        ;;
+      *) continue ;;
+    esac
+    case "$profile" in
+      '' | . | .. | default | *[!A-Za-z0-9._-]*) continue ;;
+    esac
+    printf '%s\n' "$profile"
+  done < <(find "$dir" -maxdepth 1 -type f -name '*.plist' -print0)
+  return 0
+}
+
 # schedule_launchd_render DEST LABEL PROFILE - render one plist, lint it,
 # and move it into place.
 schedule_launchd_render() {
@@ -304,7 +370,11 @@ schedule_launchd_install() {
   [[ -f "$SCHEDULE_TEMPLATE_FILE" ]] || die "Missing launchd template: ${SCHEDULE_TEMPLATE_FILE}"
   schedule_validate
   SCHEDULE_RCLONE_DIR="$(dirname "$RCLONE_BIN")"
-  schedule_each_agent schedule_launchd_install_agent
+  schedule_each_agent schedule_launchd_install_agent || return $?
+  # Remove profile jobs left by an earlier --profiles/SCHEDULE_PROFILES value
+  # only after every currently requested agent was installed successfully.
+  schedule_each_stale_agent schedule_launchd_uninstall_agent \
+    schedule_launchd_installed_profile_list
 }
 
 # schedule_launchd_uninstall_agent PROFILE - bootout and remove one plist.
@@ -312,15 +382,19 @@ schedule_launchd_uninstall_agent() {
   local profile="${1:-}" label=""
   label=${ schedule_agent_label "$profile";}
   launchctl bootout "gui/$UID/${label}" >/dev/null 2>&1 || true
-  rm -f "${HOME}/Library/LaunchAgents/${label}.plist"
+  rm -f "${HOME}/Library/LaunchAgents/${label}.plist" || {
+    printf 'cannot remove launchd agent %s\n' "${HOME}/Library/LaunchAgents/${label}.plist" >&2
+    return 1
+  }
   printf 'Uninstalled %s\n' "$label"
 }
 
-# schedule_launchd_uninstall - remove every rendered label (the active
-# profile plus each configured profile).
+# schedule_launchd_uninstall - remove the active label and every configured or
+# discovered profile label, including profiles supplied only at install time.
 schedule_launchd_uninstall() {
   schedule_validate_profile_names
-  schedule_each_agent schedule_launchd_uninstall_agent
+  schedule_each_known_agent schedule_launchd_uninstall_agent \
+    schedule_launchd_installed_profile_list
 }
 
 # schedule_status_mode PLIST - print the schedule mode, jitter, and watch
@@ -370,11 +444,13 @@ schedule_launchd_status_agent() {
   return 1
 }
 
-# schedule_launchd_status - list the active agent and every configured
-# profile agent; any installed-but-not-loaded agent makes the command fail.
+# schedule_launchd_status - list the active agent and every configured or
+# discovered profile agent; any installed-but-not-loaded agent makes the
+# command fail.
 schedule_launchd_status() {
   schedule_validate_profile_names
-  schedule_each_agent schedule_launchd_status_agent
+  schedule_each_known_agent schedule_launchd_status_agent \
+    schedule_launchd_installed_profile_list
 }
 
 # --- systemd --user backend -------------------------------------------------
@@ -388,6 +464,31 @@ schedule_systemd_timer_file() {
 }
 schedule_systemd_watch_file() {
   printf '%s/%s.path' "$(schedule_systemd_unit_dir)" "${1:-$LAUNCHD_LABEL}"
+}
+
+# schedule_systemd_installed_profile_list - discover profile suffixes from any
+# owned service/timer/path unit. Looking at all three also finds and cleans up
+# partial installs rather than relying on the timer file alone.
+schedule_systemd_installed_profile_list() {
+  local dir="" path="" filename="" profile="" extension=""
+  dir="$(schedule_systemd_unit_dir)"
+  [[ -d "$dir" ]] || return 0
+  while IFS= read -r -d '' path; do
+    filename="${path##*/}"
+    case "$filename" in
+      "$LAUNCHD_LABEL".*.service) extension=service ;;
+      "$LAUNCHD_LABEL".*.timer) extension=timer ;;
+      "$LAUNCHD_LABEL".*.path) extension=path ;;
+      *) continue ;;
+    esac
+    profile="${filename#"$LAUNCHD_LABEL".}"
+    profile="${profile%."${extension}"}"
+    case "$profile" in
+      '' | . | .. | default | *[!A-Za-z0-9._-]*) continue ;;
+    esac
+    printf '%s\n' "$profile"
+  done < <(find "$dir" -maxdepth 1 -type f \( -name '*.service' -o -name '*.timer' -o -name '*.path' \) -print0)
+  return 0
 }
 
 # schedule_systemd_quote TEXT - quote one systemd value when it contains
@@ -478,7 +579,7 @@ schedule_systemd_write_units() {
     schedule_systemd_watch_content "$label" >"$watch" ||
       die "cannot write systemd unit ${watch}"
   else
-    rm -f "$watch"
+    rm -f "$watch" || die "cannot remove obsolete systemd unit ${watch}"
   fi
 }
 
@@ -493,10 +594,14 @@ schedule_systemd_enable_agent() {
   if [[ -n "${SCHEDULE_WATCH_PATH:-}" ]]; then
     systemctl --user enable --now "${label}.path" >/dev/null 2>&1 ||
       die "systemctl --user enable failed for ${label}.path"
+  else
+    systemctl --user disable --now "${label}.path" >/dev/null 2>&1 || true
   fi
   if [[ "${SCHEDULE_AT_LOGIN:-0}" == "1" ]]; then
     systemctl --user enable "${label}.service" >/dev/null 2>&1 ||
       die "systemctl --user enable failed for ${label}.service"
+  else
+    systemctl --user disable "${label}.service" >/dev/null 2>&1 || true
   fi
   printf 'Installed %s\n' "$timer"
   systemctl --user status "${label}.timer" --no-pager 2>&1 | sed -n '1,15p' || true
@@ -509,10 +614,17 @@ schedule_systemd_install() {
   schedule_validate
   dir="$(schedule_systemd_unit_dir)"
   mkdir -p "$dir"
-  schedule_each_agent schedule_systemd_write_units
+  schedule_each_agent schedule_systemd_write_units || return $?
   systemctl --user daemon-reload >/dev/null 2>&1 ||
     die "systemctl --user daemon-reload failed; is a user systemd session running?"
-  schedule_each_agent schedule_systemd_enable_agent
+  schedule_each_agent schedule_systemd_enable_agent || return $?
+  # Reconcile jobs from an earlier profile set only after the new jobs are
+  # enabled, then reload once more so removed unit files disappear from the
+  # user manager.
+  schedule_each_stale_agent schedule_systemd_remove_agent \
+    schedule_systemd_installed_profile_list || return $?
+  systemctl --user daemon-reload >/dev/null 2>&1 ||
+    die "systemctl --user daemon-reload failed after removing stale profile units"
 }
 
 # schedule_systemd_remove_agent PROFILE - disable and remove one agent.
@@ -521,23 +633,27 @@ schedule_systemd_remove_agent() {
   label=${ schedule_agent_label "$profile";}
   watch="$(schedule_systemd_watch_file "$label")"
   systemctl --user disable --now "${label}.timer" >/dev/null 2>&1 || true
-  if [[ -f "$watch" ]]; then
-    systemctl --user disable --now "${label}.path" >/dev/null 2>&1 || true
-  fi
-  if [[ "${SCHEDULE_AT_LOGIN:-0}" == "1" ]]; then
-    systemctl --user disable "${label}.service" >/dev/null 2>&1 || true
-  fi
+  systemctl --user disable --now "${label}.path" >/dev/null 2>&1 || true
+  # The service may have been enabled by an earlier --at-login invocation;
+  # the current SCHEDULE_AT_LOGIN value says nothing about installed state.
+  systemctl --user disable "${label}.service" >/dev/null 2>&1 || true
   rm -f "$(schedule_systemd_service_file "$label")" \
-    "$(schedule_systemd_timer_file "$label")" "$watch"
+    "$(schedule_systemd_timer_file "$label")" "$watch" || {
+    printf 'cannot remove systemd units for %s\n' "$label" >&2
+    return 1
+  }
   printf 'Uninstalled %s\n' "${label}.timer"
 }
 
-# schedule_systemd_uninstall - remove every rendered label (the active
-# profile plus each configured profile).
+# schedule_systemd_uninstall - remove the active label and every configured or
+# discovered profile label, including profiles supplied only at install time.
 schedule_systemd_uninstall() {
+  local rc=0
   schedule_validate_profile_names
-  schedule_each_agent schedule_systemd_remove_agent
+  schedule_each_known_agent schedule_systemd_remove_agent \
+    schedule_systemd_installed_profile_list || rc=1
   systemctl --user daemon-reload >/dev/null 2>&1 || true
+  return "$rc"
 }
 
 # schedule_systemd_status_mode LABEL - print the schedule, jitter, and
@@ -582,11 +698,13 @@ schedule_systemd_status_agent() {
   return 1
 }
 
-# schedule_systemd_status - list the active agent and every configured
-# profile agent; any installed-but-not-loaded agent makes the command fail.
+# schedule_systemd_status - list the active agent and every configured or
+# discovered profile agent; any installed-but-not-loaded agent makes the
+# command fail.
 schedule_systemd_status() {
   schedule_validate_profile_names
-  schedule_each_agent schedule_systemd_status_agent
+  schedule_each_known_agent schedule_systemd_status_agent \
+    schedule_systemd_installed_profile_list
 }
 
 # schedule_install/schedule_uninstall/schedule_status - dispatch to the

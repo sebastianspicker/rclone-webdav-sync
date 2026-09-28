@@ -621,7 +621,7 @@ yourself.
 | `SCHEDULE_JITTER` | `0` | random delay in seconds before each run (`sleep $((RANDOM % N))` on launchd, `RandomizedDelaySec` on systemd). |
 | `SCHEDULE_WATCH_PATH` | empty | also trigger a run when this path changes (`~` is expanded; the path must exist; `WatchPaths` / a systemd `.path` unit). |
 | `SCHEDULE_AT_LOGIN` | `0` | `1` makes `schedule install` start the agent at login/boot (`RunAtLoad` on launchd, `[Install] WantedBy=default.target` on systemd); `--at-login` overrides. |
-| `SCHEDULE_PROFILES` | empty | extra account profiles to render one agent each for, labelled `<LAUNCHD_LABEL>.<profile>` and run with `--profile`; comma or space separated; `--profiles` overrides. Empty means only the active profile. |
+| `SCHEDULE_PROFILES` | empty | extra account profiles to render one agent each for, labelled `<LAUNCHD_LABEL>.<profile>` and run with `--profile`; comma or space separated; `--profiles` overrides. Empty means only the active profile on the next install; `status` and `uninstall` still discover profile units from earlier installs. |
 <!-- src: settings.md#scheduling -->
 
 ### Automatic sync (watch)
