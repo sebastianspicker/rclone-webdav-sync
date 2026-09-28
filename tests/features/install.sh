@@ -50,6 +50,70 @@ mkdir -p "${DEST}/state"
 mkdir -p "${DEST}/lib/commands"
 : >"${DEST}/lib/commands/folders_choose.sh"
 
+# A staging failure must happen before any installed path is replaced. The
+# injected cp refuses the lib/ item; the existing wrapper, custom data, state,
+# and stale marker all prove the old installation remained intact.
+FAIL_CP_BIN="${PREFIX_DIR}/fail-cp-bin"
+REAL_CP="$(command -v cp)"
+mkdir -p "$FAIL_CP_BIN"
+cat >"${FAIL_CP_BIN}/cp" <<'STUB'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    */lib)
+      printf 'injected copy failure for %s\n' "$arg" >&2
+      exit 73
+      ;;
+  esac
+done
+exec "$SCIEBO_REAL_CP" "$@"
+STUB
+chmod +x "${FAIL_CP_BIN}/cp"
+failed_out="$(
+  cd "$PROJ" && env PATH="${FAIL_CP_BIN}:$PATH" SCIEBO_REAL_CP="$REAL_CP" \
+    make -f Makefile install PREFIX="$PREFIX_DIR" 2>&1
+)"
+failed_rc=$?
+expect_rc "install: staging failure is non-zero" "$failed_rc" 2
+expect_contains "install: staging failure names the item" "$failed_out" "cannot stage lib"
+expect_file "install: staging failure keeps old shipped code" "${DEST}/lib/commands/folders_choose.sh"
+expect_file "install: staging failure keeps state" "${DEST}/state/keep-me"
+expect_contains "install: staging failure keeps custom config" \
+  "$(cat "${DEST}/config/settings.local.env")" "CUSTOM_SETTING=kept"
+failed_version_out="$("${PREFIX_DIR}/bin/sciebo" --version 2>&1)"
+expect_contains "install: staging failure keeps a working wrapper" "$failed_version_out" "sciebo"
+
+# A failure after replacement starts exercises the rollback path. Fail only
+# the staged lib/ move; moves from the rollback directory remain available.
+FAIL_MV_BIN="${PREFIX_DIR}/fail-mv-bin"
+REAL_MV="$(command -v mv)"
+mkdir -p "$FAIL_MV_BIN"
+cat >"${FAIL_MV_BIN}/mv" <<'STUB'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    */.install-stage.*/code/lib)
+      printf 'injected move failure for %s\n' "$arg" >&2
+      exit 74
+      ;;
+  esac
+done
+exec "$SCIEBO_REAL_MV" "$@"
+STUB
+chmod +x "${FAIL_MV_BIN}/mv"
+rollback_out="$(
+  cd "$PROJ" && env PATH="${FAIL_MV_BIN}:$PATH" SCIEBO_REAL_MV="$REAL_MV" \
+    make -f Makefile install PREFIX="$PREFIX_DIR" 2>&1
+)"
+rollback_rc=$?
+expect_rc "install: commit failure is non-zero" "$rollback_rc" 2
+expect_contains "install: commit failure reports rollback" "$rollback_out" \
+  "restoring the previous installation"
+expect_file "install: rollback restores old shipped code" "${DEST}/lib/commands/folders_choose.sh"
+expect_file "install: rollback keeps state" "${DEST}/state/keep-me"
+rollback_version_out="$("${PREFIX_DIR}/bin/sciebo" --version 2>&1)"
+expect_contains "install: rollback restores a working wrapper" "$rollback_version_out" "sciebo"
+
 out="$(run_make install)"
 rc=$?
 expect_rc "install: upgrade rc 0" "$rc" 0

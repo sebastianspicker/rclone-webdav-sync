@@ -6,6 +6,18 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `schedule status` and `schedule uninstall` now discover profile jobs created
+  by an earlier `schedule install --profiles` invocation, and reinstalling
+  reconciles profiles that were removed from the requested set. systemd login
+  services are disabled based on installed state instead of current settings.
+- `make install` stages replacements before touching a working installation
+  and rolls back commit-time failures instead of reporting success with a
+  partial tree.
+- A trailing test-runner `-j` now exits with a usage error instead of looping,
+  and the layer checker no longer depends on opening `/dev/stderr` as a file.
+
 ## [0.2.0] - 2026-09-24
 
 First public release. Everything below is relative to the 0.1.0 internal

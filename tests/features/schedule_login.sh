@@ -43,11 +43,19 @@ expect_contains "schedule login: RunAtLoad key" "$active_plist" "<key>RunAtLoad<
 expect_contains "schedule login: RunAtLoad true" "$active_plist" "<true/>"
 expect_not_contains "schedule login: no RunAtLoad false" "$active_plist" "<false/>"
 
-mkdir -p "${PROFILES_DIR}/work"
-expect_cli "schedule login: install --profiles rc 0" 0 run_cli_launchd schedule install --at-login --profiles work
+mkdir -p "${PROFILES_DIR}/work" "${PROFILES_DIR}/home"
+expect_cli "schedule login: install --profiles rc 0" 0 run_cli_launchd schedule install --at-login --profiles work,home
 expect_file "schedule login: profile plist written" "${plist_dir}/${label}.work.plist"
+expect_file "schedule login: second profile plist written" "${plist_dir}/${label}.home.plist"
 profile_plist="$(cat "${plist_dir}/${label}.work.plist")"
 expect_contains "schedule login: profile command uses --profile" "$profile_plist" "--profile work"
+
+# Reinstalling with a smaller profile set reconciles jobs left by the old
+# set, without requiring the one-shot --profiles value to be persisted.
+expect_cli "schedule login: reinstall reconciles profiles rc 0" 0 \
+  run_cli_launchd schedule install --at-login --profiles work
+expect_file "schedule login: retained profile plist remains" "${plist_dir}/${label}.work.plist"
+expect_no_file "schedule login: removed profile plist is reconciled" "${plist_dir}/${label}.home.plist"
 
 # A glob in SCHEDULE_PROFILES is validated as a literal name, never expanded
 # against the working directory.
@@ -59,14 +67,14 @@ expect_not_contains "schedule login: glob not expanded" "$CLI_OUT" "globvictim"
 unset SCHEDULE_PROFILES
 rm -f "${TMP}/globvictim"
 
-export SCHEDULE_PROFILES=work
 expect_cli "schedule login: status rc 0" 0 run_cli_launchd schedule status
 expect_contains "schedule login: status lists the active label" "$CLI_OUT" "${label}.plist"
 expect_contains "schedule login: status lists the profile label" "$CLI_OUT" "${label}.work.plist"
 
+# `--profiles` is an install-only option. A plain uninstall must discover and
+# remove those installed jobs instead of silently leaving background syncs.
 expect_cli "schedule login: uninstall rc 0" 0 run_cli_launchd schedule uninstall
 expect_no_file "schedule login: active plist removed" "${plist_dir}/${label}.plist"
 expect_no_file "schedule login: profile plist removed" "${plist_dir}/${label}.work.plist"
-unset SCHEDULE_PROFILES
 
 finish

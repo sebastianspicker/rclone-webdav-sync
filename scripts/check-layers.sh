@@ -39,7 +39,10 @@ done
 # One awk pass over every file: strip comments, heredoc bodies and
 # single-quoted multi-line strings (embedded awk programs), collect function
 # definitions, then report cross-file references against the layer ranks.
-awk -v layers="${LAYERS[*]}" '
+# Capture the report before printing it: opening /dev/stderr as a path is not
+# supported by every sandbox/shell, and a grep -q reader can close a pipe
+# before awk/sort finish under pipefail.
+violations="$(awk -v layers="${LAYERS[*]}" '
 function layer_of(path,   parts) {
   split(path, parts, "/")
   return parts[2]
@@ -125,10 +128,12 @@ END {
     }
   }
 }
-' "${files[@]}" | sort -u | tee /dev/stderr | { ! grep -q .; } || {
+' "${files[@]}" | sort -u)"
+if [[ -n "$violations" ]]; then
+  printf '%s\n' "$violations" >&2
   echo "check-layers: violations found (see docs/architecture.md#layers)" >&2
   exit 1
-}
+fi
 # Rule 6: a line that runs awk with one of the shared preludes must set
 # LC_ALL=C on that command (comment lines excluded).
 prelude_violations="$(grep -nE 'awk[^|]*"\$\{_AWK_(CTRL|HTML|XML)_LIB\}' "${files[@]}" lib/sciebo.sh |
