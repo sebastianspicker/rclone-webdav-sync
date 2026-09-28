@@ -224,12 +224,28 @@ expect_contains "schedule systemd: status reports the schedule" "$CLI_OUT" "sche
 expect_cli "schedule systemd: status unloaded rc 1" 1 run_cli_systemd_down schedule status
 expect_contains "schedule systemd: status unloaded wording" "$CLI_OUT" "installed but not loaded"
 
+mkdir -p "${PROFILES_DIR}/work"
+expect_cli "schedule systemd: profiled at-login install rc 0" 0 \
+  run_cli_systemd schedule install --at-login --profiles work
+expect_file "schedule systemd: profile service written" "${unit_dir}/${LAUNCHD_LABEL}.work.service"
+expect_file "schedule systemd: profile timer written" "${unit_dir}/${LAUNCHD_LABEL}.work.timer"
+expect_cli "schedule systemd: status discovers install-only profile rc 0" 0 \
+  run_cli_systemd schedule status
+expect_contains "schedule systemd: status lists install-only profile" "$CLI_OUT" \
+  "${LAUNCHD_LABEL}.work.timer"
+
 : >"${SYSTEMD_BIN}/calls.log"
 expect_cli "schedule systemd: uninstall rc 0" 0 run_cli_systemd schedule uninstall
 expect_no_file "schedule systemd: service unit removed" "${unit_dir}/${LAUNCHD_LABEL}.service"
 expect_no_file "schedule systemd: timer unit removed" "${unit_dir}/${LAUNCHD_LABEL}.timer"
+expect_no_file "schedule systemd: profile service removed" "${unit_dir}/${LAUNCHD_LABEL}.work.service"
+expect_no_file "schedule systemd: profile timer removed" "${unit_dir}/${LAUNCHD_LABEL}.work.timer"
 expect_contains "schedule systemd: disable recorded" "$(cat "${SYSTEMD_BIN}/calls.log")" \
   "--user disable --now ${LAUNCHD_LABEL}.timer"
+expect_contains "schedule systemd: at-login service disabled regardless of current setting" \
+  "$(cat "${SYSTEMD_BIN}/calls.log")" "--user disable ${LAUNCHD_LABEL}.service"
+expect_contains "schedule systemd: install-only profile service disabled" \
+  "$(cat "${SYSTEMD_BIN}/calls.log")" "--user disable ${LAUNCHD_LABEL}.work.service"
 expect_cli "schedule systemd: status after uninstall rc 0" 0 run_cli_systemd schedule status
 expect_contains "schedule systemd: reports not installed" "$CLI_OUT" "not installed"
 

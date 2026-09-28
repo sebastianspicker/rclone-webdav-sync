@@ -6,6 +6,13 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `schedule status` and `schedule uninstall` now discover profile jobs created
+  by an earlier `schedule install --profiles` invocation, and reinstalling
+  reconciles profiles that were removed from the requested set. systemd login
+  services are disabled based on installed state instead of current settings.
+
 ## [0.2.0] - 2026-09-24
 
 First public release. Everything below is relative to the 0.1.0 internal

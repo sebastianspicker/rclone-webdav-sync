@@ -1274,9 +1274,9 @@ message to add or remove the crontab entry by hand.
 
 | Subcommand | Behavior |
 | --- | --- |
-| `install` | launchd: render `launchd/de.rclone-sciebo.sync.plist.in` to `~/Library/LaunchAgents/<LAUNCHD_LABEL>.plist`, lint it with `plutil`, and bootstrap it with `launchctl`. systemd: write `<LAUNCHD_LABEL>.service` and `.timer` (plus a `.path` unit when `SCHEDULE_WATCH_PATH` is set) under `~/.config/systemd/user/`, then `daemon-reload` and `enable --now`. |
-| `uninstall` | launchd: boot out the agent and remove the plist. systemd: disable and remove the units and reload the daemon. |
-| `status` | print `not installed` (exit 0), `installed and loaded` plus mode lines (exit 0), or `installed but not loaded` (exit 1). Warnings point out units that still run the old `scripts/sync.sh` entrypoint. |
+| `install` | launchd: render `launchd/de.rclone-sciebo.sync.plist.in` to `~/Library/LaunchAgents/<LAUNCHD_LABEL>.plist`, lint it with `plutil`, and bootstrap it with `launchctl`. systemd: write `<LAUNCHD_LABEL>.service` and `.timer` (plus a `.path` unit when `SCHEDULE_WATCH_PATH` is set) under `~/.config/systemd/user/`, then `daemon-reload` and `enable --now`. Profile units left by an earlier install but absent from the requested profile set are stopped and removed. |
+| `uninstall` | launchd: boot out the agents and remove their plists. systemd: disable and remove the units and reload the daemon. Installed profile units are discovered by label, so profiles supplied through an earlier one-shot `--profiles` flag are removed even when `SCHEDULE_PROFILES` is now empty. |
+| `status` | print `not installed` (exit 0), `installed and loaded` plus mode lines (exit 0), or `installed but not loaded` (exit 1). Both configured and discovered installed profile units are listed. Warnings point out units that still run the old `scripts/sync.sh` entrypoint. |
 
 Options for `install`:
 
