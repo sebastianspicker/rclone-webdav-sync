@@ -15,6 +15,8 @@ uses [Semantic Versioning](https://semver.org/).
 - `make install` stages replacements before touching a working installation
   and rolls back commit-time failures instead of reporting success with a
   partial tree.
+- A trailing test-runner `-j` now exits with a usage error instead of looping,
+  and the layer checker no longer depends on opening `/dev/stderr` as a file.
 
 ## [0.2.0] - 2026-09-24
 

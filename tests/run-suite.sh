@@ -116,6 +116,10 @@ run_suite() {
   while (($#)); do
     case "$1" in
       -j)
+        if (($# < 2)); then
+          printf '%s: -j requires a positive integer\n' "$label" >&2
+          return 2
+        fi
         jobs="${2:-}"
         shift 2
         ;;
