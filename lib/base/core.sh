@@ -5,7 +5,7 @@
 # PROJECT_DIR (resolved by lib/sciebo.sh from its own location before this
 # file loads) are already set.
 #
-# Sourced once by bin/sciebo (via lib/sciebo.sh) and by tests; requires
+# Sourced once by bin/sciebo (via lib/sciebo.sh); requires
 # Bash 5.3.
 #
 # Module conventions:
@@ -41,7 +41,7 @@ if [[ -f "${PROJECT_DIR}/VERSION" ]]; then
 fi
 
 # Defensive umask: bin/sciebo sets 077 before sourcing, but a library consumer
-# that sources lib/sciebo.sh directly (tests, tooling) must not create
+# that sources lib/sciebo.sh directly must not create
 # world-readable state or temp files either.
 umask 077
 

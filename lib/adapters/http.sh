@@ -24,7 +24,7 @@
 # HTTP_TIMEOUT/HTTP_RETRIES/HTTP_RETRY_DELAY/HTTP_FOLLOW_REDIRECTS/
 # HTTP_MAX_REDIRS default in config/settings.env (read by load_settings); the
 # ${VAR:-default} fallbacks at each call site below cover a caller that never
-# ran load_settings (unit tests, direct sourcing) with the same defaults.
+# ran load_settings (direct sourcing) with the same defaults.
 
 HTTP_BASE=""
 HTTP_USER=""

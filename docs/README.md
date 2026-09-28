@@ -9,7 +9,7 @@ Reference documentation and the project's GitHub Pages site.
 | `architecture.md` | module map, command conventions, lock/state/HTTP design |
 | `parity.md` | the Nextcloud Desktop client parity matrix and its limits |
 | `index.html` | the landing page published at [sebastianspicker.github.io/rclone-webdav-sync](https://sebastianspicker.github.io/rclone-webdav-sync/) |
-| `assets/screenshots/` | real CLI output rendered to SVG by `tools/screenshots.py` (`make screenshots`) |
+| `assets/screenshots/` | captured CLI output rendered to SVG for the README and demo page |
 
 `index.html` is a standalone page: a hero, the screenshot tour, a feature
 overview, and quick-start snippets. It has no build step and loads no

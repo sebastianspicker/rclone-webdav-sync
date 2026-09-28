@@ -1,8 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="730" height="1523" viewBox="0 0 730 1523" role="img" aria-label="bin/sciebo help">
+<svg xmlns="http://www.w3.org/2000/svg" width="730" height="1502" viewBox="0 0 730 1502" role="img" aria-label="bin/sciebo help">
 <title>bin/sciebo help</title>
-<defs><clipPath id="win"><rect x="0.5" y="0.5" width="729" height="1522" rx="10"/></clipPath></defs>
+<defs><clipPath id="win"><rect x="0.5" y="0.5" width="729" height="1501" rx="10"/></clipPath></defs>
 <g clip-path="url(#win)">
-<rect x="0.5" y="0.5" width="729" height="1522" rx="10" fill="#0d1117" stroke="#30363d"/>
+<rect x="0.5" y="0.5" width="729" height="1501" rx="10" fill="#0d1117" stroke="#30363d"/>
 <rect x="0.5" y="0.5" width="729" height="36" fill="#161b22"/>
 <line x1="0.5" y1="36.5" x2="729.5" y2="36.5" stroke="#30363d"/>
 <circle cx="20.0" cy="18.5" r="6" fill="#ff5f56"/>
@@ -55,23 +55,22 @@
 <text x="22.0" y="990.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  ignored [SUB]             list files excluded from syncing</text>
 <text x="22.0" y="1011.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  download SUB [DEST]       download a remote file or directory</text>
 <text x="22.0" y="1032.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  update [--check]          update the local checkout from git</text>
-<text x="22.0" y="1074.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">Extra commands (Nextcloud server features; covered by the isolated test</text>
-<text x="22.0" y="1095.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">suite but not by the real-server contract suite):</text>
-<text x="22.0" y="1116.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  notifications             list or delete Nextcloud notifications</text>
-<text x="22.0" y="1137.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  activity                  show the Nextcloud activity stream</text>
-<text x="22.0" y="1158.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  presence [set ...]        show or set your Nextcloud user status</text>
-<text x="22.0" y="1179.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  file &lt;subcommand&gt;         file details, activity, and shares</text>
-<text x="22.0" y="1200.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  search TERM [options]     unified search on the server</text>
-<text x="22.0" y="1221.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  recent [options]          recently modified remote files</text>
-<text x="22.0" y="1242.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  comments &lt;subcommand&gt;     file comments (Nextcloud comments app)</text>
-<text x="22.0" y="1263.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  favorites [options]       list or toggle server-side favorites</text>
-<text x="22.0" y="1284.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  tags &lt;subcommand&gt;         list system tags and assign them</text>
-<text x="22.0" y="1305.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  server &lt;subcommand&gt;       server information and capabilities</text>
-<text x="22.0" y="1326.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  edit SUB [options]        download, edit, and upload one remote file</text>
-<text x="22.0" y="1347.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  announcements [options]   list server announcements</text>
-<text x="22.0" y="1368.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  preview SUB [options]     download a preview image for a remote file</text>
-<text x="22.0" y="1410.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">Global options (before the command): --profile NAME, --trust,</text>
-<text x="22.0" y="1431.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">--non-interactive, --debug, --log-file FILE, --log-dir DIR,</text>
-<text x="22.0" y="1452.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">--log-expire HOURS, --confdir DIR, --version.</text>
-<text x="22.0" y="1494.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">Run `sciebo help &lt;command&gt;` or `&lt;command&gt; --help` for command options.</text>
+<text x="22.0" y="1074.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">Extra commands (newer Nextcloud server features):</text>
+<text x="22.0" y="1095.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  notifications             list or delete Nextcloud notifications</text>
+<text x="22.0" y="1116.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  activity                  show the Nextcloud activity stream</text>
+<text x="22.0" y="1137.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  presence [set ...]        show or set your Nextcloud user status</text>
+<text x="22.0" y="1158.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  file &lt;subcommand&gt;         file details, activity, and shares</text>
+<text x="22.0" y="1179.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  search TERM [options]     unified search on the server</text>
+<text x="22.0" y="1200.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  recent [options]          recently modified remote files</text>
+<text x="22.0" y="1221.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  comments &lt;subcommand&gt;     file comments (Nextcloud comments app)</text>
+<text x="22.0" y="1242.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  favorites [options]       list or toggle server-side favorites</text>
+<text x="22.0" y="1263.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  tags &lt;subcommand&gt;         list system tags and assign them</text>
+<text x="22.0" y="1284.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  server &lt;subcommand&gt;       server information and capabilities</text>
+<text x="22.0" y="1305.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  edit SUB [options]        download, edit, and upload one remote file</text>
+<text x="22.0" y="1326.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  announcements [options]   list server announcements</text>
+<text x="22.0" y="1347.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">  preview SUB [options]     download a preview image for a remote file</text>
+<text x="22.0" y="1389.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">Global options (before the command): --profile NAME, --trust,</text>
+<text x="22.0" y="1410.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">--non-interactive, --debug, --log-file FILE, --log-dir DIR,</text>
+<text x="22.0" y="1431.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">--log-expire HOURS, --confdir DIR, --version.</text>
+<text x="22.0" y="1473.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14.0" fill="#c9d1d9" xml:space="preserve">Run `sciebo help &lt;command&gt;` or `&lt;command&gt; --help` for command options.</text>
 </g></svg>

@@ -1,38 +1,65 @@
-# Credentials and local overrides (never commit these)
+# Credentials, machine settings, and runtime state
 .env
 .env.*
 !.env.example
 config/settings.local.env
-
-# Generated configuration and runtime state
 config/sources.generated.conf
 /state/
 
-# Logs and atomic-write debris
+# Agent and tool state
+/.agents/
+/.claude/
+/.codex/
+/.codacy/
+/.repowise/
+/.codegraph/
+/.serena/
+/.impeccable/
+/.cursor/
+/.aider*/
+/.continue/
+/.windsurf/
+/.mcp.json
+/.history/
+/.cache/
+
+# Agent instructions and nested worktrees
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.cursorrules
+/.github/copilot-instructions.md
+/.worktrees/
+/worktrees/
+
+# Tests and development-only helpers
+/tests/
+/.githooks/
+/tools/
+/scripts/check-bash-min.sh
+/scripts/check-drift.sh
+/scripts/check-layers.sh
+
+# Work-in-progress documents
+/docs/plans/
+/docs/adr/
+/docs/drafts/
+/TODO.md
+
+# Build output, logs, and temporary files
+/dist/
+*.tar.gz
 *.log
 *.tmp.*
 *.bak
 *.orig
-
-# Python bytecode from `make lint` / `make screenshots`
 __pycache__/
 *.pyc
 
-# OS and editor debris
+# OS and editor files
 .DS_Store
 ._*
 *.swp
 *~
 .idea/
 .vscode/
-
-# Local agent workspace and settings (kept out of the published repo)
-/.agents/
-/.claude/
-/AGENTS.md
-/CLAUDE.md
-/docs/plans/
-
-# Build output and archives (`make dist`, `sciebo support --output`)
-/dist/
-*.tar.gz

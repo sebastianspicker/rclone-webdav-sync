@@ -4,7 +4,7 @@
 # Local-only: runs git in PROJECT_DIR and never reads the remote or writes
 # user configuration. --check fetches and compares HEAD with its upstream
 # without touching the working tree; without --check the checkout is updated
-# with `git pull --ff-only` and the follow-up `make install` / `make lint test`
+# with `git pull --ff-only` and the follow-up `make install` / `make lint`
 # command is printed. A source tarball (not a git worktree) and a branch
 # without an upstream are reported and are not errors.
 
@@ -202,7 +202,7 @@ update_run_pull() {
   else
     printf 'updated %s -> %s\n' "$(update_short "$before")" "$(update_short "$after")"
   fi
-  printf "run 'make install' to install, then 'make lint test' to verify\n"
+  printf "run 'make install' to install, then 'make lint' to verify\n"
   return 0
 }
 

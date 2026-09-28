@@ -72,8 +72,8 @@ process on the same machine.
 - The OCS capabilities probe (the server feature check,
   `lib/adapters/capabilities.sh`) uses the same netrc treatment when
   `lib/adapters/http.sh` is loaded (it always is in `bin/sciebo`). The
-  standalone path used when the library is sourced alone (the unit-test
-  harness) also writes a mode-600 netrc and refuses a control-byte secret;
+  standalone path used when the library is sourced alone also writes a
+  mode-600 netrc and refuses a control-byte secret;
   there is no `-u user:password` fallback in `lib/`.
 - `CLIENT_KEY_PASSWORD` (mutual-TLS client-key passphrase) is written to a
   mode-600 curl `--config` file as `pass = "..."` and passed as

@@ -12,12 +12,10 @@ page documents, so this page is meant to be read alongside the `sciebo`
 command's own help, not instead of it.
 
 Commands come in two tiers, shown separately by `sciebo help`. **Core**
-commands are the sync workflow plus the file operations that the
-real-server contract suite (`tests/contract/`) exercises against a live
-Nextcloud. **Extra** commands (`notifications`, `activity`, `presence`,
+commands are the established sync workflow and file operations. **Extra**
+commands (`notifications`, `activity`, `presence`,
 `file`, `search`, `recent`, `comments`, `favorites`, `tags`, `server`,
-`edit`, `announcements`, `preview`) wrap further Nextcloud server features;
-the isolated test suite covers them, the contract suite does not yet.
+`edit`, `announcements`, `preview`) wrap further Nextcloud server features.
 <!-- src: commands.md -->
 
 - [How to read this reference](#how-to-read-this-reference)
@@ -41,16 +39,7 @@ the isolated test suite covers them, the contract suite does not yet.
 - [Glossary](#glossary)
 
 <!--
-Editor's note (grouping): README.md's own "Commands" table groups `open`
-under "Mounts" and groups `retry`/`conflicts` under a section it calls
-"Server features"; this reference groups `open` under "Preflight and
-discovery" and `retry`/`conflicts` under "Server data" instead, following
-this document's own body structure, since this document is the
-authoritative reference and README's table is a simplified preview. See
-verify-commands.md for the full note. This table of contents also lists
-`announcements`, `preview`, `download`, and `update`, which the previous
-version of this table omitted even though each already had its own
-section.
+This table of contents follows the sections below.
 -->
 
 ## How to read this reference
@@ -182,7 +171,7 @@ setup, migrated once on first use, not where a new setup writes. With
 obscured (reversibly encoded, not encrypted) and written to the rclone
 config instead. `--rotate` finishes with
 `rotated the app password for <user>@<host>`.
-<!-- src: commands.md#setup; corrected against lib/adapters/keychain.sh's keychain_account_plain() (account "<RCLONE_REMOTE>#plain") and keychain_account() (legacy, migrated-from "RCLONE_REMOTE"); the previous wording here named the bare RCLONE_REMOTE account for a new setup, which disagreed with README.md, docs/settings.md, SECURITY.md, docs/parity.md, and this file's own logout section — see verify-commands.md item 1 -->
+<!-- src: commands.md#setup -->
 
 Examples:
 
@@ -416,7 +405,7 @@ Policy checks cover the desktop-parity safety policies:
 checks above) has no documented default in
 [docs/settings.md](settings.md); check `config/settings.env` for its
 current value rather than assuming one.
-<!-- src: commands.md#doctor; documentation gap noted against docs/settings.md, see verify-commands.md -->
+<!-- src: commands.md#doctor -->
 
 | Option | Effect |
 | --- | --- |
@@ -2081,8 +2070,8 @@ you script against them.
   file, not a claim this reference makes up a number for.
   <!-- src: commands.md#doctor -->
 - This reference documents behavior for commands as implemented; no
-  Nextcloud server version is asserted to have been tested against as a
-  whole, beyond the Nextcloud 30+ share-download attribute noted in
+  minimum Nextcloud server version is guaranteed for the full command set,
+  beyond the Nextcloud 30+ share-download attribute noted in
   [`share`](#share).
 
 ## Glossary
@@ -2119,7 +2108,7 @@ features.
 | account profile | An independent, named account setup (its own remote, sync list, filters, and state), used to manage more than one Nextcloud account. |
 | a filter file | A plain-text rule file (rclone syntax) that excludes or includes paths from a sync. |
 | a safety policy | A named setting that chooses how this tool reacts to a risky situation: allow it, warn, ask first, or skip/exclude it. |
-| how well-tested a command is (tier: core / extra) | `core` commands are covered by tests against a real Nextcloud server; `extra` commands are newer and tested only against a local stand-in. |
+| command tier (core / extra) | `core` commands cover the established sync workflow; `extra` commands expose newer Nextcloud server features. |
 | this tool's local record-keeping folder (state directory) | Where this tool stores run history, locks, caches, and other bookkeeping — separate from your synced files. |
 | the single-run lock (run lock) | A safeguard that stops two sync/cleanup runs from overlapping on the same machine. |
 | a metered (pay-per-use or capped) network | A connection this tool can detect and treat more cautiously, e.g. a mobile hotspot. |

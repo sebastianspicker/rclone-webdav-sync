@@ -6,8 +6,8 @@
 #
 # Every function prints one of the documented words (or nothing) and returns
 # 0, so callers can use the result under `set -e`. The SCIEBO_KEYCHAIN_BACKEND,
-# SCIEBO_NOTIFY_BACKEND, and SCIEBO_SCHEDULER_BACKEND variables are test
-# hooks: when non-empty they are returned verbatim instead of probing.
+# SCIEBO_NOTIFY_BACKEND, and SCIEBO_SCHEDULER_BACKEND variables override
+# probing when they are non-empty.
 
 # platform_os - macos, linux, or other. Resolved once when this module loads
 # so hot callers do not fork `uname` per call. Fork removal: the Bash builtin
@@ -129,7 +129,7 @@ platform_scheduler_backend() {
 #
 # net_info fills NET_IFACE/NET_SSID/NET_METERED from the OS; net_is_metered
 # adds the METERED_SSIDS list and hotspot-looking names; net_gate turns that
-# into a sync decision. SCIEBO_NETWORK_BACKEND is the test hook and is
+# into a sync decision. SCIEBO_NETWORK_BACKEND is an override and is
 # returned verbatim instead of probing. Every function is best-effort: a
 # missing tool or parse problem leaves the globals empty and METERED=0.
 # ---------------------------------------------------------------------------
@@ -239,7 +239,7 @@ _net_linux_probe() {
 # net_info - fill NET_IFACE/NET_SSID/NET_METERED for the active connection.
 # Never fails. The probe is memoized for the process: `sync` asks once per
 # manifest entry, and route/networksetup/nmcli are expensive. A change of
-# backend (test hook) invalidates the cache.
+# backend override invalidates the cache.
 NET_INFO_KEY=""
 net_info() {
   local key="${SCIEBO_NETWORK_BACKEND:-}:${METERED_SSIDS:-}" backend=""

@@ -26,7 +26,7 @@ This is an independent project. It is not affiliated with, endorsed by, or suppo
 
 ## Screenshot tour
 
-Every image below is real CLI output, captured against a temporary local rclone remote, not a real sciebo or Nextcloud account. Regenerate them with `make screenshots`.
+Every image below is real CLI output, captured against a temporary local rclone remote, not a real sciebo or Nextcloud account.
 <!-- src: README.md#screenshot-tour -->
 
 **`sciebo help`** — one entrypoint, every command on one screen.
@@ -282,7 +282,7 @@ The defaults here are deliberately gentle (`TRANSFERS=2`, `CHECKERS=4`, `TPSLIMI
 | [docs/architecture.md](docs/architecture.md) | module map, command conventions, lock/state/HTTP design |
 | [docs/parity.md](docs/parity.md) | Nextcloud Desktop parity matrix and its limits |
 | [SECURITY.md](SECURITY.md) | where the app password lives and what protects it |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | development setup, tests, style |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | development setup and style |
 | [CHANGELOG.md](CHANGELOG.md) | what changed in each release |
 <!-- src: README.md#documentation -->
 
@@ -290,15 +290,14 @@ The defaults here are deliberately gentle (`TRANSFERS=2`, `CHECKERS=4`, `TPSLIMI
 
 ## Contributing, security, and development
 
-Bug reports and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md) for the full development setup, style, and pre-PR checklist. In short:
+Bug reports and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup, style, and pre-PR checklist. In short:
 
 ```sh
-make lint         # shellcheck + shfmt, plus a syntax check of tools/screenshots.py
-make test         # tests/unit.sh + tests/features.sh + tests/integration.sh
-make screenshots  # regenerate docs/assets/screenshots/*.svg
+make lint         # shellcheck, shfmt, and generated CLI consistency
+make install      # install under ~/.local
+make dist         # build a source tarball
 ```
 
-The tests never touch sciebo or your real configuration: state, manifests, and the remote are redirected into a temp directory, and the integration suite runs against a temporary `local` rclone remote. See [docs/architecture.md](docs/architecture.md#tests-and-tooling) for the suite layout.
 <!-- src: README.md#development -->
 
 Report suspected vulnerabilities privately as described in [SECURITY.md](SECURITY.md), not in a public issue; it explains where the app password lives and what protects it.

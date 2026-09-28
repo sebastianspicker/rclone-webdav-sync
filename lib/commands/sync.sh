@@ -7,7 +7,7 @@
 # Sourcing this module only defines functions and the SYNC_* state: every
 # dependency (blacklist, policy, http, nc_api, capabilities, bigfolder,
 # filters, quota, hydrate) is loaded eagerly by lib/sciebo.sh, so `sciebo
-# sync --help` and the test fixtures that source this file directly parse
+# sync --help` and callers that source this file directly parse
 # none of the run-only work, only cmd_sync itself does.
 
 SYNC_FORCE_DRY=false

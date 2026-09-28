@@ -46,10 +46,8 @@ the version and fails fast with a clear message when it is too old.
 - [Parallel sync](#parallel-sync)
 - [Command conventions](#command-conventions)
 - [Global naming conventions](#global-naming-conventions)
-- [Tests and tooling](#tests-and-tooling)
 - [Adding a command](#adding-a-command)
 - [External contracts](#external-contracts)
-- [Limitations](#limitations)
 - [Glossary](#glossary)
 
 ## Layers
@@ -73,9 +71,7 @@ command spawns `bin/sciebo` instead of calling it as a function.
 
 <!-- src: architecture.md#layers -->
 
-`scripts/check-layers.sh` enforces this statically in `make lint` by parsing
-function definitions and by-name calls across `lib/`. Its header states six
-rules, and each violation prints `file:line` and fails the check:
+The layer boundaries follow these rules:
 
 1. A file may call functions defined in its own layer or a lower one. Rank:
    base < adapters < config < state < sync < cli < commands.
@@ -132,7 +128,7 @@ Every invocation follows the same seven steps, from process start to exit:
 5. It sources exactly the dispatched command's module through
    `sciebo_command_module` (`lib/sciebo.sh`). This happens inside
    `sciebo_main`, which is safe because every top-level array in a module is
-   declared with `-g` (check-layers rule 5 above); a plain `declare -A`
+   declared with `-g` (see the top-level declaration rule above); a plain `declare -A`
    would become local to `sciebo_main` and vanish when it returns.
 6. `main` (`lib/cli/main.sh`) looks the command up in `SCIEBO_COMMANDS` and
    calls `cmd_<command>` with the remaining arguments, or `usage_<command>`/
@@ -181,8 +177,8 @@ verified descriptor to stay TOCTOU-safe): shipped defaults in
 `config/settings.env`, then environment variables, then
 `config/settings.local.env` last, so plain assignments there win. See
 [docs/settings.md](settings.md#precedence) for the full precedence table and
-[docs/settings.md](settings.md#path-overrides-isolated-runs) for the path
-overrides the test suites rely on. `settings_init_paths` derives every path
+[docs/settings.md](settings.md#path-overrides) for path overrides.
+`settings_init_paths` derives every path
 (`MANIFEST_FILE`, `STATE_DIR`, `LOG_DIR`, `FILTER_DIR`, and others) and is
 idempotent.
 <!-- src: architecture.md#state-and-configuration -->
@@ -222,8 +218,7 @@ blacklist files; that reuse is why duplicate names are rejected.
 current version on first creation, walks `_state_migrate_step` from the
 recorded version to the current one on an upgrade, and refuses to continue
 when the recorded version is newer than the binary understands. To add a
-migration: write the step, bump `STATE_VERSION`, and cover it in the unit
-tests.
+migration: write the step and bump `STATE_VERSION`.
 <!-- src: architecture.md#state-and-configuration -->
 
 ## Locking
@@ -431,7 +426,7 @@ tuning without touching the project-wide files.
 ## Platform backends
 
 `lib/adapters/platform.sh` selects one backend per concern at runtime;
-`doctor` reports the active ones, and tests override probing with
+`doctor` reports the active ones. Backend selection can be overridden with
 `SCIEBO_KEYCHAIN_BACKEND`/`SCIEBO_NOTIFY_BACKEND`/`SCIEBO_SCHEDULER_BACKEND`/
 `SCIEBO_NETWORK_BACKEND`.
 <!-- src: architecture.md#platform-backends -->
@@ -504,10 +499,8 @@ A top-level variable in a `lib/*/*.sh` or `lib/commands/*.sh` file is either
 module-private, prefixed `_<module>_` for the file's basename (e.g.
 `_http_secret_cache` is private to `lib/adapters/http.sh`) and unreadable
 outside it, or shared, named for what it holds (`HTTP_BASE`, `OPT_EXTRA`)
-and owned by one module as below. Most existing globals still follow older
-per-command conventions (`ENTRY_*`, `MNT_*`) that predate this rule;
-`scripts/check-drift.sh` only warns, never fails, on a top-level
-`_<other>_*` global naming a different module.
+and owned by one module as below. Some existing globals still follow older
+per-command conventions (`ENTRY_*`, `MNT_*`) that predate this rule.
 <!-- src: architecture.md#global-naming -->
 
 | Family | Owner | Purpose |
@@ -526,59 +519,6 @@ per-command conventions (`ENTRY_*`, `MNT_*`) that predate this rule;
 
 <!-- src: architecture.md#global-naming -->
 
-## Tests and tooling
-
-| Suite | Command | Scope |
-| --- | --- | --- |
-| unit | `tests/unit.sh` (`tests/unit/*.sh`) | library functions with rclone stubbed or absent; paths redirected to a temp directory |
-| feature | `tests/features.sh` (`tests/features/*.sh`) | one script per feature, each self-isolated with a temp dir and stub `curl` binaries |
-| integration | `tests/integration.sh` | the whole CLI as `bash bin/sciebo` against a throwaway `local` rclone remote |
-| contract | `tests/contract/` | the whole CLI against a real Nextcloud in Docker; nightly CI only |
-
-<!-- src: architecture.md#tests-and-tooling -->
-
-`tests/unit.sh` and `tests/features.sh` wrap the shared `tests/run-suite.sh`
-runner, which discovers every script in its directory, runs up to `-j N`
-concurrently (reaped with `wait -n -p`), and prints each report under an
-`=== name ===` header in alphabetical order regardless of finish order.
-`tests/harness.sh` provides the shared assertions (`expect_eq`,
-`expect_contains`, `expect_file`, and others), printing the captured output
-on a failing `expect_rc`/`expect_contains`. Every test script loads
-production code through `lib/sciebo.sh`, the same loader `bin/sciebo` uses.
-`tests/fake_server.py` is a local Nextcloud emulator (status, Login Flow v2,
-avatar, capabilities, DAV files/comments/systemtags plus
-trashbin/versions/locks/chunked uploads, OCS
-user/activity/search/shares/notifications, `/__test__/` seed hooks);
-`tests/fake_env.sh` starts it and points a real CLI invocation at it.
-`tests/run-one.sh` (`make test-one T=NAME`) runs one named script.
-<!-- src: architecture.md#tests-and-tooling -->
-
-`make lint` runs shellcheck, shfmt, `scripts/check-layers.sh`,
-`scripts/gen-cli.sh --check`, `DRIFT_STRICT=1 scripts/check-drift.sh`, and a
-`py_compile` check of `tools/screenshots.py`/`tests/fake_server.py` (a
-missing linter fails unless `LINT_ALLOW_MISSING=1`).
-<!-- src: architecture.md#tests-and-tooling -->
-
-shellcheck runs in two passes, because the two audiences need different
-settings: production code runs with `-x`, following sources into `lib/`, so
-each library file is checked in the context it actually loads in; tests run
-without following sources, because each test sources the whole library and
-`-x` would re-analyze all of `lib/` once per test file, which does not scale.
-The test pass excludes only the codes that need the library's view (SC1091,
-SC2154, SC2034, SC2329), since those would otherwise misfire on names and
-sources the test file only ever sees indirectly.
-<!-- src: architecture.md#tests-and-tooling -->
-
-`check-drift.sh` checks the implementation against the spec/registry: every
-command has a matching `usage_<name>`/`cmd_<name>` pair and man page
-section, every settings key `settings.sh` requires exists in
-`settings.env`, and, under `DRIFT_STRICT`, a live `<command> --help`'s long
-options match the spec. `make test` is unit + feature + integration;
-`make test-fast` skips integration (the pre-PR gate). CI runs
-lint/unit/feature/integration on macOS and Linux; the contract suite runs
-nightly against a real server.
-<!-- src: architecture.md#tests-and-tooling -->
-
 ## Adding a command
 
 1. Add a `COMMAND` row to `lib/cli/sciebo.spec` (name, tier, module,
@@ -590,20 +530,16 @@ nightly against a real server.
    remote is needed, `require_remote`; acquire the lock only if the command
    writes shared state.
 3. Add the command's line to `usage_main`'s "Commands:"/"Extra commands:"
-   section, in spec order; `scripts/gen-cli.sh --check` verifies the two
-   match.
+   section, in spec order.
 4. Put shared logic in the right layer (`lib/sync/` for a rule two commands
    need, `lib/adapters/` for a new external call), never inline in a second
    command module.
-5. Add a unit test for any pure helper, a feature test (stub curl for
-   Nextcloud calls), and an integration test if CLI behavior changes.
-6. Document it in [docs/commands.md](commands.md), any new setting in
+5. Document it in [docs/commands.md](commands.md), any new setting in
    [docs/settings.md](settings.md) and `config/settings.local.env.example`,
    and add a `CHANGELOG.md` entry.
 <!-- src: architecture.md#adding-a-command -->
 
-A new server-API command starts in the `extra` tier and is promoted to
-`core` only once `tests/contract/` covers it against a real Nextcloud.
+A new server-API command starts in the `extra` tier.
 <!-- src: architecture.md#adding-a-command -->
 
 ## External contracts
@@ -628,21 +564,6 @@ depends on them:
   SIGINT, 143 SIGTERM.
 <!-- src: architecture.md#external-contracts -->
 
-## Limitations
-
-This document has no product limitations to disclose; what it enforces
-instead are process rules, checked by lint rather than left as convention:
-
-- Layering (base → adapters → config → state → sync → cli → commands) must
-  not be violated; `scripts/check-layers.sh` fails the build on a call to a
-  higher layer.
-- Command modules must not call each other in-process; a command that needs
-  another spawns `bin/sciebo`.
-- The old per-function lazy-loading scheme is gone; every library file loads
-  eagerly on every invocation, which trades roughly 15-20 ms of startup for
-  the simplicity of not tracking load state at ~185 call sites.
-<!-- src: architecture.md -->
-
 ## Glossary
 
 Plain-language definitions for terms used above, shared with the rest of
@@ -663,7 +584,7 @@ this project's documentation:
 | state directory | Where this tool stores run history, locks, caches, and other bookkeeping, separate from synced files. |
 | run lock | A safeguard that stops two sync/cleanup runs from overlapping on the same machine. |
 | policy (e.g. `E2EE_POLICY`) | A named setting that chooses how this tool reacts to a risky situation: allow it, warn, ask first, or skip/exclude it. |
-| tier (core / extra) | `core` commands are covered by tests against a real Nextcloud server; `extra` commands are newer and tested only against a local stand-in. |
+| tier (core / extra) | `core` commands cover the established sync workflow; `extra` commands expose newer Nextcloud server features. |
 | profile | An independent, named account setup (its own remote, sync list, filters, and state), used to manage more than one Nextcloud account. |
 | filter file | A plain-text rule file (rclone syntax) that excludes or includes paths from a sync. |
 | capabilities probe | A one-time-per-cache-window API call that discovers what the connected server supports (chunk size, trashbin, checksums, version). |

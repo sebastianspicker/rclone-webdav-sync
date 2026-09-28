@@ -5,12 +5,12 @@
 # bin/sciebo's sciebo_main (lib/cli/main.sh) and the command modules
 # themselves use to source lib/commands/*.sh.
 #
-# Sourced once by bin/sciebo and by every test suite; requires Bash 5.3.
+# Sourced once by bin/sciebo; requires Bash 5.3.
 # lib/commands/*.sh stay lazy: sciebo_main sources only the dispatched
 # module, at global scope. Every command module's own dependencies live in
 # lib/ (ranks 1-6 above), so no command module ever calls into another.
 
-# Load-once guard: a test that sources this file directly, plus bin/sciebo,
+# Load-once guard: a caller that sources this file directly, plus bin/sciebo,
 # plus a command module that is sourced standalone, must not re-run the
 # resolution and re-source every library.
 [[ -z "${_SCIEBO_SH_LOADED:-}" ]] || return 0
@@ -42,7 +42,7 @@ esac
 # Every lib/<layer>/*.sh, sourced once, in an explicit order (no globs, so a
 # new file must be added here deliberately), grouped by layer (rank order; a
 # file may call functions from its own layer or a lower one - see
-# docs/architecture.md#layers and scripts/check-layers.sh). Order matters
+# docs/architecture.md#layers). Order matters
 # only in that a file must not call another's function at *source* time
 # (defining a function or a plain variable never does; text.sh's
 # _AWK_CTRL_LIB/_AWK_HTML_LIB, read by xml.sh's own top-level _AWK_XML_LIB

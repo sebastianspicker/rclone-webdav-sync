@@ -85,7 +85,7 @@ http_urlencode() {
 # live in one place instead of being copy-pasted per command module. The
 # preludes work on bytes: in a UTF-8 locale gawk treats sprintf("%c", 195) as
 # the character U+00C3, which corrupts percent-decoded names, so callers run
-# them under LC_ALL=C (scripts/check-layers.sh rule 6 enforces this). It starts with
+# them under LC_ALL=C. It starts with
 # text.sh's _AWK_CTRL_LIB (text.sh is always sourced before this file), so
 # the XML parsers share the exact UTF-8 control rules through xml_strip_ctrl,
 # and includes text.sh's _AWK_HTML_LIB, so a parser strips server-provided

@@ -29,7 +29,7 @@ entry_name_for() {
 manifest_files() { printf '%s\n' "$MANIFEST_FILE" "$FOLDERS_FILE" "$MANIFEST_GENERATED_FILE"; }
 
 # Memoized manifest content (config_lines already applied). The key covers the
-# file list with each file's mtime and size, so an external writer or a test
+# file list with each file's mtime and size, so an external writer or caller
 # that swaps a file invalidates the cache even without an explicit call; the
 # index invalidator below also drops it on an in-process write.
 MANIFEST_LINES_CACHE=""

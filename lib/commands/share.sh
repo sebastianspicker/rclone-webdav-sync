@@ -221,7 +221,7 @@ share_valid_id() {
 
 # share_interactive - true when a confirmation prompt may be shown: stdin
 # is a terminal and --non-interactive was not given. The terminal check goes
-# through the shared ui_stdin_tty seam so tests can substitute it.
+# through the shared ui_stdin_tty seam so callers can substitute it.
 share_interactive() {
   ui_stdin_tty && [[ -z "${SCIEBO_NON_INTERACTIVE:-}" ]]
 }
@@ -1130,7 +1130,7 @@ share_require_respond_options() {
 # gate stays hand-rolled on purpose: ui_confirm_mutation_soft would also
 # prompt here, but the single-id prompt needs the kind share_pending_kind
 # only learns after its HTTP fetches, and a refused run must exit before
-# share_load_remote touches curl (the tests pin "refusal no GET"). The
+# share_load_remote touches curl. The
 # prompt itself is the shared ui_confirm_mutation below.
 share_decline_gate() {
   local sub="$1" requires="$2"

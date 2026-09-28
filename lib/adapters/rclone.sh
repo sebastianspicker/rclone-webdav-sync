@@ -9,7 +9,7 @@
 # Homebrew/system locations. Built in-shell: command -v is a builtin and the
 # forkless ${ ...; } capture (Bash 5.3) replaces the old printf-in-a-process-
 # substitution, which forked twice per discovery. Deliberately not memoized:
-# load_settings and the tests change RCLONE_BIN/PATH in-process, so a
+# load_settings and direct callers may change RCLONE_BIN/PATH in-process, so a
 # process-lifetime cache could go stale, and the fork-free loop below is
 # already cheap.
 _rclone_candidates_into() {
@@ -210,7 +210,7 @@ rclone_cmd() {
 }
 
 # progress_stdout_tty - true when stdout is a terminal. Kept as its own
-# function so tests can substitute a TTY-like check without a real pty.
+# function so callers can substitute a TTY-like check without a real pty.
 progress_stdout_tty() { [[ -t 1 ]]; }
 
 # progress_append_args ARGS_NAME QUIET - append rclone's -P to the array named

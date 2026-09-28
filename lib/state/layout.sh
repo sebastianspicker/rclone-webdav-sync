@@ -77,7 +77,7 @@ ensure_state_dirs() {
   mkdir -p "$LOG_DIR" "$LOCK_DIR" "$BISYNC_DIR" "$RUNSTATE_DIR"
   # This file is always loaded (lib/sciebo.sh), so state versioning always
   # runs on every state-writing command. The STATE_VERSION_FILE guard keeps
-  # library-level callers that never ran load_settings (unit tests, direct
+  # library-level callers that never ran load_settings (direct
   # sourcing) skipping it: without a derived state layout
   # state_migrations_run would die under `set -u`.
   if [[ -n "${STATE_VERSION_FILE:-}" ]]; then

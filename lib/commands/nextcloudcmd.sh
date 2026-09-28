@@ -262,8 +262,7 @@ ncc_read_password() {
   fi
   # opt_read_fd_secret (lib/base/core.sh) owns the shared fd vocabulary
   # ("requires a file descriptor number"/"requires a positive file descriptor
-  # number"/"is not readable"/"provided an empty password") that
-  # tests/features/nextcloudcmd.sh asserts.
+  # number"/"is not readable"/"provided an empty password").
   opt_read_fd_secret nextcloudcmd --password-fd OPT_password "$fd"
   return 0
 }

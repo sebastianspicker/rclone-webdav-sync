@@ -334,7 +334,7 @@ setup_login_flow_finish() {
 # setup_login_flow BASE_URL - Nextcloud Login Flow v2: POST the flow,
 # open the login URL in the browser, poll until the user grants access,
 # and set LOGIN_FLOW_URL/LOGIN_FLOW_USER/LOGIN_FLOW_PASSWORD. Uses `curl`
-# from PATH. Test knobs: LOGIN_FLOW_POLL_INTERVAL (default 2),
+# from PATH. Environment controls: LOGIN_FLOW_POLL_INTERVAL (default 2),
 # LOGIN_FLOW_TIMEOUT (default 1200), LOGIN_FLOW_NO_BROWSER (print instead
 # of opening), and LOGIN_FLOW_MAX_POLLS (optional poll cap).
 # The four stages run in order — request, URL validation, browser, finish —

@@ -178,8 +178,7 @@ Commands:
   download SUB [DEST]       download a remote file or directory
   update [--check]          update the local checkout from git
 
-Extra commands (Nextcloud server features; covered by the isolated test
-suite but not by the real-server contract suite):
+Extra commands (newer Nextcloud server features):
   notifications             list or delete Nextcloud notifications
   activity                  show the Nextcloud activity stream
   presence [set ...]        show or set your Nextcloud user status
@@ -290,7 +289,7 @@ sciebo_main() {
   # the module's top-level `declare -A`/`declare -g` declarations to that
   # function and drop them when it returns - sciebo_main itself is a
   # function, so every command module's top-level declarations must (and
-  # do; scripts/check-layers.sh enforces it) use -g. --version/-V is
+  # do) use -g. --version/-V is
   # consumed by extract_global_flags and exits before any command module is
   # read.
   extract_global_flags "$@"

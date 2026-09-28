@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## Unreleased
 
 ### Fixed
 
@@ -15,13 +15,10 @@ uses [Semantic Versioning](https://semver.org/).
 - `make install` stages replacements before touching a working installation
   and rolls back commit-time failures instead of reporting success with a
   partial tree.
-- A trailing test-runner `-j` now exits with a usage error instead of looping,
-  and the layer checker no longer depends on opening `/dev/stderr` as a file.
 
-## [0.2.0] - 2026-09-24
+## 0.2.0 - 2026-09-25
 
-First public release. Everything below is relative to the 0.1.0 internal
-snapshot.
+Version 0.2.0. Changes below are relative to version 0.1.0.
 
 ### Added
 
@@ -50,9 +47,6 @@ snapshot.
 - Conflict review and resolution (`conflicts --resolve`).
 - Per-pair pause/resume and a hidden-files flag for individual folder pairs
   (`folders pause`, `folders edit`).
-- A real-server contract test suite that runs against a Nextcloud container
-  (nightly and on demand in CI); the isolated test suite now also runs
-  against the documented minimum rclone version.
 
 ### Changed
 
@@ -120,13 +114,9 @@ snapshot.
 - Settings, profile, and `.env` files are checked for safe ownership and
   permissions before they are read.
 
-## [0.1.0] - 2026-09-19
+## 0.1.0 - 2026-09-19
 
 Initial versioned snapshot: manifest-driven sync/pull/bisync, folder wizard,
 git discovery, Login Flow v2 with Keychain storage, capabilities probe,
 filters and `.nosync`, verify/status/pause, launchd scheduling, on-demand
 mounts, cleanup, and the read-only trashbin/version listings.
-
-[Unreleased]: https://github.com/sebastianspicker/rclone-webdav-sync/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/sebastianspicker/rclone-webdav-sync/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/sebastianspicker/rclone-webdav-sync/releases/tag/v0.1.0

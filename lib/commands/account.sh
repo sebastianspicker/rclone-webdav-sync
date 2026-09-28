@@ -339,7 +339,7 @@ IMPORT_PLAN_BLOCKED=()
 IMPORT_PLAN_APPLIED=()
 IMPORT_PLAN_STATUS=()
 IMPORT_PLAN_SKIPPED=()
-# PAIR_FLAGS_DIR as pinned before the import (tests/exported overrides); empty
+# PAIR_FLAGS_DIR as pinned before the import; empty
 # means "derive the target profile's state directory per account".
 IMPORT_PAIR_FLAGS_DIR_OVERRIDE=""
 
@@ -807,7 +807,7 @@ account_import_selected() {
 # profile's manifests without touching or creating anything.
 account_import_count_entries() {
   local profile="$1" line="" n=0
-  # The inherited values (exported test/CLI overrides) survive the shadowing;
+  # The inherited values (exported environment/CLI overrides) survive the shadowing;
   # for the default profile account_manifest_paths keeps them.
   # shellcheck disable=SC2034  # read by the manifest helpers below
   local MANIFEST_FILE="${MANIFEST_FILE:-}" FOLDERS_FILE="${FOLDERS_FILE:-}"
@@ -1010,7 +1010,7 @@ account_import_settings_write() {
 # account_pair_flags_dir PROFILE - print the per-pair flag directory an
 # imported profile's paused/hidden flags are stored under. An explicit
 # PAIR_FLAGS_DIR captured at import start wins, then an exported STATE_DIR
-# (tests and overrides); otherwise the profile's state directory is derived
+# (environment overrides); otherwise the profile's state directory is derived
 # the way load_settings would, because account import never calls it (the
 # profile may not exist yet).
 account_pair_flags_dir() {
@@ -1127,7 +1127,7 @@ _account_import_batch_pairs() {
 account_import_apply_one() {
   local k="$1" idx="${IMPORT_PLAN_ACCOUNTS[$1]}" profile="${IMPORT_PLAN_PROFILES[$1]}"
   local skipped=0 flags_dir=""
-  # The inherited values (exported test/CLI overrides) survive the shadowing;
+  # The inherited values (exported environment/CLI overrides) survive the shadowing;
   # for the default profile account_manifest_paths keeps them.
   # shellcheck disable=SC2034  # read by the manifest helpers via dynamic scope
   local MANIFEST_FILE="${MANIFEST_FILE:-}" FOLDERS_FILE="${FOLDERS_FILE:-}"

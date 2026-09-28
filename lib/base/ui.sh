@@ -27,7 +27,7 @@ ui_ask_secret() {
 }
 
 # ui_stdin_tty - true when stdin is a terminal. The one primitive behind
-# every gate in this module; kept as its own function so tests can
+# every gate in this module; kept as its own function so callers can
 # substitute the check without a real pty (same pattern as rclone.sh's
 # progress_stdout_tty).
 ui_stdin_tty() { [[ -t 0 ]]; }

@@ -40,8 +40,7 @@ with the [README](../README.md) instead.
 - [TLS](#tls)
 - [Proxy](#proxy)
 - [State layout](#state-layout)
-- [Path overrides (isolated runs)](#path-overrides-isolated-runs)
-- [Development knobs](#development-knobs)
+- [Path overrides](#path-overrides)
 - [Limitations](#limitations)
 - [Glossary](#glossary)
 
@@ -826,13 +825,9 @@ old binary cannot corrupt it (see
 [docs/architecture.md](architecture.md#state-and-configuration)).
 <!-- src: settings.md#state-layout -->
 
-## Path overrides (isolated runs)
+## Path overrides
 
-This section is for contributors and test authors: every path below can be
-overridden from the environment, and commands never write outside them.
-This is how the test suites stay isolated; day-to-day use of this tool does
-not need it.
-<!-- src: settings.md#path-overrides-isolated-runs -->
+Every path below can be overridden from the environment.
 
 | Variable | Default (default profile / named profile) |
 | --- | --- |
@@ -871,22 +866,6 @@ not need it.
 | `SERVER_EXCLUDE_FILE` | `<STATE_DIR>/sync-exclude.lst` |
 | `SERVER_EXCLUDE_FILTER` | `<FILTER_DIR>/server-exclude.txt` |
 | `STATE_VERSION_FILE` | `<STATE_DIR>/VERSION` |
-<!-- src: settings.md#path-overrides-isolated-runs -->
-
-### Development knobs
-
-Also for contributors and test authors. These are read from the environment
-by specific commands; they exist mainly for tests and debugging and are not
-part of the supported surface:
-<!-- src: settings.md#development-knobs -->
-
-| Variable | Default | Used by |
-| --- | --- | --- |
-| `LOGIN_FLOW_POLL_INTERVAL` / `LOGIN_FLOW_TIMEOUT` / `LOGIN_FLOW_MAX_POLLS` | `2` / `1200` / unset | `setup --login` polling (the browser sign-in flow). |
-| `LOGIN_FLOW_NO_BROWSER` | unset | print the login URL instead of opening a browser. |
-| `DOCTOR_NAME_SCAN_LIMIT` | `50000` | cap on paths inspected per source by the `doctor` name-hygiene scan. |
-| `SCIEBO_KEYCHAIN_BACKEND` / `SCIEBO_NOTIFY_BACKEND` / `SCIEBO_SCHEDULER_BACKEND` / `SCIEBO_NETWORK_BACKEND` | unset | override backend probing in `lib/adapters/platform.sh` (tests; the network backend accepts `macos`, `linux`, or `none`). |
-<!-- src: settings.md#development-knobs -->
 
 ## Limitations
 
@@ -896,19 +875,6 @@ part of the supported surface:
   <!-- src: settings.md#precedence -->
 - `REMOTE_BASE` must be a relative path with no `..` and no `|`.
   <!-- src: settings.md#precedence -->
-- `commands.md` documents that `doctor`'s end-to-end-encryption, external
-  storage, and big-folder scans use a setting named
-  `DOCTOR_REMOTE_SCAN_LIMIT`, but this document's Settings reference has no
-  row for it and it is not one of the keys defined in
-  `config/settings.env`. This is a gap in the source documentation, not a
-  contradiction: rather than invent a default, this rewrite carries the gap
-  forward. Check `config/settings.env` and `lib/commands/doctor.sh` directly
-  if you need that setting's current default.
-- The path-override table and the development knobs are for contributors
-  and test authors; they are not part of the day-to-day settings surface
-  and (for the development knobs) are explicitly not a supported interface
-  that will stay stable.
-  <!-- src: settings.md#path-overrides-isolated-runs -->
 
 ## Glossary
 

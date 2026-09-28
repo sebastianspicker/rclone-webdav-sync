@@ -10,8 +10,8 @@
 #     remote_secret_plain in lib/adapters/rclone.sh).
 #
 # The rclone config only ever holds an obscured empty value in Keychain mode.
-# Every function degrades cleanly when KEYCHAIN is unset (direct sourcing in
-# unit tests) or when no backend is available under `set -u`.
+# Every function degrades cleanly when KEYCHAIN is unset during direct
+# sourcing or when no backend is available under `set -u`.
 #
 # The backend comes from platform_keychain_backend: `security` (macOS),
 # `secret-tool` (libsecret), or `pass`. The Linux backends read the secret
@@ -30,9 +30,9 @@ KEYCHAIN_PLAIN_CACHE_SET=0
 # rclone_cmd, and the platform probe used to fork subshells
 # ($(platform_keychain_backend) -> $(platform_os)) on each call. The cache
 # is keyed on every input that can change the answer - the
-# SCIEBO_KEYCHAIN_BACKEND test hook, PATH (backs the `have` probes), and
-# PLATFORM_OS - so a test that re-stubs either between calls re-probes
-# without any test-side reset; _keychain_cache_reset (also wired into
+# SCIEBO_KEYCHAIN_BACKEND override, PATH (backs the `have` probes), and
+# PLATFORM_OS - so changing either between calls re-probes without a
+# separate cache reset; _keychain_cache_reset (also wired into
 # remote_secret_invalidate in lib/adapters/rclone.sh) drops it explicitly.
 KEYCHAIN_BACKEND_CACHE=""
 KEYCHAIN_BACKEND_CACHE_KEY=""
@@ -55,7 +55,7 @@ _keychain_backend_refresh() {
 }
 
 # _keychain_cache_reset - drop the memoized backend so the next call
-# re-probes; callable from tests and from remote_secret_invalidate.
+# re-probes; callable directly and from remote_secret_invalidate.
 _keychain_cache_reset() {
   KEYCHAIN_BACKEND_CACHE=""
   KEYCHAIN_BACKEND_CACHE_KEY=""

@@ -11,12 +11,11 @@
 # load_settings run. settings_init_paths is idempotent (first call wins) and
 # runs both from the entrypoint, right after the global options are consumed
 # and before any command module is sourced, and as load_settings's first
-# step, so a command module sourced standalone (tests, tooling) still gets a
+# step, so a command module sourced standalone still gets a
 # derived layout the moment it calls load_settings.
 #
 # Every path below (and SETTINGS_FILE/SETTINGS_LOCAL_FILE/ENV_FILE) can be
-# overridden from the environment; the integration tests rely on that for
-# isolation.
+# overridden from the environment for isolated runs.
 
 DEFAULT_KEYCHAIN_SERVICE="rclone-sciebo"
 
@@ -42,8 +41,8 @@ settings_init_paths() {
   : "${SETTINGS_FILE:=${_SCIEBO_CONF_BASE}/settings.env}"
   : "${SETTINGS_LOCAL_FILE:=${_SCIEBO_CONF_BASE}/settings.local.env}"
   : "${ENV_FILE:=${PROJECT_DIR}/.env}"
-  # Where named profiles keep their config and state; overridable so tests
-  # never touch the real config/profiles tree.
+  # Where named profiles keep their config and state; overridable for
+  # isolated runs.
   : "${PROFILES_DIR:=${_SCIEBO_CONF_BASE}/profiles}"
   : "${PROFILES_STATE_DIR:=${_SCIEBO_CONF_STATE}/profiles}"
 
@@ -378,7 +377,7 @@ _require_settings() {
 }
 
 # _derive_settings_paths - configuration and state layout; every path stays
-# environment-overridable for isolated test runs. A named profile keeps its
+# environment-overridable for isolated runs. A named profile keeps its
 # configuration under config/profiles/<name>/ and its state under
 # state/profiles/<name>/, so two accounts never share locks or workdirs.
 _derive_settings_paths() {

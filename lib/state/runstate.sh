@@ -44,7 +44,7 @@ runstate_write() {
   [[ -n "$log" ]] || log="-"
   detail=${ printable "$detail";}
   # Create the state directory only when missing: ensure_state_dirs already
-  # made it for CLI callers, and lib-level test callers keep mkdir -p's exact
+  # made it for CLI callers, and direct library callers keep mkdir -p's exact
   # behavior (including its failing rc) for a missing or non-directory path.
   if [[ ! -d "$RUNSTATE_DIR" ]]; then
     mkdir -p "$RUNSTATE_DIR" 2>/dev/null || return 0
