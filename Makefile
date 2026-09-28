@@ -191,64 +191,11 @@ schedule-status: ## show launchd agent status
 version: ## print the project version
 	@printf '%s %s\n' sciebo "$(VERSION)"
 
-install: ## install the tree under PREFIX (default ~/.local); never touches existing config/state
-	@test -n "$(VERSION)" || { echo "VERSION file missing" >&2; exit 1; }
-	@dest="$(PREFIX)/share/rclone-sciebo"; \
-	mkdir -p "$$dest" "$(PREFIX)/bin" "$(PREFIX)/share/man/man1"; \
-	for item in $(CODE_ITEMS); do \
-	  rm -rf "$$dest/$$item"; \
-	done; \
-	for item in $(CODE_ITEMS); do \
-	  [ -e "$$item" ] || continue; \
-	  mkdir -p "$$dest/$$(dirname $$item)"; \
-	  cp -R "$$item" "$$dest/$$(dirname $$item)/"; \
-	done; \
-	mkdir -p "$$dest/config"; \
-	cp -f config/settings.env "$$dest/config/settings.env"; \
-	cp -f config/settings.local.env.example "$$dest/config/settings.local.env.example"; \
-	preserved=""; \
-	config_files="$$(cd config && find . -type f \
-	    ! -name '.*' ! -name settings.env ! -name settings.local.env.example \
-	    ! -name settings.local.env ! -name sources.generated.conf \
-	    | sed 's#^\./##')"; \
-	for rel in $$config_files; do \
-	  if [ -e "$$dest/config/$$rel" ]; then \
-	    preserved="$$preserved $$rel"; \
-	  else \
-	    mkdir -p "$$dest/config/$$(dirname $$rel)"; \
-	    cp "config/$$rel" "$$dest/config/$$rel"; \
-	  fi; \
-	done; \
-	printf '#!/usr/bin/env bash\nexec bash "%s/bin/sciebo" "$$@"\n' "$$dest" >"$(PREFIX)/bin/sciebo"; \
-	chmod +x "$(PREFIX)/bin/sciebo"; \
-	if [ -f man/sciebo.1 ]; then cp man/sciebo.1 "$(PREFIX)/share/man/man1/sciebo.1"; fi; \
-	if [ -n "$$preserved" ]; then \
-	  printf 'preserved existing config:%s\n' "$$preserved"; \
-	fi; \
-	if [ -d "$$dest/state" ]; then \
-	  printf 'preserved existing state/\n'; \
-	fi; \
-	printf 'installed sciebo %s to %s/bin/sciebo\n' "$(VERSION)" "$(PREFIX)"
+install: check-bash ## install the tree under PREFIX (default ~/.local); never touches existing config/state
+	@$(BASH) scripts/install.sh install "$(PREFIX)" "$(VERSION)" $(CODE_ITEMS)
 
-uninstall: ## remove the installed code/assets, wrapper, and man page under PREFIX (keeps config/ and state/)
-	@dest="$(PREFIX)/share/rclone-sciebo"; \
-	if [ -d "$$dest" ]; then \
-	  for item in $(CODE_ITEMS); do \
-	    rm -rf "$$dest/$$item"; \
-	  done; \
-	  printf 'removed code and assets under %s\n' "$$dest"; \
-	fi; \
-	if [ -f "$(PREFIX)/bin/sciebo" ]; then rm -f "$(PREFIX)/bin/sciebo"; printf 'removed %s\n' "$(PREFIX)/bin/sciebo"; fi; \
-	if [ -f "$(PREFIX)/share/man/man1/sciebo.1" ]; then \
-	  rm -f "$(PREFIX)/share/man/man1/sciebo.1"; \
-	  printf 'removed %s\n' "$(PREFIX)/share/man/man1/sciebo.1"; \
-	fi; \
-	if [ -d "$$dest" ] && [ -z "$$(ls -A "$$dest" 2>/dev/null)" ]; then \
-	  rmdir "$$dest"; \
-	fi; \
-	if [ -d "$$dest" ]; then \
-	  printf 'config and state remain in %s (remove with: rm -rf %s)\n' "$$dest" "$$dest"; \
-	fi
+uninstall: check-bash ## remove the installed code/assets, wrapper, and man page under PREFIX (keeps config/ and state/)
+	@$(BASH) scripts/install.sh uninstall "$(PREFIX)" "$(VERSION)" $(CODE_ITEMS)
 
 update: ## git pull --ff-only (in a worktree), then lint + test
 	@if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then \

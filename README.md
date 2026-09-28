@@ -96,7 +96,7 @@ make dist                # source tarball: dist/rclone-webdav-sync-<version>.tar
 ```
 <!-- src: README.md#install -->
 
-`make install` leaves your per-machine settings and sync state alone: it never writes `config/settings.local.env` or `state/` into the installed copy, whether this is a first install or a reinstall over an existing one. `make uninstall` mirrors that and keeps `config/` and `state/` under the installed prefix (`$PREFIX/share/rclone-sciebo`) so you can remove just the code, or copy your settings forward before deleting the rest by hand.
+`make install` stages the complete replacement before changing an existing installation and rolls back if the replacement cannot be committed. It leaves your per-machine settings and sync state alone: it never writes `config/settings.local.env` or `state/` into the installed copy, whether this is a first install or a reinstall over an existing one. `make uninstall` mirrors that and keeps `config/` and `state/` under the installed prefix (`$PREFIX/share/rclone-sciebo`) so you can remove just the code, or copy your settings forward before deleting the rest by hand.
 <!-- src: README.md#install -->
 
 ### Shell completions

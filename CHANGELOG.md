@@ -12,6 +12,9 @@ uses [Semantic Versioning](https://semver.org/).
   by an earlier `schedule install --profiles` invocation, and reinstalling
   reconciles profiles that were removed from the requested set. systemd login
   services are disabled based on installed state instead of current settings.
+- `make install` stages replacements before touching a working installation
+  and rolls back commit-time failures instead of reporting success with a
+  partial tree.
 
 ## [0.2.0] - 2026-09-24
 
