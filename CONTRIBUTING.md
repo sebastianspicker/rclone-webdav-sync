@@ -43,8 +43,8 @@ to skip an absent linter locally (CI never does). `python3` is optional
 - **New server-API commands start as extras.** A command that wraps a
   Nextcloud server feature is added with tier `extra` in
   `lib/cli/sciebo.spec` and listed under "Extra commands" in the CLI's
-  usage output; it becomes `core` once the real-server contract suite covers
-  it. `make lint` checks the two lists agree.
+  usage output; it becomes `core` once it is verified against a real
+  Nextcloud server. `make lint` checks the two lists agree.
 - **Credentials never get committed.** `.env` and
   `config/settings.local.env` are gitignored. Keep them that way, and don't
   paste real credentials or private sciebo (service) URLs into issues.
@@ -66,14 +66,7 @@ how to add a new command.
 ```sh
 make lint       # shellcheck + shfmt, the completions generator --check,
                 # the layering check, plus a syntax check of the screenshot tool
-make test       # unit + feature + integration tests, fully isolated from sciebo
-make test-fast  # unit + feature tests only, skips integration (quicker pre-PR gate)
-make test-one T=NAME   # run a single unit/feature test script by name
 ```
-
-The unit tests only exercise libraries. The integration tests need `rclone`
-and run the whole CLI against a throwaway `local` remote in a temp directory;
-they never touch a real remote, your configuration, or launchd/systemd.
 <!-- src: CONTRIBUTING.md#before-you-open-a-pull-request -->
 
 ## Screenshots
@@ -133,4 +126,4 @@ includes updating the docs, not only the code.
 | Nextcloud | The open-source server software the sciebo service and other institutions run. |
 | rclone | The third-party file-transfer engine this tool is built on. |
 | layer | One of seven ordered internal code groupings (from basic helpers up to individual commands); lower layers never depend on higher ones. |
-| tier (core / extra) | `core` commands are covered by tests against a real Nextcloud server; `extra` commands are newer and tested only against a local stand-in. |
+| tier (core / extra) | `core` commands are tested against a real Nextcloud server; `extra` commands are newer and tested only against a local stand-in. |

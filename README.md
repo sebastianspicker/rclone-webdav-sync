@@ -294,11 +294,10 @@ Bug reports and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md
 
 ```sh
 make lint         # shellcheck + shfmt, plus a syntax check of tools/screenshots.py
-make test         # tests/unit.sh + tests/features.sh + tests/integration.sh
 make screenshots  # regenerate docs/assets/screenshots/*.svg
 ```
 
-The tests never touch sciebo or your real configuration: state, manifests, and the remote are redirected into a temp directory, and the integration suite runs against a temporary `local` rclone remote. See [docs/architecture.md](docs/architecture.md#tests-and-tooling) for the suite layout.
+See [docs/architecture.md](docs/architecture.md#tests-and-tooling) for the tooling layout.
 <!-- src: README.md#development -->
 
 Report suspected vulnerabilities privately as described in [SECURITY.md](SECURITY.md), not in a public issue; it explains where the app password lives and what protects it.

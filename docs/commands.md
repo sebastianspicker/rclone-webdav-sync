@@ -12,12 +12,11 @@ page documents, so this page is meant to be read alongside the `sciebo`
 command's own help, not instead of it.
 
 Commands come in two tiers, shown separately by `sciebo help`. **Core**
-commands are the sync workflow plus the file operations that the
-real-server contract suite (`tests/contract/`) exercises against a live
-Nextcloud. **Extra** commands (`notifications`, `activity`, `presence`,
+commands are the sync workflow plus the file operations verified against a
+live Nextcloud. **Extra** commands (`notifications`, `activity`, `presence`,
 `file`, `search`, `recent`, `comments`, `favorites`, `tags`, `server`,
 `edit`, `announcements`, `preview`) wrap further Nextcloud server features;
-the isolated test suite covers them, the contract suite does not yet.
+they are verified only against a local stand-in.
 <!-- src: commands.md -->
 
 - [How to read this reference](#how-to-read-this-reference)

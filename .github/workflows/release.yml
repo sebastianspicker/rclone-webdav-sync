@@ -26,10 +26,9 @@ jobs:
         run: |
           test "${GITHUB_REF_NAME}" = "v$(cat VERSION)"
 
-      - name: Lint and test
+      - name: Lint
         run: |
           make lint
-          make test
 
       - name: Build tarball
         run: make dist

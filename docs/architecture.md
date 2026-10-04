@@ -528,55 +528,21 @@ per-command conventions (`ENTRY_*`, `MNT_*`) that predate this rule;
 
 ## Tests and tooling
 
-| Suite | Command | Scope |
-| --- | --- | --- |
-| unit | `tests/unit.sh` (`tests/unit/*.sh`) | library functions with rclone stubbed or absent; paths redirected to a temp directory |
-| feature | `tests/features.sh` (`tests/features/*.sh`) | one script per feature, each self-isolated with a temp dir and stub `curl` binaries |
-| integration | `tests/integration.sh` | the whole CLI as `bash bin/sciebo` against a throwaway `local` rclone remote |
-| contract | `tests/contract/` | the whole CLI against a real Nextcloud in Docker; nightly CI only |
-
-<!-- src: architecture.md#tests-and-tooling -->
-
-`tests/unit.sh` and `tests/features.sh` wrap the shared `tests/run-suite.sh`
-runner, which discovers every script in its directory, runs up to `-j N`
-concurrently (reaped with `wait -n -p`), and prints each report under an
-`=== name ===` header in alphabetical order regardless of finish order.
-`tests/harness.sh` provides the shared assertions (`expect_eq`,
-`expect_contains`, `expect_file`, and others), printing the captured output
-on a failing `expect_rc`/`expect_contains`. Every test script loads
-production code through `lib/sciebo.sh`, the same loader `bin/sciebo` uses.
-`tests/fake_server.py` is a local Nextcloud emulator (status, Login Flow v2,
-avatar, capabilities, DAV files/comments/systemtags plus
-trashbin/versions/locks/chunked uploads, OCS
-user/activity/search/shares/notifications, `/__test__/` seed hooks);
-`tests/fake_env.sh` starts it and points a real CLI invocation at it.
-`tests/run-one.sh` (`make test-one T=NAME`) runs one named script.
-<!-- src: architecture.md#tests-and-tooling -->
-
 `make lint` runs shellcheck, shfmt, `scripts/check-layers.sh`,
 `scripts/gen-cli.sh --check`, `DRIFT_STRICT=1 scripts/check-drift.sh`, and a
-`py_compile` check of `tools/screenshots.py`/`tests/fake_server.py` (a
+`py_compile` check of `tools/screenshots.py` (a
 missing linter fails unless `LINT_ALLOW_MISSING=1`).
 <!-- src: architecture.md#tests-and-tooling -->
 
-shellcheck runs in two passes, because the two audiences need different
-settings: production code runs with `-x`, following sources into `lib/`, so
-each library file is checked in the context it actually loads in; tests run
-without following sources, because each test sources the whole library and
-`-x` would re-analyze all of `lib/` once per test file, which does not scale.
-The test pass excludes only the codes that need the library's view (SC1091,
-SC2154, SC2034, SC2329), since those would otherwise misfire on names and
-sources the test file only ever sees indirectly.
+shellcheck runs with `-x`, following sources into `lib/`, so each library
+file is checked in the context it actually loads in.
 <!-- src: architecture.md#tests-and-tooling -->
 
 `check-drift.sh` checks the implementation against the spec/registry: every
 command has a matching `usage_<name>`/`cmd_<name>` pair and man page
 section, every settings key `settings.sh` requires exists in
 `settings.env`, and, under `DRIFT_STRICT`, a live `<command> --help`'s long
-options match the spec. `make test` is unit + feature + integration;
-`make test-fast` skips integration (the pre-PR gate). CI runs
-lint/unit/feature/integration on macOS and Linux; the contract suite runs
-nightly against a real server.
+options match the spec. CI runs lint on macOS and Linux.
 <!-- src: architecture.md#tests-and-tooling -->
 
 ## Adding a command
@@ -595,15 +561,13 @@ nightly against a real server.
 4. Put shared logic in the right layer (`lib/sync/` for a rule two commands
    need, `lib/adapters/` for a new external call), never inline in a second
    command module.
-5. Add a unit test for any pure helper, a feature test (stub curl for
-   Nextcloud calls), and an integration test if CLI behavior changes.
-6. Document it in [docs/commands.md](commands.md), any new setting in
+5. Document it in [docs/commands.md](commands.md), any new setting in
    [docs/settings.md](settings.md) and `config/settings.local.env.example`,
    and add a `CHANGELOG.md` entry.
 <!-- src: architecture.md#adding-a-command -->
 
 A new server-API command starts in the `extra` tier and is promoted to
-`core` only once `tests/contract/` covers it against a real Nextcloud.
+`core` only once it has been verified against a real Nextcloud.
 <!-- src: architecture.md#adding-a-command -->
 
 ## External contracts

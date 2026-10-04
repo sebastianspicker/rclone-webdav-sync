@@ -36,3 +36,6 @@ __pycache__/
 # Build output and archives (`make dist`, `sciebo support --output`)
 /dist/
 *.tar.gz
+
+# Internal test suite (not published)
+/tests/

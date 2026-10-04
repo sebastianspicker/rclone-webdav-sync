@@ -6,15 +6,8 @@ PREFIX ?= $(HOME)/.local
 DIST_NAME := rclone-webdav-sync-$(VERSION)
 DIST_DIR ?= dist
 
-# shellcheck runs twice. Production code is checked with -x, following every
-# source into lib/. Tests are checked without following: each one sources the
-# whole library through lib/sciebo.sh, so -x would re-analyze all of lib/ once
-# per test file (minutes instead of seconds). The excluded codes are exactly
-# the ones that need the library's view: globals it assigns (SC2154) or reads
-# (SC2034), stubs it calls (SC2329), and the unfollowed source (SC1091).
-SC_PROD = $(SCIEBO) .githooks/pre-commit $(wildcard .claude/hooks/*.sh) completions/sciebo.bash scripts/*.sh lib/*.sh lib/*/*.sh
-SC_TESTS = tests/*.sh tests/unit/*.sh tests/contract/*.sh tests/features/*.sh
-SC_TEST_EXCLUDES = SC1091,SC2154,SC2034,SC2329
+# shellcheck follows every source into lib/ (-x).
+SC_PROD = $(SCIEBO) .githooks/pre-commit completions/sciebo.bash scripts/*.sh lib/*.sh lib/*/*.sh
 # CODE_ITEMS: shipped code/assets that install/uninstall replace wholesale.
 # config/ and state/ are deliberately not here: they hold the user's data and
 # are handled on their own (never deleted, never clobbered on upgrade).
@@ -25,7 +18,7 @@ CODE_ITEMS := bin lib scripts launchd completions docs man \
 .PHONY: help setup doctor discover list check sync verify status pause resume bisync-resync \
 	folders folders-list mount umount mount-status \
 	cleanup-logs cleanup-logs-apply cleanup-uploads cleanup-uploads-apply trash \
-	check-bash lint test test-fast test-one handoff hooks gen screenshots schedule-install schedule-uninstall schedule-status \
+	check-bash lint hooks gen screenshots schedule-install schedule-uninstall schedule-status \
 	version install uninstall update dist clean-dist
 
 help: ## show this help
@@ -106,8 +99,6 @@ lint: check-bash ## shellcheck + shfmt + layers/drift guards (LINT_ALLOW_MISSING
 	if command -v shellcheck >/dev/null 2>&1; then \
 	  echo "shellcheck -x -P SCRIPTDIR $(SC_PROD)"; \
 	  shellcheck -x -P SCRIPTDIR $(SC_PROD) || status=1; \
-	  echo "shellcheck -P SCRIPTDIR -e $(SC_TEST_EXCLUDES) $(SC_TESTS)"; \
-	  shellcheck -P SCRIPTDIR -e $(SC_TEST_EXCLUDES) $(SC_TESTS) || status=1; \
 	elif [ -n "$(LINT_ALLOW_MISSING)" ]; then \
 	  echo "WARN: shellcheck not found; skipping shellcheck (LINT_ALLOW_MISSING)" >&2; \
 	else \
@@ -115,8 +106,8 @@ lint: check-bash ## shellcheck + shfmt + layers/drift guards (LINT_ALLOW_MISSING
 	  status=1; \
 	fi; \
 	if command -v shfmt >/dev/null 2>&1; then \
-	  echo "shfmt -i 2 -ci -d bin/sciebo .githooks/pre-commit $(wildcard .claude/hooks/*.sh) scripts/*.sh lib tests"; \
-	  shfmt -i 2 -ci -d $(SCIEBO) .githooks/pre-commit $(wildcard .claude/hooks/*.sh) scripts/*.sh lib tests || status=1; \
+	  echo "shfmt -i 2 -ci -d bin/sciebo .githooks/pre-commit scripts/*.sh lib"; \
+	  shfmt -i 2 -ci -d $(SCIEBO) .githooks/pre-commit scripts/*.sh lib || status=1; \
 	elif [ -n "$(LINT_ALLOW_MISSING)" ]; then \
 	  echo "WARN: shfmt not found; skipping shfmt (LINT_ALLOW_MISSING)" >&2; \
 	else \
@@ -130,44 +121,12 @@ lint: check-bash ## shellcheck + shfmt + layers/drift guards (LINT_ALLOW_MISSING
 	echo "DRIFT_STRICT=1 scripts/check-drift.sh"; \
 	DRIFT_STRICT=1 scripts/check-drift.sh || status=1; \
 	if command -v python3 >/dev/null 2>&1; then \
-	  echo "python3 -m py_compile tools/screenshots.py tests/fake_server.py"; \
-	  python3 -m py_compile tools/screenshots.py tests/fake_server.py || status=1; \
+	  echo "python3 -m py_compile tools/screenshots.py"; \
+	  python3 -m py_compile tools/screenshots.py || status=1; \
 	else \
 	  echo "WARN: python3 not found; skipping python syntax checks" >&2; \
 	fi; \
 	exit $$status
-
-test: check-bash ## unit + feature + integration tests (isolated, never sciebo)
-	$(BASH) tests/unit.sh
-	$(BASH) tests/features.sh
-	$(BASH) tests/integration.sh
-
-test-fast: check-bash ## unit + feature tests only (pre-PR gate without integration)
-	$(BASH) tests/unit.sh
-	$(BASH) tests/features.sh
-
-test-one: check-bash ## run one unit/feature test script by name (make test-one T=NAME)
-	@if [ -z "$(T)" ]; then echo "usage: make test-one T=NAME" >&2; exit 2; fi
-	$(BASH) tests/run-one.sh "$(T)"
-
-handoff: ## write a .agents/handoff.md template (refuses to overwrite; FORCE=1 to replace)
-	@f=.agents/handoff.md; \
-	if [ -e "$$f" ] && [ -z "$(FORCE)" ]; then \
-	  echo "$$f exists; edit it or rerun with FORCE=1" >&2; exit 1; \
-	fi; \
-	mkdir -p .agents; \
-	printf '%s\n' \
-	  '# Handoff' '' \
-	  'Status: in-progress | ready-for-review | changes-requested | accepted' \
-	  "Date: $$(date +%Y-%m-%d)" \
-	  "Branch: $$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" '' \
-	  '## Goal' '' '' \
-	  '## Files changed' '' \
-	  "$$(git status --short 2>/dev/null)" '' \
-	  '## Checks (command -> exit code)' '' \
-	  '- make lint -> ' '- make test -> ' '' \
-	  '## Open questions / risks' '' >"$$f"; \
-	printf 'wrote %s\n' "$$f"
 
 hooks: ## opt in to the repo git hooks (.githooks/pre-commit: shfmt + shellcheck on staged files)
 	git config core.hooksPath .githooks
@@ -197,14 +156,13 @@ install: check-bash ## install the tree under PREFIX (default ~/.local); never t
 uninstall: check-bash ## remove the installed code/assets, wrapper, and man page under PREFIX (keeps config/ and state/)
 	@$(BASH) scripts/install.sh uninstall "$(PREFIX)" "$(VERSION)" $(CODE_ITEMS)
 
-update: ## git pull --ff-only (in a worktree), then lint + test
+update: ## git pull --ff-only (in a worktree), then lint
 	@if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then \
 	  git pull --ff-only; \
 	else \
 	  echo "not a git worktree; skipping pull" >&2; \
 	fi
 	$(MAKE) lint
-	$(MAKE) test
 
 dist: ## build a source tarball ($(DIST_DIR)/$(DIST_NAME).tar.gz) from the files git would publish
 	@test -n "$(VERSION)" || { echo "VERSION file missing" >&2; exit 1; }
@@ -214,7 +172,7 @@ dist: ## build a source tarball ($(DIST_DIR)/$(DIST_NAME).tar.gz) from the files
 	}
 	@rm -rf "$(DIST_DIR)/$(DIST_NAME)" && mkdir -p "$(DIST_DIR)/$(DIST_NAME)"
 	@files="$$(git ls-files --cached --others --exclude-standard -- \
-	    bin lib config launchd scripts tests tools docs man completions \
+	    bin lib config launchd scripts tools docs man completions \
 	    VERSION README.md CONTRIBUTING.md SECURITY.md Makefile LICENSE .env.example \
 	    | LC_ALL=C sort -u)"; \
 	for f in $$files; do \
