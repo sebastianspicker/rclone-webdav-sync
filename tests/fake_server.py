@@ -230,6 +230,26 @@ def ocs_json_error(message, statuscode=404):
     )
 
 
+class _XmlText:
+    """Match-like result of _xml_text: group(1) is the trimmed element text."""
+
+    def __init__(self, text):
+        self._text = text
+
+    def group(self, _index=1):
+        return self._text
+
+
+def _xml_text(document, tag):
+    """Return the trimmed text of the first <tag>...</tag> element, or None.
+
+    The element body is matched with a single linear scan ([^<]*) and trimmed
+    afterwards, so crafted whitespace runs cannot trigger regex backtracking.
+    """
+    match = re.search(rf"<{re.escape(tag)}>([^<]*)</{re.escape(tag)}>", document)
+    return _XmlText(match.group(1).strip()) if match else None
+
+
 def iso_now(offset=0):
     return time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(time.time() + offset))
 
@@ -440,7 +460,8 @@ class Handler(BaseHTTPRequestHandler):
             body = body.encode("utf-8")
         self.send_response(status)
         for name, value in (headers or {}).items():
-            self.send_header(name, value)
+            # Never let CR/LF in a header value split the response.
+            self.send_header(name, re.sub(r"[\r\n]", "", str(value)))
         if status == 204:
             self.end_headers()
             return status
@@ -1300,18 +1321,18 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, dav_error("not found: /%s" % rel))
         body = self._read_body().decode("utf-8", "replace")
         props = []
-        match = re.search(r"<oc:favorite>\s*([^<]*?)\s*</oc:favorite>", body)
+        match = _xml_text(body, "oc:favorite")
         if match:
             if match.group(1) in ("1", "true", "on"):
                 self.state.favorites.add(rel)
             elif match.group(1) in ("0", "false", "off"):
                 self.state.favorites.discard(rel)
             props.append("<oc:favorite/>")
-        match = re.search(r"<oc:tags>\s*([^<]*?)\s*</oc:tags>", body)
+        match = _xml_text(body, "oc:tags")
         if match:
             self.state.tags[rel] = match.group(1)
             props.append("<oc:tags/>")
-        match = re.search(r"<d:getlastmodified>\s*([^<]*?)\s*</d:getlastmodified>", body)
+        match = _xml_text(body, "d:getlastmodified")
         if match:
             try:
                 stamp = parsedate_to_datetime(match.group(1)).timestamp()
@@ -1389,7 +1410,7 @@ class Handler(BaseHTTPRequestHandler):
             parsed = None
         if isinstance(parsed, dict) and parsed.get("owner"):
             return str(parsed["owner"])
-        match = re.search(r"<d:owner>\s*([^<]*?)\s*</d:owner>", text)
+        match = _xml_text(text, "d:owner")
         if match:
             return match.group(1)
         return self.user
@@ -1660,7 +1681,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(207, self._multistatus(responses))
         if method == "POST":
             body = self._read_body().decode("utf-8", "replace")
-            match = re.search(r"<oc:message>\s*([^<]*?)\s*</oc:message>", body)
+            match = _xml_text(body, "oc:message")
             comment = {
                 "id": self.state.next_comment,
                 "message": match.group(1) if match else "",
@@ -1704,7 +1725,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(207, self._multistatus(responses))
         if method == "POST":
             body = self._read_body().decode("utf-8", "replace")
-            match = re.search(r"<oc:display-name>\s*([^<]*?)\s*</oc:display-name>", body)
+            match = _xml_text(body, "oc:display-name")
             tag = {
                 "id": self.state.next_tag,
                 "name": match.group(1) if match else "tag",
