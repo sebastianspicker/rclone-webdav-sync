@@ -44,7 +44,8 @@ Usage: sciebo logs [list]
 List, print, or follow the per-source sync logs in LOG_DIR. With no
 subcommand, `logs` behaves like `logs list`. Sources come from the
 manifest, the run records under state, and the per-source files in
-LOG_DIR. Read-only.
+LOG_DIR. Backup logs appear as backup-NAME (one per backups.conf entry)
+and backup-maintenance. Read-only.
 
 Commands:
   list [--json]  table of sources, modes, log paths, sizes, modification
@@ -96,8 +97,15 @@ logs_each_entry() {
 
 # logs_build_manifest_index - one manifest walk filling LOGS_MODE_BY_NAME and
 # LOGS_MANIFEST_NAMES, so no caller re-parses the manifest for names or modes.
+# Every backups.conf entry also contributes `backup-<name>`, so a backup
+# source without a log yet is still listed.
 logs_build_manifest_index() {
+  local name=""
   manifest_each logs_each_entry
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    LOGS_MANIFEST_NAMES="${LOGS_MANIFEST_NAMES}backup-${name}"$'\n'
+  done < <(backupset_names)
   return 0
 }
 

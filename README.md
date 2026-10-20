@@ -17,7 +17,28 @@ It works with any Nextcloud server. Its default target is [sciebo](https://hochs
 - Adds the Nextcloud desktop client's other features as plain commands: a folder-picker wizard, shares, notifications, activity, on-demand mounts, file locks, trash, file versions, quota, and multi-account profiles.
 - Follows the desktop client's safe defaults: invalid names, case clashes, and end-to-end encrypted (E2EE) folders are excluded by default, and a run that would delete a lot of files stops and asks first (the delete guard).
 - Runs as a plain command-line tool with no background service. `sciebo watch` (live sync as files change) and `sciebo schedule install` (periodic runs via the OS's own scheduler) add an always-on path, but only if you opt in.
+- Keeps encrypted, versioned backups of local folders in your sciebo account with `sciebo backup` (restic), separate from the mirrored folders; see [Backups (restic)](#backups-restic).
 <!-- src: README.md -->
+
+## Backups (restic)
+
+`sync` keeps a mirror: what you delete locally disappears from the server too. `sciebo backup` keeps history. It takes [restic](https://restic.net) snapshots of the folders listed in `config/backups.conf` and stores them, encrypted and deduplicated, in a repository on your sciebo account at `<remote>:<BACKUP_REMOTE_PATH>` (default `restic`). The repository sits outside the synced tree, and the tool refuses any setup where the two overlap.
+
+restic talks to sciebo through `rclone serve restic`, which it starts itself, so the app password, the proxy and TLS settings, `sciebo limit`, and the rate limits of this tool all apply to backups as well.
+
+```sh
+sciebo backup init                                   # create the repository; the password is printed once
+sciebo backup add ~/Projects --filter clutter.txt    # pick a folder
+sciebo backup run                                    # take a snapshot (--dry-run to preview)
+sciebo backup snapshots
+sciebo backup restore latest --target ~/restored     # into an empty folder
+sciebo schedule install --backup                     # daily at 03:30
+```
+
+Write the password down somewhere that is not this machine. `init` prints it once and keeps it in the system keychain; `sciebo backup key show` prints it again. If the computer is lost and no copy exists, the backups are gone with it.
+
+Old snapshots are dropped by the `BACKUP_KEEP_*` policy and the repository is checked, both from `backup run` when they are due. restic 0.17 or newer is needed for this command only. `backup` stays in the extra tier until it has been exercised against a live sciebo account. Details: [docs/commands.md](docs/commands.md#backup) and [docs/settings.md](docs/settings.md#backups-restic).
+<!-- src: README.md#backups-restic -->
 
 ## Not affiliated with Nextcloud or sciebo
 
@@ -63,6 +84,7 @@ Every image below is real CLI output, captured against a temporary local rclone 
 - [rclone](https://rclone.org/downloads/) 1.69 or newer (tested with 1.75.1). `RCLONE_MIN_VERSION` sets the floor; `doctor` and `sync` refuse older binaries because bisync needs `--resilient`, `--recover`, and `--resync-mode`.
 - curl, used for the browser sign-in flow (Login Flow), the server feature check (capabilities probe), and the direct Nextcloud HTTP/DAV/OCS calls.
 - A sciebo account, or any other Nextcloud account.
+- [restic](https://restic.net) 0.17 or newer, only for `sciebo backup` (`RESTIC_MIN_VERSION` sets the floor). Distribution packages are often older: use Homebrew on macOS, or `restic self-update` on Linux. `doctor` reports the version.
 - Optional helpers: `fzf` only makes the folder picker nicer; `fswatch` (macOS/Linux) or `inotifywait` (Linux) only makes `sciebo watch` event-driven, and without either `watch` falls back to portable polling.
 <!-- src: README.md#requirements -->
 
@@ -76,6 +98,7 @@ Platform caveats: not every backend exists on both operating systems, so some fe
 | Change detection (`sciebo watch`) | `fswatch` when installed, else portable polling | `fswatch` or `inotifywait` when installed, else portable polling |
 | Metered detection (`sciebo network`) | Wi-Fi SSID plus `METERED_SSIDS` and hotspot-name heuristics; no OS metered flag | NetworkManager (`nmcli`) reports `connection.metered` when installed |
 | Open local folders (`sciebo open`) | `open` | `xdg-open` |
+| Backups (`sciebo backup`) | `restic` from Homebrew (`brew install restic`) | `restic` from your distribution (often older than 0.17; run `restic self-update`) or the upstream release binary |
 | On-demand mount (`sciebo mount`) | `rclone nfsmount`, no macFUSE | `rclone nfsmount`; needs the kernel NFS client and usually root |
 <!-- src: README.md#requirements -->
 
@@ -243,6 +266,7 @@ Run `bin/sciebo` from the project root, or put it on your `PATH` after `make ins
 | Syncing | `check`, `sync`, `nextcloudcmd`, `watch`, `edit`, `verify`, `status`, `pause`, `resume`, `limit`, `unlimited` |
 | Mounts | `mount`, `umount`, `mounts`, `hydrate` |
 | Housekeeping and scheduling | `cleanup`, `logs`, `schedule`, `support` |
+| Backups | `backup` |
 | Server data | `trash`, `versions`, `share`, `notifications`, `activity`, `presence`, `lock`, `unlock`, `locks`, `quota`, `conflicts`, `retry`, `file`, `search`, `recent`, `comments`, `favorites`, `tags`, `server`, `announcements`, `preview`, `download` |
 | Other | `update`, `help` |
 <!-- src: README.md#commands -->
@@ -261,6 +285,7 @@ Settings live in `config/settings.env` (tracked defaults) and `config/settings.l
 - A `sync` that would delete more files than `DELETE_FILES_THRESHOLD` stops and asks (or fails a non-interactive run) unless `sync --yes` is given.
 - Git is not special-cased: `.git/` syncs as files, so avoid syncing a repo while git is rewriting objects, and don't run `bisync` on a repository you're actively working in.
 - Bisync conflict copies stay local by default; `conflicts --resolve` reviews and resolves them.
+- `backup forget` is a dry run unless you pass `--apply`, `backup restore` refuses non-empty targets and your sync folders unless you pass `--force`, and `logout` asks before it removes the repository password.
 <!-- src: README.md#safety-model -->
 
 The full policy list, conflict handling, and what's deliberately out of scope (Nextcloud E2EE, a background sync daemon, a virtual-files overlay) are in [docs/parity.md](docs/parity.md).
@@ -357,6 +382,7 @@ Plain-language terms used above; see the linked documentation pages for full det
 | filter file | A plain-text rule file (rclone syntax) that excludes or includes paths from a sync. |
 | safety policy | A named setting that chooses how this tool reacts to a risky situation: allow it, warn, ask first, or skip/exclude it. |
 | watch (live sync) | An optional, foreground command that syncs a folder as soon as it changes; not a background service. |
+| restic / repository / snapshot | restic is the backup program behind `sciebo backup`; the repository is its encrypted data store on your sciebo account; a snapshot is one backup of one folder at one point in time. |
 | scheduled runs | An optional, installable background job (via the OS's own scheduler) that runs sync periodically; opt-in, not automatic. |
 | the Nextcloud desktop client's `nextcloudcmd` tool | The separate, third-party command-line tool that ships with Nextcloud's desktop client packages. |
 | this tool's nextcloudcmd-compatible command | This project's own `sciebo nextcloudcmd` command, built to accept the external tool's option names for easy migration; not the same program. |

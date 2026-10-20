@@ -193,6 +193,7 @@ suite but not by the real-server contract suite):
   edit SUB [options]        download, edit, and upload one remote file
   announcements [options]   list server announcements
   preview SUB [options]     download a preview image for a remote file
+  backup <subcommand>       restic backups to the remote (init/run/restore/forget/check)
 
 Global options (before the command): --profile NAME, --trust,
 --non-interactive, --debug, --log-file FILE, --log-dir DIR,

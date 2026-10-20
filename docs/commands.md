@@ -16,7 +16,10 @@ commands are the sync workflow plus the file operations verified against a
 live Nextcloud. **Extra** commands (`notifications`, `activity`, `presence`,
 `file`, `search`, `recent`, `comments`, `favorites`, `tags`, `server`,
 `edit`, `announcements`, `preview`) wrap further Nextcloud server features;
-they are verified only against a local stand-in.
+they are verified only against a local stand-in. `backup` (restic
+snapshots on the remote) is an extra command too: its round trip is tested
+against a local rclone stand-in and it moves to the core tier after a live
+sciebo run.
 <!-- src: commands.md -->
 
 - [How to read this reference](#how-to-read-this-reference)
@@ -30,6 +33,8 @@ they are verified only against a local stand-in.
   - [mount](#mount) · [umount](#umount) · [mounts](#mounts-1) · [hydrate](#hydrate)
 - [Housekeeping and scheduling](#housekeeping-and-scheduling)
   - [cleanup](#cleanup) · [logs](#logs) · [schedule](#schedule) · [support](#support)
+- [Backups](#backups)
+  - [backup](#backup)
 - [Server data](#server-data)
   - [trash](#trash) · [versions](#versions) · [share](#share) · [notifications](#notifications) · [activity](#activity) · [presence](#presence) · [lock](#lock) · [unlock](#unlock) · [locks](#locks) · [quota](#quota) · [conflicts](#conflicts) · [retry](#retry) · [file](#file) · [search](#search) · [recent](#recent) · [comments](#comments) · [favorites](#favorites) · [tags](#tags) · [server](#server) · [announcements](#announcements) · [preview](#preview) · [download](#download)
 - [Other](#other)
@@ -130,6 +135,11 @@ will ask about, and everything it will not.
 | `share remove ID` | asks on a terminal unless `--yes` is given; a non-interactive run proceeds as before. |
 | `account remove NAME` | interactive prompt; non-interactive (or `--non-interactive`) needs `--yes`. |
 | `logout` | interactive prompt; non-interactive (or `--non-interactive`) needs `--yes`. |
+| `backup key show` | interactive confirmation before the repository password is printed; a non-interactive run refuses (exit 1). |
+| `backup restore` | no prompt, but refuses a non-empty target directory and any directory that overlaps a sync pair's local folder unless `--force` is given; `/`, your home directory, and its parents are refused even with `--force`. |
+| `backup forget` | dry run by default; `--apply` removes snapshots (and prunes with `--prune` or `BACKUP_PRUNE=1`) without a prompt. |
+| `backup remove NAME` | no prompt; removes the entry from `backups.conf` only, the snapshots stay in the repository. |
+| `logout` (restic password) | a separate interactive prompt names the consequence (the backups become unreadable without a saved copy); `--yes` confirms it, `--keep-backup-key` skips it. |
 | `mounts --prune` | no prompt; removes state records, not files. |
 | `folders remove NAME` | no prompt; removes the wizard entry from `folders.conf` only. With `--purge` it also deletes the pair's local state records and filter. |
 
@@ -315,7 +325,10 @@ pointing at `--serverurl`/`--userid`/`--apppassword`. On success the
 command prints the profile, remote, server, password storage, and the pair
 (or `pair: none`). No confirmation is ever required: a missing required
 flag or an invalid `--isvfsenabled` is a usage error (exit 2), a validation
-or write failure exits 1, and success exits 0.
+or write failure exits 1, and success exits 0. A `--remotedirpath` that equals,
+contains, or lies inside the restic repository path
+(`BACKUP_REMOTE_PATH`) is refused: the mirror must never contain the backup
+repository.
 
 ```sh
 sciebo provision --userid alice --apppassword-fd 3 \
@@ -328,12 +341,17 @@ sciebo --profile work provision --userid alice --apppassword "$PW" \
 ### logout
 
 ```
-sciebo logout [--revoke] [--yes]
+sciebo logout [--revoke] [--keep-backup-key] [--yes]
 ```
 
 Remove the rclone remote entry and both stored keychain items for the
 active remote (`--profile` selects which one; the plaintext
-`<remote>#plain` slot and a legacy obscured slot are both removed). Sync
+`<remote>#plain` slot and a legacy obscured slot are both removed). A
+stored restic repository password (`<remote>#restic`, or the
+`BACKUP_PASSWORD_FILE` when `KEYCHAIN=0`) is removed as well, after a
+separate confirmation that says the backups are unreadable without a saved
+copy; `--yes` confirms it and `--keep-backup-key` keeps it. A prompt that
+cannot be answered or is declined also keeps the password. Sync
 lists, state, and synced files are left alone. Credentials still present in
 `.env` are reported for manual removal. Without `--yes` the command prompts
 on a terminal; a non-interactive run fails with exit 2. Prints
@@ -342,7 +360,8 @@ on a terminal; a non-interactive run fails with exit 2. Prints
 | Option | Effect |
 | --- | --- |
 | `--revoke` | revoke the app password on the server first (the Nextcloud API's `DELETE /ocs/v2.php/core/apppassword`); needs `--yes` or a terminal confirmation. The revoke runs before the local credentials are deleted, and a failed revoke only warns, so the local logout still completes. |
-| `--yes` | do not ask for confirmation. |
+| `--keep-backup-key` | keep the restic repository password; the other credentials are still removed. |
+| `--yes` | do not ask for confirmation (this includes the restic password prompt). |
 
 ### config
 
@@ -393,7 +412,8 @@ config), free space on the state filesystem, the proxy mode, server
 capabilities (fresh probe or cache), end-to-end encryption, the cached
 server-exclude list, state directories, filter files parsed by rclone
 itself, the sync list (invalid entries, duplicate names/remotes,
-overlapping local directories), name hygiene (platform-invalid names,
+overlapping local directories), the restic backup setup (see below), name
+hygiene (platform-invalid names,
 case-only collisions in existing local trees), conflict copies in the
 local trees, the watch pid record, the network and metered state, network
 reachability (`rclone lsd`, `rclone about`), and the launchd agent
@@ -409,6 +429,7 @@ Policy checks cover the desktop-parity safety policies:
 | `external storage` | same shape for server-mounted external storages (`oc:permissions`), reporting `EXTERNAL_STORAGE_POLICY`; never fails. |
 | `delete guard` | reports `ASK_DELETE`, `DELETE_FILES_THRESHOLD`, and an explicit `MAX_DELETE` cap (`ASK_DELETE=0` means the threshold is not enforced). |
 | `big folders` | online, compares the first `DOCTOR_REMOTE_SCAN_LIMIT` sources against `BIG_FOLDER_SIZE` with `rclone size` and lists the sources over the limit with `BIG_FOLDER_EXISTING_POLICY`; silent when `BIG_FOLDER_SIZE` is empty. |
+| `backups` | prints one `PASS` line, `backups: not configured`, when no backup source and no repository password exist, so users without backups see nothing else. Otherwise (all lines start with `backups:`): restic present and at least `RESTIC_MIN_VERSION` (`FAIL` with an `restic self-update`/Homebrew hint); the repository password stored (`FAIL` with the `backup init` hint); `backups.conf` parsed (`FAIL` per invalid line with `file:line`, `WARN` when no source is valid), each source's local directory (`WARN` when missing) and filter file (`FAIL` when absent or when it contains rules restic cannot take); `FAIL` when a sync-list entry overlaps the repository path; `WARN` when a non-zero `BACKUP_CHUNK_SIZE` is smaller than the pack size; the retention policy and maintenance cadence; the restic cache size (`WARN` above 2 GiB); the last run and the last integrity check (`WARN` when never or older than twice `BACKUP_CHECK_EVERY`). Online, the repository is probed with `restic cat config`: `PASS` when reachable, `WARN` when not initialized (exit 10) or locked (exit 11), `FAIL` for a wrong password (exit 12) or any other error, followed by the number of repository locks (`WARN` when any exist). Offline runs print `backups: offline: repository not probed`. |
 | `quota` | reads the server quota once with the shared sync probe and reports the floor percentage used (`quota: N% of <remote>: used`): `WARN` at or above `QUOTA_WARN_PERCENT`, `PASS` below, and a `WARN` when the probe fails. Silent when `QUOTA_WARN_PERCENT=0`; an offline run reports the threshold only. |
 
 `DOCTOR_REMOTE_SCAN_LIMIT` (used by the `e2ee folders` and `big folders`
@@ -420,10 +441,12 @@ current value rather than assuming one.
 | Option | Effect |
 | --- | --- |
 | `--offline` | skip the network checks and read capabilities from the cache. |
-| `--json` | print only a JSON document instead of the text report. In addition to `ok` and `checks`, the document carries the policy objects `policies`, `name_hygiene`, `case_clashes`, `e2ee`, `external`, `delete_guard`, and `big_folders`. |
+| `--json` | print only a JSON document instead of the text report. In addition to `ok` and `checks`, the document carries the policy objects `policies`, `name_hygiene`, `case_clashes`, `e2ee`, `external`, `delete_guard`, and `big_folders`, plus the `backup` object described below. |
 
 The `--json` document shape is
-`{"ok":bool,"policies":{"invalid_names","case_clashes","e2ee","external_storage","symlinks","checksum","move_to_trash","delete_guard"},"name_hygiene":{"policy","scanned","invalid","collisions","paths":[]},"case_clashes":{"policy","count","pairs":[]},"e2ee":{"policy","checked","paths":[]},"external":{"policy","checked","paths":[]},"delete_guard":{"ask","threshold","max_delete","detail"},"big_folders":{"limit","policy","checked","over":[{"name","remote","bytes"}]},"checks":[{"name","status","detail"}]}`.
+`{"ok":bool,"policies":{"invalid_names","case_clashes","e2ee","external_storage","symlinks","checksum","move_to_trash","delete_guard"},"name_hygiene":{"policy","scanned","invalid","collisions","paths":[]},"case_clashes":{"policy","count","pairs":[]},"e2ee":{"policy","checked","paths":[]},"external":{"policy","checked","paths":[]},"delete_guard":{"ask","threshold","max_delete","detail"},"big_folders":{"limit","policy","checked","over":[{"name","remote","bytes"}]},"backup":{...},"checks":[{"name","status","detail"}]}`.
+
+The `backup` object is `{"configured":bool,"sources":N,"restic_version","repository","password_stored":bool,"reachable":true|false|null,"locks":N|null,"last_run","last_forget","last_check" (epoch seconds or null),"retention","cache_bytes":N|null}`. `reachable` and `locks` are `null` when the repository was not probed (offline, restic missing, or no password).
 
 ### discover
 
@@ -603,6 +626,11 @@ proceeds, `skip`/`exclude` skip the pair, and `allow` proceeds silently.
 The big-folder gate uses one bounded `rclone size` lookup; an unreadable
 size, an empty `BIG_FOLDER_SIZE`, or a non-Nextcloud remote proceeds (the
 external-storage and E2EE checks stay silent on other backends).
+
+A remote folder that equals, contains, or lies inside the restic repository
+path (`BACKUP_REMOTE_PATH`) is refused by `add` and `edit --remote`, and
+skipped with a warning by `choose`, so a sync pair can never contain the
+backup repository.
 
 `add` options:
 
@@ -801,6 +829,10 @@ Behavior highlights:
   than N file(s) to delete; re-run with --yes to allow`. `--yes` disables
   the guard for the run, and an explicit `MAX_DELETE >= 0` overrides it.
   <!-- src: commands.md#sync; the literal default (100) is documented in docs/settings.md, cross-referenced here, not restated as this file's own claim -->
+- The backup repository guard: every `sync` and `check` run verifies that no
+  pair's remote folder overlaps `BACKUP_REMOTE_PATH` and refuses to run
+  (naming the pairs) otherwise, so a hand-edited manifest or a changed
+  setting cannot let the mirror touch the restic repository.
 - The upload chunk size is resolved once per run. `CHUNK_SIZE` wins; when
   it is unset and the remote is nextcloud, the value is derived from
   `TARGET_CHUNK_UPLOAD_DURATION` (milliseconds) times `BW_LIMIT_UP` (or
@@ -1005,7 +1037,11 @@ Show the pause state and the last recorded run per source: name, mode,
 state, when it ran, and details (exit code and conflicts, or the recorded
 reason). Sources that never ran show `never`; failed rows also print
 their log path. Read-only: status never takes the run lock or writes
-logs; the only write is removing an expired pause marker.
+logs; the only write is removing an expired pause marker. Each source in
+`backups.conf` also gets a row with mode `backup`, read from the run record
+`state/last/@backup/<name>` that `backup run` writes (`--only`, `--history`,
+`--quiet`, and `--json` treat these rows like any other; the summary counts
+them). A backup source that never ran shows `never`.
 
 | Option | Effect |
 | --- | --- |
@@ -1192,9 +1228,9 @@ elsewhere.
 | --- | --- |
 | `--logs` | report/delete `*.log` files older than `LOG_RETENTION_DAYS` (or `LOG_EXPIRE_HOURS` when set) and rotate `*.log` files larger than `LOG_MAX_BYTES` to `<file>.1` (age candidates are not rotated). |
 | `--uploads` | report/delete stale Nextcloud chunk uploads under `/remote.php/dav/uploads/<user>/` older than `CHUNK_CLEANUP_MIN_AGE`, then remove emptied transfer directories. |
-| `--state` | report/remove orphaned state older than `STATE_CLEANUP_MIN_AGE`: bisync workdirs no valid sync-list entry uses, leftover lock directories, atomic-write `*.tmp.XXXXXX` staging files under `config/` and `state/`, and mount records whose mount and process are gone. |
+| `--state` | report/remove orphaned state older than `STATE_CLEANUP_MIN_AGE`: bisync workdirs no valid sync-list entry uses, leftover lock directories of every named lock (`*.lock.stale.*` and `*.lock.release.*`, so `sync` and `backup` alike), atomic-write `*.tmp.XXXXXX` staging files under `config/` and `state/`, and mount records whose mount and process are gone. |
 | `--junk` | report/delete files matching a glob in `FILTER_DIR/fleeting.txt` under every valid sync-list source directory, older than `JUNK_CLEANUP_MIN_AGE`. Dry runs show at most five examples. |
-| `--cache` | report/delete files under `MOUNT_CACHE_DIR` older than `STATE_CLEANUP_MIN_AGE`. Dry runs show at most five examples. |
+| `--cache` | report/delete files under `MOUNT_CACHE_DIR` older than `STATE_CLEANUP_MIN_AGE`. Dry runs show at most five examples. It also runs `restic cache --cleanup` (removes restic cache directories of repositories not used for 30 days) when restic is installed and a repository password is stored; without `--apply` it only prints `would run: restic cache --cleanup`, and it is skipped silently otherwise. A failing restic marks the cleanup as errored (exit 1). |
 | `--support` | keep the newest support archives under `STATE_DIR` and report/delete the older ones; `--keep N` sets how many to keep (default 5). |
 
 | Option | Effect |
@@ -1224,7 +1260,10 @@ sciebo logs [list]
 List, print, or follow the per-source sync logs in `LOG_DIR` (`state/logs/`
 by default, `--log-dir` overrides). Sources come from the sync list, the
 run records under `state/last/`, and the per-source `*.log` files in
-`LOG_DIR`. Read-only: no run lock, no state writes, and no network.
+`LOG_DIR`. Backup logs appear as `backup-NAME` (one per `backups.conf`
+entry, listed even before the first run; mode `backup`) and as
+`backup-maintenance` (the forget/check pass after `backup run`).
+Read-only: no run lock, no state writes, and no network.
 
 | Subcommand | Behavior |
 | --- | --- |
@@ -1249,6 +1288,7 @@ exits 0.
 
 ```sh
 sciebo logs
+sciebo logs show backup-projects --lines 100
 sciebo logs show notes --lines 100
 sciebo logs tail notes
 sciebo logs path notes
@@ -1269,20 +1309,32 @@ job. The backend is selected by platform: launchd on macOS, `systemd
 `SCHEDULE_JITTER` adds a random pre-delay. A bare `crontab` binary is
 detected but not managed: on such a system the command fails with a
 message to add or remove the crontab entry by hand.
+
+With `install --backup` (or `SCHEDULE_BACKUP=1`) a second agent is
+rendered next to the sync agent: labelled `BACKUP_LAUNCHD_LABEL` (default
+`de.rclone-sciebo.backup`), it runs `bash <project>/bin/sciebo backup run
+--quiet` once a day at `SCHEDULE_BACKUP_HOUR:SCHEDULE_BACKUP_MINUTE`
+(default 03:30). It is never installed otherwise, ignores
+`SCHEDULE_INTERVAL` and `SCHEDULE_WATCH_PATH` (it is always daily), honours
+`SCHEDULE_JITTER` and `--at-login`, and uses the same `--profiles`
+rules as the sync agent (`<BACKUP_LAUNCHD_LABEL>.<profile>`). The backup
+run takes its own `backup` lock, so it never blocks, or is blocked by, a
+sync.
 <!-- src: commands.md#schedule -->
 
 | Subcommand | Behavior |
 | --- | --- |
-| `install` | launchd: render `launchd/de.rclone-sciebo.sync.plist.in` to `~/Library/LaunchAgents/<LAUNCHD_LABEL>.plist`, lint it with `plutil`, and bootstrap it with `launchctl`. systemd: write `<LAUNCHD_LABEL>.service` and `.timer` (plus a `.path` unit when `SCHEDULE_WATCH_PATH` is set) under `~/.config/systemd/user/`, then `daemon-reload` and `enable --now`. Profile units left by an earlier install but absent from the requested profile set are stopped and removed. |
-| `uninstall` | launchd: boot out the agents and remove their plists. systemd: disable and remove the units and reload the daemon. Installed profile units are discovered by label, so profiles supplied through an earlier one-shot `--profiles` flag are removed even when `SCHEDULE_PROFILES` is now empty. |
-| `status` | print `not installed` (exit 0), `installed and loaded` plus mode lines (exit 0), or `installed but not loaded` (exit 1). Both configured and discovered installed profile units are listed. Warnings point out units that still run the old `scripts/sync.sh` entrypoint. |
+| `install` | launchd: render `launchd/de.rclone-sciebo.sync.plist.in` to `~/Library/LaunchAgents/<LAUNCHD_LABEL>.plist`, lint it with `plutil`, and bootstrap it with `launchctl`. systemd: write `<LAUNCHD_LABEL>.service` and `.timer` (plus a `.path` unit when `SCHEDULE_WATCH_PATH` is set) under `~/.config/systemd/user/`, then `daemon-reload` and `enable --now`. Profile units left by an earlier install but absent from the requested profile set are stopped and removed. With `--backup` the same is done for the backup agent (launchd: `<BACKUP_LAUNCHD_LABEL>.plist`; systemd: `<BACKUP_LAUNCHD_LABEL>.service` and `.timer`). Running `install` again without `--backup` leaves an installed backup agent in place; `uninstall` removes it. |
+| `uninstall` | launchd: boot out the agents and remove their plists. systemd: disable and remove the units and reload the daemon. Installed profile units are discovered by label, so profiles supplied through an earlier one-shot `--profiles` flag are removed even when `SCHEDULE_PROFILES` is now empty. The backup agent and its profile variants are removed too when they are installed; a missing one is skipped silently. |
+| `status` | print `not installed` (exit 0), `installed and loaded` plus mode lines (exit 0), or `installed but not loaded` (exit 1). Both configured and discovered installed profile units are listed. The backup agent is reported on lines starting `backup agent:`, but only when it is installed or `SCHEDULE_BACKUP=1` asks for it, so installs without backups see no change. Warnings point out units that still run the old `scripts/sync.sh` entrypoint. |
 
 Options for `install`:
 
 | Option | Effect |
 | --- | --- |
 | `--at-login` | start the agent at login/boot (`RunAtLoad` on launchd, `[Install] WantedBy=default.target` on systemd); overrides `SCHEDULE_AT_LOGIN=1`. |
-| `--profiles LIST` | render one extra agent per profile, labelled `<LAUNCHD_LABEL>.<profile>`, each running with `--profile`; comma or space separated, overrides `SCHEDULE_PROFILES`. Every listed profile directory must exist. |
+| `--profiles LIST` | render one extra agent per profile, labelled `<LAUNCHD_LABEL>.<profile>`, each running with `--profile`; comma or space separated, overrides `SCHEDULE_PROFILES`. Every listed profile directory must exist. Applies to the backup agent too. |
+| `--backup` | also install the daily backup agent (sets `SCHEDULE_BACKUP=1` for this run). |
 
 The run lock prevents overlap with manual runs. Mounts are never
 scheduled.
@@ -1296,7 +1348,9 @@ sciebo support [--output FILE] [--no-network] [--json]
 Build a redacted debug archive for bug reports. The archive contains the
 version banner, the doctor report, redacted settings and rclone config,
 state/runstate listings, the newest logs (last 200 lines each, at most
-five), capabilities, and the scheduler/mount status. Passwords, secrets,
+five, plus the newest three `backup-*.log` files), `backups.conf`, the
+`backup info --offline --json` report, capabilities, and the scheduler/mount
+status. The restic repository password never appears in it. Passwords, secrets,
 tokens, and proxy values are replaced with `REDACTED`; `.env` is never
 included. The doctor always runs offline, so the archive needs no network
 access.
@@ -1310,6 +1364,157 @@ access.
 ```sh
 sciebo support
 sciebo support --output /tmp/sciebo-support.tar.gz
+```
+
+## Backups
+
+### backup
+
+```
+sciebo backup init [--existing] [--password-stdin]
+sciebo backup run [--only NAME] [--dry-run] [--tag TAG] [--no-maintenance] [--quiet] [--json]
+sciebo backup list [--show-filters] [--json]
+sciebo backup add LOCAL [--name NAME] [--filter FILE]
+sciebo backup remove NAME
+sciebo backup snapshots [--only NAME] [--json]
+sciebo backup ls SNAPSHOT [PATH]
+sciebo backup restore SNAPSHOT --target DIR [--include PATH]... [--dry-run] [--force]
+sciebo backup forget [--apply] [--prune]
+sciebo backup check [--read-data-subset SPEC]
+sciebo backup unlock
+sciebo backup info [--offline] [--json]
+sciebo backup key show
+```
+
+Take [restic](https://restic.net) snapshots of local folders and keep them,
+encrypted and deduplicated, in a repository on the same remote. Where `sync`
+keeps a mirror, `backup` keeps history. The repository lives at
+`<RCLONE_REMOTE>:<BACKUP_REMOTE_PATH>` (default `sciebo:restic`), a
+top-level folder beside the sync tree `REMOTE_BASE`. The two must not be
+equal or nested; `init`, `doctor`, `folders`, `provision`, `sync`, and
+`backup run` all check that. restic reaches the server through
+`rclone serve restic --stdio`, which it starts itself, so the account, proxy,
+TLS, bandwidth (`sciebo limit`), `TPSLIMIT`, and user-agent settings apply to
+backups as well. restic 0.17 or newer is required (`RESTIC_MIN_VERSION`).
+Every `BACKUP_*` key is listed in [settings](settings.md#backups-restic).
+
+Sources are lines of `name|local[|filter]` in `config/backups.conf` (see
+[settings](settings.md#backupsconf)). The filter is a file in the filters
+directory in rclone syntax; only exclude rules are supported, and they are
+translated to restic patterns when the backup runs. A rule restic cannot
+express is an error with its line number. `backup` is an extra-tier command:
+tested against a local stand-in, not yet against a live sciebo.
+
+`init` generates the repository password (32 random bytes, base64), prints
+it once, and stores it in the system keychain under `<remote>#restic`, or
+with `KEYCHAIN=0` in `BACKUP_PASSWORD_FILE` (default `backup.key` next to the
+settings, mode 600). restic receives it through its environment only. Keep
+a copy somewhere else: without the password the backups cannot be read.
+
+| Subcommand | Behavior |
+| --- | --- |
+| `init` | creates the repository with `restic init`, stores the generated password, and prints it once. Refuses when the repository path overlaps a sync pair, and when a repository already exists and its password is stored (`--existing` verifies that one instead). A stored password without a repository behind it is reused, not replaced. |
+| `run` | backs up every source in `backups.conf` (or one with `--only`), one `restic backup` at a time, then runs the maintenance that is due. Writes a run record per source (`status` shows them), a log `backup-<name>-<YYYYmmdd-HHMMSS>.log` per source, and `backup-maintenance-<YYYYmmdd-HHMMSS>.log` for the maintenance pass. Honours `sciebo limit`. Failures send a desktop notification; successes only with `NOTIFY_SUCCESS=1`. |
+| `list` | prints the configured sources (name, local path, filter); `--show-filters` adds the translated exclude patterns and any filter errors. Needs neither restic nor the network. |
+| `add LOCAL` | appends a source to `backups.conf`; the folder must exist and the filter must translate. The name defaults to the folder's name. |
+| `remove NAME` | removes a source from `backups.conf`; its snapshots stay in the repository. |
+| `snapshots` | lists the snapshots (restic's own table, or its JSON array with `--json`). |
+| `ls SNAPSHOT [PATH]` | lists the files in a snapshot (`latest` and short ids work). |
+| `restore SNAPSHOT` | restores into `--target`; see below. |
+| `forget` | shows the retention plan from the `BACKUP_KEEP_*` settings as a dry run; `--apply` carries it out. Only this host's snapshots (`BACKUP_HOST`, else the short hostname) are considered, grouped by host and path, so another machine sharing the repository keeps its own. Refuses an empty policy. |
+| `check` | runs `restic check --read-data-subset SPEC` (default `BACKUP_CHECK_READ_DATA_SUBSET`) and records the time. |
+| `unlock` | removes stale repository locks left behind by a crashed or interrupted restic. |
+| `info` | prints the repository, the restic and rclone versions, where the password is stored, the number of sources, the last run, forget, and check, the retention policy, the cache size, and the snapshot count. |
+| `key show` | prints the repository password after an interactive confirmation. |
+
+Options:
+
+| Option | Subcommand | Effect |
+| --- | --- | --- |
+| `--existing` | `init` | connect to a repository created elsewhere instead of creating one; verified with `restic cat config`. Needs `--password-stdin` unless a password is already stored. |
+| `--password-stdin` | `init` | read the repository password from one line of stdin instead of generating one (nothing is printed afterwards). |
+| `--only NAME` | `run`, `snapshots` | `run`: back up only this source (an unknown name is an error). `snapshots`: only snapshots of this source from this host. |
+| `--dry-run` | `run` | restic reports what it would store; no snapshot, no maintenance, and no last-run stamp. The run record says `dry run:`. |
+| `--dry-run` | `restore` | report what would be restored; nothing is written and the target is not created. |
+| `--tag TAG` | `run` | add a restic tag to the snapshots (repeatable). Every snapshot also carries the `BACKUP_TAGS` tags and `source=<name>`. |
+| `--no-maintenance` | `run` | skip the due forget/check maintenance this time. |
+| `--quiet` | `run` | print only failures, warnings, and the summary (the scheduled agent uses it). |
+| `--json` | `run` | print one JSON document `{"sources":[{"name","status","rc","snapshot_id","detail","log"}],"ok","warn","failed","skipped","maintenance":{"forget","check","log"}}`; progress lines go to stderr. |
+| `--json` | `list`, `snapshots`, `info` | machine-readable output. `list`: `{"backups":[{"name","local","filter",...}]}`. |
+| `--show-filters` | `list` | print each source's translated exclude patterns; exits 1 when a filter has unsupported rules. |
+| `--name NAME` | `add` | source name (letters, digits, dot, dash, underscore); default: the folder's name. |
+| `--filter FILE` | `add` | filter file in the filters directory, exclude rules only. |
+| `--target DIR` | `restore` | directory to restore into (required). |
+| `--include PATH` | `restore` | restore only this path inside the snapshot (repeatable). |
+| `--force` | `restore` | restore into a non-empty directory or a sync pair's local folder. |
+| `--apply` | `forget` | remove the snapshots the policy drops; without it nothing changes. |
+| `--prune` | `forget` | also prune unreferenced data; `--apply` prunes by itself when `BACKUP_PRUNE=1`. |
+| `--read-data-subset SPEC` | `check` | read part of the data: `N%`, `N/M`, or a size such as `2G`. An invalid value is a usage error. |
+| `--offline` | `info` | do not contact the repository. |
+| `-h`, `--help` | all | usage. |
+
+How a run goes. Each source ends as `ok`, `warn` (restic exit 3: some files
+could not be read, but the snapshot exists; the run still exits 0), or
+`failed`. A missing local folder or a filter that does not translate fails
+only that source. Before the first source, `run` checks that no sync pair's
+remote folder overlaps `BACKUP_REMOTE_PATH` (exit 1 otherwise; `sync` and
+`check` do the same) and applies `BACKUP_QUOTA_POLICY` when the quota is at
+or above `QUOTA_WARN_PERCENT`: `warn` carries on, `skip` ends the run with
+exit 2. Maintenance follows the sources when `BACKUP_MAINTENANCE=1`, no
+source failed, and the run is neither a dry run nor `--no-maintenance`:
+`forget` (with `--prune` when `BACKUP_PRUNE=1`) every `BACKUP_FORGET_EVERY`
+(30 days by default) and `check --read-data-subset
+BACKUP_CHECK_READ_DATA_SUBSET` every `BACKUP_CHECK_EVERY` (7 days), measured
+from the `backup/last-forget` and `backup/last-check` stamps. An empty or
+`0` cadence turns that pass off. A failed maintenance pass warns and makes
+the run exit 1 without touching the sources' records. Ctrl-C or SIGTERM
+stops restic (which removes its own repository lock), releases the `backup`
+lock, and exits 130 or 143. A lock left behind by a crash is cleared with
+`backup unlock`.
+
+Restoring. `--target` must be a new or empty directory and must not equal,
+contain, or lie inside a sync pair's local folder; `--force` lifts both
+rules. `/`, your home directory, and its parents are refused regardless, as
+is a target that exists but is not a directory. Snapshot ids come from
+`backup snapshots`; `latest` works too.
+
+Prompts and locks. `key show` asks on a terminal and refuses (exit 1) under
+`--non-interactive` or without one. `forget` is a dry run unless `--apply`
+is given; after `forget --apply` with pruning the command points out that
+pruned packs sit in the server's trash bin and count against the quota until
+the bin is emptied. `init`, `run`, `add`, `remove`, `check`, `unlock`, and
+`forget --apply` take the `backup` lock (`state/locks/backup.lock`). It is
+separate from the `sync` lock, so a backup and a sync can run side by side,
+while two writing backup commands cannot.
+
+Exit codes: `0` success (also for runs with `warn` sources and for "no
+sources configured"); `1` when a source or maintenance pass failed, a restic
+call failed, the repository password is missing, or the repository overlaps
+a sync pair. The message carries restic's reason: exit `1` or `2` is a fatal
+or runtime error, `10` means there is no repository (run `backup init`),
+`11` that another process holds the repository lock (see `backup unlock`),
+`12` a wrong password; an HTTP 507 (quota exhausted) or 423 (locked) answer
+from the server is named as well. `2` for a usage error (unknown subcommand
+or option, missing `--target`, bad `--read-data-subset`) and for a `run`
+skipped by `BACKUP_QUOTA_POLICY=skip`. `130` and `143` when interrupted.
+
+```sh
+sciebo backup init                                  # prints the password once
+sciebo backup add ~/Projects --filter clutter.txt   # a source with excludes
+sciebo backup list --show-filters
+sciebo backup run --dry-run
+sciebo backup run --only projects --tag before-upgrade
+sciebo backup snapshots --only projects
+sciebo backup ls latest /home/alice/Projects
+sciebo backup restore latest --target ~/restored --include /home/alice/Projects/notes
+sciebo backup forget                                # dry run of the retention policy
+sciebo backup forget --apply --prune
+sciebo backup check --read-data-subset 10%
+sciebo backup unlock
+sciebo backup info --json
+sciebo backup key show
+sciebo backup remove projects
+sciebo schedule install --backup                    # daily backup run
 ```
 
 ## Server data
@@ -2121,6 +2326,11 @@ features.
 | how well-tested a command is (tier: core / extra) | `core` commands are covered by tests against a real Nextcloud server; `extra` commands are newer and tested only against a local stand-in. |
 | this tool's local record-keeping folder (state directory) | Where this tool stores run history, locks, caches, and other bookkeeping — separate from your synced files. |
 | the single-run lock (run lock) | A safeguard that stops two sync/cleanup runs from overlapping on the same machine. |
+| restic | The third-party backup program `sciebo backup` drives; it encrypts, deduplicates, and stores data in a repository and reaches sciebo through rclone. |
+| the backup repository (repository) | The restic data store on the remote at `<RCLONE_REMOTE>:<BACKUP_REMOTE_PATH>`; separate from the folders `sync` mirrors. |
+| a snapshot | One restic backup of one source at one point in time; restoring brings it back. |
+| the retention policy | The `BACKUP_KEEP_*` rules that decide which snapshots `backup forget` keeps. |
+| prune | The restic step that deletes data no remaining snapshot needs; on sciebo the deleted packs land in the server's trash bin. |
 | a metered (pay-per-use or capped) network | A connection this tool can detect and treat more cautiously, e.g. a mobile hotspot. |
 | the retry blacklist | The list of paths this tool has temporarily stopped retrying after repeated failures, until `sciebo retry` clears them. |
 | live sync (watch) | An optional, foreground command that syncs a folder as soon as it changes; not a background service. |

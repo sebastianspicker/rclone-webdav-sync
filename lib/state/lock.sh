@@ -5,8 +5,13 @@
 # was recycled by an unrelated process - is moved aside before being
 # removed, so a concurrent takeover cannot delete a freshly created lock.
 # Release only removes the lock when the recorded pid is this process.
+# Locks are named (default `sync`, lock dir LOCK_DIR/<name>.lock); one process
+# may hold several names at once.
 
+# LOCK_HELD is the first (outermost) lock path this process acquired;
+# LOCK_HELD_BY_NAME maps every held name to its lock path.
 LOCK_HELD=""
+declare -gA LOCK_HELD_BY_NAME=()
 
 # _lock_pid LOCK - print LOCK's recorded pid, or nothing when the pid file
 # is missing or unreadable. Fork removal: $(<file) replaces the cat fork;
@@ -86,15 +91,27 @@ _lock_pid_alive() {
   pid_alive "$pid" "$started"
 }
 
-# acquire_lock - reentrant within one process: the outermost acquisition
-# wins and the EXIT trap in bin/sciebo releases it.
+# lock_held NAME - true when this process holds the lock NAME.
+lock_held() { [[ -n "${LOCK_HELD_BY_NAME[${1:-}]:-}" ]]; }
+
+# _lock_register NAME LOCK - record a freshly acquired lock.
+_lock_register() {
+  LOCK_HELD_BY_NAME[$1]="$2"
+  [[ -n "$LOCK_HELD" ]] || LOCK_HELD="$2"
+  return 0
+}
+
+# acquire_lock [NAME] - take the lock NAME (default `sync`). Reentrant per
+# name within one process: re-acquiring a held name returns 0, and the EXIT
+# trap in bin/sciebo releases whatever is still held.
 acquire_lock() {
-  [[ -z "$LOCK_HELD" ]] || return 0
+  local name="${1:-sync}"
+  lock_held "$name" && return 0
   ensure_state_dirs
-  local lock="${LOCK_DIR}/sync.lock" pid stale reason
+  local lock="${LOCK_DIR}/${name}.lock" pid stale reason
   if mkdir "$lock" 2>/dev/null; then
     _lock_write_pid "$lock"
-    LOCK_HELD="$lock"
+    _lock_register "$name" "$lock"
     return 0
   fi
   pid="$(_lock_pid "$lock")"
@@ -107,13 +124,13 @@ acquire_lock() {
     tries=$((tries + 1))
   done
   if [[ -n "$pid" ]] && _lock_pid_alive "$pid" "$lock"; then
-    die "Another sync run is active (pid ${pid}). Remove ${lock} if this is wrong."
+    die "Another ${name} run is active (pid ${pid}). Remove ${lock} if this is wrong."
   fi
   reason="no pid recorded"
   [[ -z "$pid" ]] || reason="pid ${pid} is gone"
   warn "Removing stale lock ${lock} (${reason})"
   stale="${lock}.stale.$$"
-  mv "$lock" "$stale" 2>/dev/null || die "Another sync run just started; retry in a moment"
+  mv "$lock" "$stale" 2>/dev/null || die "Another ${name} run just started; retry in a moment"
   # Another process may have created a fresh lock between the liveness check
   # and the rename. What landed in $stale must be the same lock we just
   # checked, otherwise a concurrent takeover already started its run: put the
@@ -122,18 +139,34 @@ acquire_lock() {
   moved="$(_lock_pid "$stale")"
   if [[ "$moved" != "$pid" ]] || { [[ -n "$moved" ]] && _lock_pid_alive "$moved" "$stale"; }; then
     mv "$stale" "$lock" 2>/dev/null || true
-    die "Another sync run just started; retry in a moment"
+    die "Another ${name} run just started; retry in a moment"
   fi
   rm -rf "$stale"
-  mkdir "$lock" 2>/dev/null || die "Another sync run just started; retry in a moment"
+  mkdir "$lock" 2>/dev/null || die "Another ${name} run just started; retry in a moment"
   _lock_write_pid "$lock"
-  LOCK_HELD="$lock"
+  _lock_register "$name" "$lock"
 }
 
+# release_lock [NAME] - release the lock NAME, or every lock this process
+# holds when called without a name. Idempotent.
 release_lock() {
-  [[ -n "$LOCK_HELD" ]] || return 0
-  local lock="$LOCK_HELD" pid released
-  LOCK_HELD=""
+  local name=""
+  if [[ $# -gt 0 ]]; then
+    _lock_release_one "$1"
+    return 0
+  fi
+  for name in "${!LOCK_HELD_BY_NAME[@]}"; do
+    _lock_release_one "$name"
+  done
+  return 0
+}
+
+# _lock_release_one NAME - release the held lock NAME (idempotent).
+_lock_release_one() {
+  local name="$1" lock="${LOCK_HELD_BY_NAME[$1]:-}" pid released
+  [[ -n "$lock" ]] || return 0
+  unset "LOCK_HELD_BY_NAME[$name]"
+  [[ "$LOCK_HELD" != "$lock" ]] || LOCK_HELD=""
   pid="$(_lock_pid "$lock")"
   if [[ "$pid" != "$$" ]]; then
     warn "Not releasing lock ${lock}: it is owned by pid ${pid:-unknown}"

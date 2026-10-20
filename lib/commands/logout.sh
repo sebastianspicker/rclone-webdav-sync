@@ -5,17 +5,21 @@
 
 usage_logout() {
   usage_emit <<'EOF'
-Usage: sciebo logout [--revoke] [--yes]
+Usage: sciebo logout [--revoke] [--keep-backup-key] [--yes]
 
 Remove the rclone remote entry and the Keychain item for the active remote
 (the default profile, or one selected with --profile NAME). Manifests,
 state, and synced files are left alone. Credentials left in .env must be
-removed by hand.
+removed by hand. A stored restic repository password is removed too, after a
+separate confirmation (--yes confirms it); without it the backups are
+unreadable unless you saved a copy.
 
 Options:
   --revoke    revoke the app password on the server (OCS DELETE
               /core/apppassword) before removing the local credentials; a
               failed revoke only warns, so the local logout still runs
+  --keep-backup-key
+              keep the restic repository password
   --yes       do not ask for confirmation
   -h, --help  show this help
 EOF
@@ -50,9 +54,38 @@ logout_revoke_app_password() {
   return 0
 }
 
+# logout_backup_key_stored - true when a restic repository password is
+# stored. A password file that fails the safety check (restic_password dies in
+# its subshell) still counts as stored, so it is never silently overlooked.
+logout_backup_key_stored() {
+  local secret=""
+  secret="$(restic_password 2>/dev/null)" && [[ -n "$secret" ]] && return 0
+  secret=""
+  keychain_enabled && return 1
+  [[ -n "${BACKUP_PASSWORD_FILE:-}" && (-e "$BACKUP_PASSWORD_FILE" || -L "$BACKUP_PASSWORD_FILE") ]]
+}
+
+# logout_backup_key - after the credential removal, offer to remove the restic
+# repository password. The prompt names the consequence; --yes confirms, a
+# run that cannot prompt (or a declined prompt) keeps the password.
+logout_backup_key() {
+  logout_backup_key_stored || return 0
+  if [[ "${OPT_yes:-0}" != "1" ]] &&
+    ! ui_confirm "Also remove the restic repository password? Without it (and without a saved copy) the backups at ${ restic_repository;} are unreadable."; then
+    log "kept the restic repository password (use --yes to remove it with the credentials)"
+    return 0
+  fi
+  if restic_password_delete; then
+    log "removed the restic repository password"
+  else
+    warn "could not remove the restic repository password"
+  fi
+  return 0
+}
+
 cmd_logout() {
   local removed=0 revoke=0
-  opt_begin "revoke:b yes:b" logout "" "$@"
+  opt_begin "revoke:b keep-backup-key:b yes:b" logout "" "$@"
   opt_guard logout
   # Run dependencies load after opt_guard's --help exit, so
   # `sciebo logout --help` parses none of them: the revoke talks to OCS
@@ -100,6 +133,10 @@ cmd_logout() {
 
   if [[ -f "$ENV_FILE" ]] && grep -Eq '^[[:space:]]*SCIEBO_APP_PASSWORD=' "$ENV_FILE" 2>/dev/null; then
     warn "credentials are still present in ${ENV_FILE}; remove them by hand"
+  fi
+
+  if [[ "${OPT_keep_backup_key:-0}" -eq 0 ]]; then
+    logout_backup_key
   fi
 
   if [[ "$removed" -eq 0 ]]; then

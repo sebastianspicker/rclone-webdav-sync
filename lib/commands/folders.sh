@@ -162,6 +162,14 @@ folders_check_filter() {
   [[ "$exist" -ne 1 || -f "${FILTER_DIR}/${filter}" ]] || die "missing filter file '${FILTER_DIR}/${filter}'"
 }
 
+# folders_overlap_message SUB - the shared refusal text for a remote folder
+# that overlaps the restic repository path.
+folders_overlap_message() {
+  local sub="$1"
+  printf "remote folder '%s' overlaps the restic repository path '%s' (BACKUP_REMOTE_PATH); the mirror must never contain the backup repository" \
+    "${ printable "$sub";}" "$BACKUP_REMOTE_PATH"
+}
+
 # folders_check_pair MODE LOCAL SUB [FILTER] - validate a pair that is
 # about to be added (mode, local path, remote path, duplicate name/remote,
 # filter name); dies on the first problem.
@@ -170,6 +178,7 @@ folders_check_pair() {
   valid_entry_mode "$mode" || die "invalid mode '${mode}' (expected sync, pull, or bisync)"
   [[ -n "$local_path" ]] || die "local path for '${sub}' must not be empty"
   safe_remote_path "$sub" || die "unsafe remote subdir '${ printable "$sub";}'"
+  ! backup_repo_overlaps_path "$sub" || die "${ folders_overlap_message "$sub";}"
   name="$(entry_name_for "$sub")"
   manifest_has_name "$name" && die "a source named '${name}' already exists"
   manifest_has_remote "$sub" && die "remote folder '${sub}' is already configured"
@@ -580,6 +589,7 @@ folders_edit_resolve_remote() {
   if [[ -n "${OPT_remote_SET:-}" ]]; then
     new_remote="$(folders_edit_normalize_remote "$OPT_remote")"
     safe_remote_path "$new_remote" || die "unsafe remote subdir '${ printable "$OPT_remote";}'"
+    ! backup_repo_overlaps_path "$new_remote" || die "${ folders_overlap_message "$new_remote";}"
     FOLDERS_EDIT_REMOTE="$new_remote"
     FOLDERS_EDIT_NEW_NAME="$(entry_name_for "$new_remote")"
     [[ "$new_remote" == "$ENTRY_REMOTE" ]] || FOLDERS_EDIT_REMOTE_CHANGE=1
@@ -1293,6 +1303,10 @@ choose_gather_pair() {
   fi
   if [[ "$CHOOSE_PENDING_NAMES" == *$'\n'"${name}"$'\n'* ]]; then
     warn "skipping '${ printable "$sub";}': a source named '${name}' is already in this selection"
+    return 1
+  fi
+  if backup_repo_overlaps_path "$sub"; then
+    warn "skipping: ${ folders_overlap_message "$sub";}"
     return 1
   fi
   choose_pair_policy_preflight "$sub" || rc=$?

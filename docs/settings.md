@@ -167,7 +167,8 @@ the profile:
 
 | Path | Default profile | Named profile |
 | --- | --- | --- |
-| manifests | `config/sources.conf`, `config/folders.conf`, `config/sources.generated.conf`, `config/roots.conf` | `config/profiles/<name>/...` (same file names) |
+| manifests | `config/sources.conf`, `config/folders.conf`, `config/sources.generated.conf`, `config/roots.conf`, `config/backups.conf` | `config/profiles/<name>/...` (same file names) |
+| restic repository password file (`KEYCHAIN=0`) | `config/backup.key` | `config/profiles/<name>/backup.key` |
 | filters | `config/filters/` | `config/profiles/<name>/filters/` |
 | state | `state/` | `state/profiles/<name>/` |
 | Keychain service | `KEYCHAIN_SERVICE` | `rclone-sciebo/<name>` when the default service is unchanged |
@@ -187,6 +188,8 @@ with `sciebo account` (see [docs/commands.md](commands.md#account)).
 | `.env` | you | `SCIEBO_URL`, `SCIEBO_USER`, `SCIEBO_APP_PASSWORD` for `setup` (gitignored) |
 | `config/sources.conf` | you | manual sources |
 | `config/roots.conf` | you | roots for `discover` |
+| `config/backups.conf` | you (`sciebo backup add/remove`) | sources for `sciebo backup` |
+| `config/backup.key` | `sciebo backup init` | restic repository password with `KEYCHAIN=0` (mode 600; see `BACKUP_PASSWORD_FILE`); never commit it |
 | `config/folders.conf` | `sciebo folders` | wizard-managed pairs (manual edits are preserved by appends, not by `remove`) |
 | `config/sources.generated.conf` | `sciebo discover --write` | generated sources (gitignored) |
 | `config/filters/clutter.txt` | project/you | global rclone filter rules |
@@ -240,6 +243,51 @@ sync|~/Projects/my-app|repos/my-app
 pull|~/Downloads/sciebo-share|shared/downloads
 bisync|~/Notes|notes|notes-extra.txt
 ```
+
+### backups.conf
+
+Sources for `sciebo backup`, one per line. They live in their own file,
+not in the sync list, so a backup source is never mirrored by mistake:
+
+```
+name | local_path [ | filter_file ]
+```
+
+- `name`: unique; letters, digits, dot, dash, and underscore. It names the
+  restic snapshots (tag `source=<name>`), the log `backup-<name>-<stamp>.log`,
+  and the run record `state/last/@backup/<name>` (the `@` keeps it from
+  colliding with a sync pair of the same name).
+- `local_path`: absolute or `~`-prefixed directory. No `|` or control bytes.
+- `filter_file` (optional): a bare file name in `FILTER_DIR` in rclone filter
+  syntax, translated to restic exclude patterns at run time (see below).
+
+Blank lines and `#`-comments are ignored; a missing file means no sources.
+`sciebo backup add` and `remove` edit the file atomically. `make install`
+copies a missing `backups.conf` once and never overwrites an edited one; a
+named profile keeps its own at `config/profiles/<name>/backups.conf`.
+<!-- src: settings.md#backupsconf -->
+
+```
+projects|~/Projects|clutter.txt
+documents|~/Documents
+```
+
+Filter translation. Only exclude rules are translated. Anything else is
+reported with its line number by `backup list --show-filters`, `doctor`, and
+`backup run`, and the source is not backed up until the rule is fixed.
+
+| rclone rule | restic pattern | Note |
+| --- | --- | --- |
+| `# comment`, `; comment`, blank line | dropped | |
+| `- name` | `name` | matches that name anywhere, like rclone's unanchored rule |
+| `- /name` | `<LOCAL>/name` | rclone anchors at the source root, restic at `/`, so the absolute source path is prepended |
+| `- dir/` | `dir` | restic ignores the trailing slash, so a file of that name is excluded as well |
+| `- a/**/b`, `*`, `?`, `[...]` | unchanged | same meaning for `*` (no `/`) and `**` |
+| `- {a,b}` | error | restic has no alternation; write one rule per alternative |
+| `+ ...` (include), `!` (clear), `- !pat`, `- #pat` | error | no restic equivalent (a pattern starting with `!` or `#` would be read by restic as a negation or comment) |
+| a missing space (`-name`), an empty pattern | error | |
+| any `$` | `$$` | restic expands environment variables in exclude files |
+<!-- src: settings.md#backupsconf -->
 
 ### roots.conf
 
@@ -621,8 +669,73 @@ yourself.
 | `SCHEDULE_JITTER` | `0` | random delay in seconds before each run (`sleep $((RANDOM % N))` on launchd, `RandomizedDelaySec` on systemd). |
 | `SCHEDULE_WATCH_PATH` | empty | also trigger a run when this path changes (`~` is expanded; the path must exist; `WatchPaths` / a systemd `.path` unit). |
 | `SCHEDULE_AT_LOGIN` | `0` | `1` makes `schedule install` start the agent at login/boot (`RunAtLoad` on launchd, `[Install] WantedBy=default.target` on systemd); `--at-login` overrides. |
-| `SCHEDULE_PROFILES` | empty | extra account profiles to render one agent each for, labelled `<LAUNCHD_LABEL>.<profile>` and run with `--profile`; comma or space separated; `--profiles` overrides. Empty means only the active profile on the next install; `status` and `uninstall` still discover profile units from earlier installs. |
+| `SCHEDULE_BACKUP` | `0` | `1` makes `schedule install` also render the daily backup agent running `sciebo backup run --quiet`; `--backup` sets it for one run. `status` and `uninstall` always discover an installed backup agent. |
+| `SCHEDULE_BACKUP_HOUR` | `3` | hour (`0`-`23`) of the daily backup run. |
+| `SCHEDULE_BACKUP_MINUTE` | `30` | minute (`0`-`59`) of the daily backup run. |
+| `BACKUP_LAUNCHD_LABEL` | `de.rclone-sciebo.backup` | label of the backup agent: launchd label and plist name, or the base name of its systemd `.service`/`.timer`. Profiles get `<label>.<profile>`. The backup agent is always daily: it ignores `SCHEDULE_INTERVAL` and `SCHEDULE_WATCH_PATH`, but honours `SCHEDULE_JITTER` and `SCHEDULE_AT_LOGIN`. |
+| `SCHEDULE_PROFILES` | empty | extra account profiles to render one agent each for, labelled `<LAUNCHD_LABEL>.<profile>` (and `<BACKUP_LAUNCHD_LABEL>.<profile>` for the backup agent) and run with `--profile`; comma or space separated; `--profiles` overrides. Empty means only the active profile on the next install; `status` and `uninstall` still discover profile units from earlier installs. |
 <!-- src: settings.md#scheduling -->
+
+### Backups (restic)
+
+Used by `sciebo backup` (see [docs/commands.md](commands.md#backup)). The
+repository lives at `<RCLONE_REMOTE>:<BACKUP_REMOTE_PATH>`; restic reaches it
+through `rclone serve restic`. restic is a separate install, 0.17 or newer
+(`restic self-update` brings an older distribution package up to date).
+<!-- src: settings.md#backups-restic -->
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `RESTIC_BIN` | empty | the restic binary; empty searches `PATH`, then the usual Homebrew and system locations. |
+| `RESTIC_MIN_VERSION` | `0.17` | the oldest restic `backup` and `doctor` accept (`MAJOR.MINOR`). |
+| `BACKUP_REMOTE_PATH` | `restic` | repository path on the remote, relative and top level, a sibling of `REMOTE_BASE`. Must not be empty, absolute, contain `..`, `|`, or control bytes, and must never equal, contain, or lie inside `REMOTE_BASE` (segment-wise; `restic` and `restic2` do not overlap). Violations stop every command at start-up. |
+| `BACKUP_PACK_SIZE` | `64` | restic `--pack-size` in MiB, `4`-`128`; larger packs mean fewer files on the server than restic's 16 MiB default. |
+| `BACKUP_CONNECTIONS` | `4` | `rclone.connections` for the restic-spawned rclone, `1`-`16`; sciebo asks clients to be gentle. |
+| `BACKUP_CHUNK_SIZE` | `0` | Nextcloud chunked-upload size for that rclone (`RCLONE_WEBDAV_NEXTCLOUD_CHUNK_SIZE`); `0` disables chunking so a pack is one request. `doctor` warns when a non-zero value is smaller than the pack size. |
+| `BACKUP_COMPRESSION` | `auto` | restic `--compression`: `auto`, `off`, or `max`. |
+| `BACKUP_ONE_FILE_SYSTEM` | `1` | pass `--one-file-system`: do not cross mount points. |
+| `BACKUP_EXCLUDE_CACHES` | `1` | pass `--exclude-caches` (directories with a `CACHEDIR.TAG`). |
+| `BACKUP_EXCLUDE_IF_PRESENT` | `.nobackup` | pass `--exclude-if-present NAME`: skip a directory containing a file of this name; empty disables. |
+| `BACKUP_EXCLUDE_LARGER_THAN` | empty | pass `--exclude-larger-than SIZE` (e.g. `2G`); empty disables. |
+| `BACKUP_SKIP_IF_UNCHANGED` | `1` | pass `--skip-if-unchanged`: no new snapshot when nothing changed. |
+| `BACKUP_TAGS` | `sciebo` | comma separated restic `--tag` list for every snapshot (a `source=<name>` tag is always added). |
+| `BACKUP_HOST` | empty | the `--host` restic records and `forget`/`snapshots --only` filter on; empty uses the short hostname. Set it when the machine's hostname changes with the network (macOS), otherwise one machine's snapshots split into several host groups. No spaces or leading `-`. |
+| `BACKUP_KEEP_LAST`, `BACKUP_KEEP_HOURLY`, `BACKUP_KEEP_DAILY`, `BACKUP_KEEP_WEEKLY`, `BACKUP_KEEP_MONTHLY`, `BACKUP_KEEP_YEARLY` | `0`, `0`, `7`, `4`, `6`, `0` | retention policy for `backup forget`: how many snapshots to keep per period (`0` = unused). |
+| `BACKUP_KEEP_WITHIN` | empty | also keep every snapshot newer than this duration (`--keep-within`, e.g. `14d`). At least one `BACKUP_KEEP_*` value must be set or `forget` refuses. |
+| `BACKUP_PRUNE` | `1` | `backup forget --apply` and the maintenance pass also prune unreferenced data. |
+| `BACKUP_MAINTENANCE` | `1` | `backup run` performs due forget/prune and check afterwards. |
+| `BACKUP_FORGET_EVERY` | `30d` | how often maintenance runs forget (`<N>[smhd]`); empty or `0` disables. |
+| `BACKUP_CHECK_EVERY` | `7d` | how often maintenance runs `check`; empty or `0` disables. |
+| `BACKUP_CHECK_READ_DATA_SUBSET` | `5%` | `--read-data-subset` for maintenance and for `backup check` without an argument (`N%`, `N/M`, or a size). |
+| `BACKUP_QUOTA_POLICY` | `warn` | `warn` or `skip`: what `backup run` does when the server quota is at or above `QUOTA_WARN_PERCENT` (`skip` ends the run with exit 2). |
+| `BACKUP_CACHE_DIR` | empty | restic cache directory; empty derives `<STATE_DIR>/backup/cache`. |
+| `BACKUP_PASSWORD_FILE` | empty | with `KEYCHAIN=0`, the file holding the repository password (first line; must be a regular file you own with mode 600 or 400, not a symlink); empty derives `backup.key` next to `settings.env` (inside the profile directory for a named profile). |
+<!-- src: settings.md#backups-restic -->
+
+Scheduling the daily backup (`SCHEDULE_BACKUP`, `SCHEDULE_BACKUP_HOUR`,
+`SCHEDULE_BACKUP_MINUTE`, `BACKUP_LAUNCHD_LABEL`) is described under
+[Scheduling](#scheduling).
+
+Derived paths (not settings; set them in the environment only for isolated
+runs, see [Path overrides](#path-overrides-isolated-runs)):
+
+| Variable | Default |
+| --- | --- |
+| `BACKUPS_FILE` | `config/backups.conf` / `<profile>/backups.conf` |
+| `BACKUP_STATE_DIR` | `<STATE_DIR>/backup` |
+| `BACKUP_CACHE_DIR` | `<BACKUP_STATE_DIR>/cache` unless set above |
+| `BACKUP_PASSWORD_FILE` | `<config base>/backup.key` / `<profile>/backup.key` unless set above |
+| `BACKUP_REPOSITORY` | `rclone:<RCLONE_REMOTE>:<BACKUP_REMOTE_PATH>`, what restic receives as `RESTIC_REPOSITORY` |
+<!-- src: settings.md#backups-restic -->
+
+The rclone that restic starts cannot take flags, so the shared settings
+reach it as `RCLONE_*` environment variables: `RCLONE_CONFIG`, the app
+password, `RCLONE_BWLIMIT` (from `sciebo limit`, `BW_SCHEDULE`, and
+`BW_LIMIT_*`), `RCLONE_TPSLIMIT`, the TLS and client-certificate settings,
+the user agent, and the proxy. Secrets travel in that environment only.
+Any `RESTIC_PASSWORD_FILE`, `RESTIC_PASSWORD_COMMAND`,
+`RESTIC_REPOSITORY_FILE`, or `RESTIC_FROM_*` inherited from your shell is
+unset first, so only this tool's values count.
 
 ### Automatic sync (watch)
 
@@ -719,6 +832,12 @@ With `KEYCHAIN=1` (the default), the backend is selected by
   plaintext in the keychain means the HTTP layer (`lib/adapters/http.sh`)
   reads it directly and never runs `rclone reveal`, whose visible-argument
   encoded value would be exposed to the process list.
+- The restic repository password (`sciebo backup init`) is a second item in
+  the same service under account `<RCLONE_REMOTE>#restic`. Only `logout` removes
+  it, after its own confirmation (`--yes` confirms, `--keep-backup-key` keeps it). With
+  `KEYCHAIN=0` it is a mode-600 file instead, `BACKUP_PASSWORD_FILE`
+  (`backup.key`); `doctor` and the commands refuse a file that is a symlink,
+  not yours, or readable by others.
 - A legacy install that still holds the obscured password under the bare
   account name `RCLONE_REMOTE` is migrated once on first use: the obscured
   item is revealed in memory and rewritten to the `#plain` slot. The legacy
@@ -796,11 +915,16 @@ folder) is `state/` in the project checkout (under `<confdir>/state` when
 
 | Path | Contents |
 | --- | --- |
-| `state/logs/` | per-source rclone logs (`<name>-<stamp>[-dryrun].log`), mount logs, scheduler output |
+| `state/logs/` | per-source rclone logs (`<name>-<stamp>[-dryrun].log`), backup logs (`backup-<name>-<stamp>.log`, `backup-maintenance-<stamp>.log`), mount logs, scheduler output |
 | `state/locks/sync.lock/` | the single-run lock (pid + process start time) |
+| `state/locks/backup.lock/` | the lock `sciebo backup` commands that write take (same format; independent of `sync.lock`) |
 | `state/bisync/<name>/` | rclone bisync bookkeeping; required before a bisync entry runs |
 | `state/last/<name>` | last-run record for `sciebo status` |
+| `state/last/@backup/<name>` | last-run record of a backup source (mode `backup`) |
 | `state/history/<name>.log` | run history for `sciebo status --history` |
+| `state/history/@backup/<name>.log` | run history of a backup source |
+| `state/backup/last-run`, `last-forget`, `last-check` | epoch of the last successful backup run, forget, and check (mode 600); they schedule the maintenance pass |
+| `state/backup/cache/` | restic cache (`BACKUP_CACHE_DIR`) |
 | `state/blacklist/<name>` | failure-count records for the retry blacklist |
 | `state/trash/<name>/` | local trash for `MOVE_TO_TRASH=1` pulls/bisyncs (unless `LOCAL_TRASH_DIR` or `BACKUP_DIR` is set) |
 | `state/remote-locks/<name>.state` | lock tokens recorded by `sciebo lock` |
@@ -850,12 +974,14 @@ not need it.
 | `FOLDERS_FILE` | `config/folders.conf` / `<profile>/folders.conf` |
 | `MANIFEST_GENERATED_FILE` | `config/sources.generated.conf` / `<profile>/sources.generated.conf` |
 | `ROOTS_FILE` | `config/roots.conf` / `<profile>/roots.conf` |
+| `BACKUPS_FILE` | `config/backups.conf` / `<profile>/backups.conf` |
 | `FILTER_DIR` | `config/filters` / `<profile>/filters` |
 | `STATE_DIR` | `state` / `state/profiles/<name>` |
 | `PAIR_FLAGS_DIR` | `<STATE_DIR>/pairs` (not derived when `STATE_DIR` is empty) |
 | `LOG_DIR` | `<STATE_DIR>/logs` |
 | `LOCK_DIR` | `<STATE_DIR>/locks` |
 | `BISYNC_DIR` | `<STATE_DIR>/bisync` |
+| `BACKUP_STATE_DIR` | `<STATE_DIR>/backup` |
 | `MOUNTS_DIR` | `<STATE_DIR>/mounts` |
 | `MOUNT_CACHE_DIR` | `<STATE_DIR>/mount-cache` |
 | `RUNSTATE_DIR` | `<STATE_DIR>/last` |
@@ -943,6 +1069,11 @@ Terms used on this page, in plain wording:
 | a safety policy (policy, e.g. E2EE_POLICY) | A named setting that chooses how this tool reacts to a risky situation: allow it, warn, ask first, or skip/exclude it. |
 | this tool's local record-keeping folder (state directory) | Where this tool stores run history, locks, caches, and other bookkeeping, separate from your synced files. |
 | the single-run lock (run lock) | A safeguard that stops two sync/cleanup runs from overlapping on the same machine. |
+| restic | The third-party backup program `sciebo backup` drives; it encrypts, deduplicates, and stores data in a repository. |
+| the backup repository (repository) | The restic data store at `<RCLONE_REMOTE>:<BACKUP_REMOTE_PATH>`, kept outside the folders `sync` mirrors. |
+| a snapshot | One restic backup of one source at one point in time. |
+| the retention policy | The `BACKUP_KEEP_*` settings that decide which snapshots `backup forget` keeps. |
+| prune | The restic step that deletes data no remaining snapshot needs. |
 | a metered (pay-per-use or capped) network | A connection this tool can detect and treat more cautiously, e.g. a mobile hotspot. |
 | the retry blacklist (blacklist) | The list of paths this tool has temporarily stopped retrying after repeated failures, until `sciebo retry` clears them. |
 | live sync (watch) | An optional, foreground command that syncs a folder as soon as it changes; not a background service. |

@@ -38,12 +38,17 @@ Options:
 EOF
 }
 
-# status_read_state NAME - fill RUNSTATE_* from NAME's record. rc 1 with
-# the status fields empty when NAME has no record.
+# status_read_state NAME [NS] - fill RUNSTATE_* from NAME's record (in the
+# namespace NS, e.g. backup, when given). rc 1 with the status fields empty
+# when NAME has no record.
 status_read_state() {
   RUNSTATE_STATUS="" RUNSTATE_STAMP="" RUNSTATE_RC=""
   RUNSTATE_CONFLICTS="" RUNSTATE_LOG="" RUNSTATE_DETAIL=""
-  runstate_read "$1" || return 1
+  if [[ -n "${2:-}" ]]; then
+    runstate_read_ns "$2" "$1" || return 1
+  else
+    runstate_read "$1" || return 1
+  fi
   return 0
 }
 
@@ -72,15 +77,21 @@ status_print_row() {
   return 0
 }
 
-# status_print_history NAME N - indented recent history records for NAME
-# (newest first). Prints nothing when the source has no history; never
-# fails.
+# status_print_history NAME N [NS] - indented recent history records for NAME
+# (newest first, from namespace NS when given). Prints nothing when the source
+# has no history; never fails.
 status_print_history() {
-  local name="$1" limit="$2" line=""
+  local name="$1" limit="$2" ns="${3:-}" line=""
   while IFS= read -r line; do
     [[ -n "$line" ]] || continue
     printf '    history: %s\n' "$line"
-  done < <(runstate_history "$name" "$limit")
+  done < <(
+    if [[ -n "$ns" ]]; then
+      runstate_history_ns "$ns" "$name" "$limit"
+    else
+      runstate_history "$name" "$limit"
+    fi
+  )
   return 0
 }
 
@@ -89,12 +100,13 @@ status_name_is() {
   [[ "${ENTRY_NAME:-}" != "$1" ]]
 }
 
-# status_has_name NAME - true when a valid manifest entry parses to NAME.
+# status_has_name NAME - true when a valid manifest entry or backup source
+# is named NAME.
 status_has_name() {
-  if manifest_each status_name_is "$1"; then
-    return 1
+  if ! manifest_each status_name_is "$1"; then
+    return 0
   fi
-  return 0
+  backupset_has_name "$1"
 }
 
 # status_process_line LINE [ONLY] - validate and print one manifest entry.
@@ -102,8 +114,7 @@ status_has_name() {
 # out. A printed row is followed by its history records when --history is
 # active.
 status_process_line() {
-  local line="$1" only="${2:-}" name="" mode="" state="" when="-" detail="" log=""
-  local log_disp=""
+  local line="$1" only="${2:-}"
   if ! manifest_parse_line "$line"; then
     if [[ -z "$only" ]]; then
       status_print_row "INVALID" "-" "-" "-" "$ENTRY_ERROR"
@@ -113,11 +124,19 @@ status_process_line() {
   if [[ -n "$only" && "$ENTRY_NAME" != "$only" ]]; then
     return 0
   fi
+  status_emit_row "$ENTRY_NAME" "$ENTRY_MODE"
+  return 0
+}
+
+# status_emit_row NAME MODE [NS] - count and print one source's row from its
+# last-run record (namespace NS when given), plus the failed-row log line and
+# the --history records.
+status_emit_row() {
+  local name="$1" mode="$2" ns="${3:-}" state="" when="-" detail="" log=""
+  local log_disp=""
   STATUS_TOTAL=$((STATUS_TOTAL + 1))
-  name="$ENTRY_NAME"
-  mode="$ENTRY_MODE"
   state="never"
-  if status_read_state "$name"; then
+  if status_read_state "$name" "$ns"; then
     if [[ -n "$RUNSTATE_STATUS" ]]; then
       state="${RUNSTATE_STATUS^^}"
       state=${ printable "$state";}
@@ -138,9 +157,26 @@ status_process_line() {
       printf '     log: %s\n' "$log_disp"
     fi
     if [[ "$STATUS_HISTORY_ON" == true ]]; then
-      status_print_history "$name" "$STATUS_HISTORY_N"
+      status_print_history "$name" "$STATUS_HISTORY_N" "$ns"
     fi
   fi
+  return 0
+}
+
+# status_process_backup_line LINE [ONLY] - validate and print one backup
+# source; mirrors status_process_line with the namespaced backup records.
+status_process_backup_line() {
+  local line="$1" only="${2:-}"
+  if ! backupset_parse_line "$line"; then
+    if [[ -z "$only" ]]; then
+      status_print_row "INVALID" "-" "-" "-" "$BACKUP_ENTRY_ERROR"
+    fi
+    return 0
+  fi
+  if [[ -n "$only" && "$BACKUP_ENTRY_NAME" != "$only" ]]; then
+    return 0
+  fi
+  status_emit_row "$BACKUP_ENTRY_NAME" backup backup
   return 0
 }
 
@@ -168,6 +204,9 @@ status_text_report() {
   while IFS= read -r line; do
     status_process_line "$line" "$only"
   done < <(manifest_lines)
+  while IFS= read -r line; do
+    status_process_backup_line "$line" "$only"
+  done < <(backupset_lines)
   printf 'Summary: %s source(s) tracked (%s ok, %s failed, %s skipped/never)\n' \
     "$STATUS_TOTAL" "$STATUS_OK" "$STATUS_FAILED" "$STATUS_IDLE"
   return 0
@@ -209,6 +248,26 @@ status_each_entry() {
   return 0
 }
 
+# status_each_backup - emit one backup source's JSON row (same fields as
+# status_each_entry, mode "backup"), using the caller's `only`.
+status_each_backup() {
+  [[ -z "$only" || "$BACKUP_ENTRY_NAME" == "$only" ]] || return 0
+  status_read_state "$BACKUP_ENTRY_NAME" backup || true
+  [[ "$STATUS_QUIET" == true && "$RUNSTATE_STATUS" == "ok" ]] && return 0
+  output_json_object_begin
+  output_json_kv "name" "$BACKUP_ENTRY_NAME"
+  output_json_kv "mode" "backup"
+  output_json_kv "status" "$RUNSTATE_STATUS"
+  output_json_kv "stamp" "$RUNSTATE_STAMP"
+  output_json_kv "time" "$RUNSTATE_TIME"
+  output_json_kv "rc" "$RUNSTATE_RC"
+  output_json_kv "conflicts" "$RUNSTATE_CONFLICTS"
+  output_json_kv "log" "$RUNSTATE_LOG"
+  output_json_kv "detail" "$RUNSTATE_DETAIL"
+  output_json_object_end
+  return 0
+}
+
 # status_json_report ONLY - one JSON document with the pause state and the
 # runstate fields of every source (filtered by ONLY; --quiet hides ok rows).
 status_json_report() {
@@ -223,6 +282,7 @@ status_json_report() {
   output_json_kv "pause_until" "$STATUS_PAUSE_UNTIL"
   output_json_array_begin "rows"
   manifest_each status_each_entry
+  backupset_each status_each_backup 2>/dev/null
   output_json_array_end
   output_json_end
   return 0

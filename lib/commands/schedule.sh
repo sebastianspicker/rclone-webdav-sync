@@ -15,6 +15,10 @@ SCHEDULE_HOUR:SCHEDULE_MINUTE, every SCHEDULE_INTERVAL seconds, or when
 SCHEDULE_WATCH_PATH changes (see config/settings.env). SCHEDULE_JITTER adds a
 random delay before each run.
 
+With --backup (or SCHEDULE_BACKUP=1) a second agent, labelled
+<BACKUP_LAUNCHD_LABEL>, runs `sciebo backup run --quiet` daily at
+SCHEDULE_BACKUP_HOUR:SCHEDULE_BACKUP_MINUTE. It is never installed otherwise.
+
 Commands:
   install     render/start requested unit(s); remove stale profile unit(s)
   uninstall   stop and remove all installed unit(s), including profiles
@@ -26,7 +30,9 @@ Options for install:
                    SCHEDULE_AT_LOGIN=1)
   --profiles LIST  render one extra agent per profile, labelled
                    <LAUNCHD_LABEL>.<profile>, each running with --profile
-                   (comma or space separated; overrides SCHEDULE_PROFILES)
+                   (comma or space separated; overrides SCHEDULE_PROFILES);
+                   applies to the backup agent too
+  --backup         also install the daily backup agent (sets SCHEDULE_BACKUP=1)
 EOF
 }
 
@@ -41,13 +47,40 @@ schedule_expand_watch_path() {
   esac
 }
 
-# schedule_agent_label PROFILE - the plain LAUNCHD_LABEL names the active
-# profile; every configured profile gets its own "<label>.<profile>" agent.
-schedule_agent_label() {
-  if [[ -n "${1:-}" ]]; then
-    printf '%s.%s' "$LAUNCHD_LABEL" "$1"
+# schedule_base_label [KIND] - the unprofiled label of an agent kind: sync
+# (default) uses LAUNCHD_LABEL, backup uses BACKUP_LAUNCHD_LABEL.
+schedule_base_label() {
+  if [[ "${1:-sync}" == "backup" ]]; then
+    printf '%s' "$BACKUP_LAUNCHD_LABEL"
   else
     printf '%s' "$LAUNCHD_LABEL"
+  fi
+  return 0
+}
+
+# schedule_kind_prefix [KIND] - status-line prefix naming the backup agent;
+# empty for the sync agent so its output stays unchanged.
+schedule_kind_prefix() {
+  [[ "${1:-sync}" != "backup" ]] || printf 'backup agent: '
+  return 0
+}
+
+# schedule_backup_enabled - true when SCHEDULE_BACKUP=1 asks for the backup
+# agent (the opt-in; set by --backup or settings).
+schedule_backup_enabled() {
+  [[ "${SCHEDULE_BACKUP:-0}" == "1" ]]
+}
+
+# schedule_agent_label [PROFILE] [KIND] - the plain base label names the
+# active profile; every configured profile gets its own "<label>.<profile>"
+# agent.
+schedule_agent_label() {
+  local base=""
+  base=${ schedule_base_label "${2:-sync}";}
+  if [[ -n "${1:-}" ]]; then
+    printf '%s.%s' "$base" "$1"
+  else
+    printf '%s' "$base"
   fi
   return 0
 }
@@ -66,32 +99,33 @@ schedule_profile_list() {
   return 0
 }
 
-# schedule_each_agent ACTION_FUNC - run ACTION_FUNC once for the active
-# profile (empty argument) and once per configured SCHEDULE_PROFILES entry.
+# schedule_each_agent ACTION_FUNC [KIND] - run ACTION_FUNC once for the active
+# profile (empty argument) and once per configured SCHEDULE_PROFILES entry,
+# passing the agent kind as the second argument.
 # Returns 1 when any call does, 0 otherwise, so callers aggregate status.
 schedule_each_agent() {
-  local action="$1" profile="" rc=0
-  "$action" "" || rc=1
+  local action="$1" kind="${2:-sync}" profile="" rc=0
+  "$action" "" "$kind" || rc=1
   while IFS= read -r profile; do
-    "$action" "$profile" || rc=1
+    "$action" "$profile" "$kind" || rc=1
   done < <(schedule_profile_list | LC_ALL=C sort -u)
   return "$rc"
 }
 
-# schedule_each_known_agent ACTION_FUNC DISCOVERY_FUNC - visit the active
+# schedule_each_known_agent ACTION_FUNC DISCOVERY_FUNC [KIND] - visit the active
 # agent plus the union of configured profiles and profiles discovered from
 # installed unit files. This makes status/uninstall authoritative even when
 # the profiles were supplied only through `schedule install --profiles` or
 # were later removed from SCHEDULE_PROFILES.
 schedule_each_known_agent() {
-  local action="$1" discover="$2" profile="" rc=0
-  "$action" "" || rc=1
+  local action="$1" discover="$2" kind="${3:-sync}" profile="" rc=0
+  "$action" "" "$kind" || rc=1
   while IFS= read -r profile; do
     [[ -n "$profile" ]] || continue
-    "$action" "$profile" || rc=1
+    "$action" "$profile" "$kind" || rc=1
   done < <({
     schedule_profile_list
-    "$discover"
+    "$discover" "$kind"
   } | LC_ALL=C sort -u)
   return "$rc"
 }
@@ -107,16 +141,16 @@ schedule_profile_configured() {
   return 1
 }
 
-# schedule_each_stale_agent ACTION_FUNC DISCOVERY_FUNC - run ACTION_FUNC for
+# schedule_each_stale_agent ACTION_FUNC DISCOVERY_FUNC [KIND] - run ACTION_FUNC for
 # installed profile agents that are absent from the current configuration.
 # The active (unprofiled) agent is never stale.
 schedule_each_stale_agent() {
-  local action="$1" discover="$2" profile="" rc=0
+  local action="$1" discover="$2" kind="${3:-sync}" profile="" rc=0
   while IFS= read -r profile; do
     [[ -n "$profile" ]] || continue
     schedule_profile_configured "$profile" && continue
-    "$action" "$profile" || rc=1
-  done < <("$discover" | LC_ALL=C sort -u)
+    "$action" "$profile" "$kind" || rc=1
+  done < <("$discover" "$kind" | LC_ALL=C sort -u)
   return "$rc"
 }
 
@@ -224,7 +258,8 @@ schedule_xml_escape() {
   printf '%s' "$s"
 }
 
-# schedule_command [PROFILE] - the command launchd runs via `bash -c`.
+# schedule_command [PROFILE] [KIND] - the command launchd runs via `bash -c`
+# (`sync --apply --quiet`, or `backup run --quiet` for the backup kind).
 # Configured profiles get `--profile <name>`; jitter sleeps a random number
 # of seconds (RANDOM is expanded when the agent runs) before exec'ing the
 # CLI. The paths are shell-quoted because the whole string goes through
@@ -235,7 +270,11 @@ schedule_command() {
   cli="$(printf '%q' "${PROJECT_DIR}/bin/sciebo")"
   command="exec $(printf '%q' "${SCIEBO_BASH:-/bin/bash}") ${cli}"
   [[ -z "$profile" ]] || command="${command} --profile $(printf '%q' "$profile")"
-  command="${command} sync --apply --quiet"
+  if [[ "${2:-sync}" == "backup" ]]; then
+    command="${command} backup run --quiet"
+  else
+    command="${command} sync --apply --quiet"
+  fi
   if [[ "${SCHEDULE_JITTER:-0}" -gt 0 ]]; then
     command="sleep \$((RANDOM % ${SCHEDULE_JITTER})); ${command}"
   fi
@@ -253,10 +292,16 @@ schedule_run_at_load_block() {
   return 0
 }
 
-# schedule_block - StartInterval when SCHEDULE_INTERVAL is a positive
-# integer, otherwise the daily StartCalendarInterval dict.
+# schedule_block [KIND] - StartInterval when SCHEDULE_INTERVAL is a positive
+# integer, otherwise the daily StartCalendarInterval dict. The backup kind is
+# always the daily dict at SCHEDULE_BACKUP_HOUR:SCHEDULE_BACKUP_MINUTE.
 schedule_block() {
   local interval="${SCHEDULE_INTERVAL:-}"
+  if [[ "${1:-sync}" == "backup" ]]; then
+    printf '<key>StartCalendarInterval</key>\n  <dict>\n    <key>Hour</key>\n    <integer>%s</integer>\n    <key>Minute</key>\n    <integer>%s</integer>\n  </dict>' \
+      "${SCHEDULE_BACKUP_HOUR:-0}" "${SCHEDULE_BACKUP_MINUTE:-0}"
+    return 0
+  fi
   if [[ "$interval" =~ ^[0-9]+$ ]] && [[ "$((10#$interval))" -gt 0 ]]; then
     printf '<key>StartInterval</key>\n  <integer>%s</integer>' "$((10#$interval))"
     return 0
@@ -265,27 +310,30 @@ schedule_block() {
     "${SCHEDULE_HOUR:-0}" "${SCHEDULE_MINUTE:-0}"
 }
 
-# schedule_watch_block - WatchPaths array for SCHEDULE_WATCH_PATH, empty
-# when the setting is unset.
+# schedule_watch_block [KIND] - WatchPaths array for SCHEDULE_WATCH_PATH,
+# empty when the setting is unset and always empty for the backup kind.
 schedule_watch_block() {
   local path
+  [[ "${1:-sync}" != "backup" ]] || return 0
   [[ -n "${SCHEDULE_WATCH_PATH:-}" ]] || return 0
   path="$(schedule_xml_escape "$(schedule_expand_watch_path "$SCHEDULE_WATCH_PATH")")"
   printf '<key>WatchPaths</key>\n  <array>\n    <string>%s</string>\n  </array>' "$path"
 }
 
-# schedule_render_template [LABEL] [PROFILE] - render the plist template for
-# LABEL (default LAUNCHD_LABEL) and PROFILE (empty = the active profile).
+# schedule_render_template [LABEL] [PROFILE] [KIND] - render the plist
+# template for LABEL (default: the kind's base label), PROFILE (empty = the
+# active profile) and KIND (sync by default, or backup).
 schedule_render_template() {
   local line label project rclone_dir log_dir command schedule watch_paths run_at_load bash_path
-  label="$(schedule_xml_escape "${1:-$LAUNCHD_LABEL}")" project="$(schedule_xml_escape "$PROJECT_DIR")"
+  local kind="${3:-sync}"
+  label="$(schedule_xml_escape "${1:-${ schedule_base_label "$kind";}}")" project="$(schedule_xml_escape "$PROJECT_DIR")"
   rclone_dir="$(schedule_xml_escape "$SCHEDULE_RCLONE_DIR")"
   # shellcheck disable=SC2153  # LOG_DIR is derived by lib/config/settings.sh
   log_dir="$(schedule_xml_escape "$LOG_DIR")"
   bash_path="$(schedule_xml_escape "${SCIEBO_BASH:-/bin/bash}")"
-  command="$(schedule_xml_escape "$(schedule_command "${2:-}")")"
-  schedule="$(schedule_block)"
-  watch_paths="$(schedule_watch_block)"
+  command="$(schedule_xml_escape "$(schedule_command "${2:-}" "$kind")")"
+  schedule="$(schedule_block "$kind")"
+  watch_paths="$(schedule_watch_block "$kind")"
   run_at_load="$(schedule_run_at_load_block)"
   # patsub_replacement (Bash 5.2+ default) treats "&" in a replacement as the
   # matched text, and every value below is XML-escaped (so it can contain
@@ -307,18 +355,19 @@ schedule_render_template() {
 
 # --- launchd backend ---------------------------------------------------------
 
-# schedule_launchd_installed_profile_list - discover profile suffixes from
-# plists in launchd's per-user agent directory. Only names this command can
-# have produced are returned; the base (unprofiled) label is handled
+# schedule_launchd_installed_profile_list [KIND] - discover profile suffixes
+# from plists in launchd's per-user agent directory. Only names this command
+# can have produced are returned; the base (unprofiled) label is handled
 # separately by schedule_each_known_agent.
 schedule_launchd_installed_profile_list() {
-  local dir="${HOME}/Library/LaunchAgents" path="" filename="" profile=""
+  local dir="${HOME}/Library/LaunchAgents" path="" filename="" profile="" base=""
+  base=${ schedule_base_label "${1:-sync}";}
   [[ -d "$dir" ]] || return 0
   while IFS= read -r -d '' path; do
     filename="${path##*/}"
     case "$filename" in
-      "$LAUNCHD_LABEL".*.plist)
-        profile="${filename#"$LAUNCHD_LABEL".}"
+      "$base".*.plist)
+        profile="${filename#"$base".}"
         profile="${profile%.plist}"
         ;;
       *) continue ;;
@@ -331,12 +380,12 @@ schedule_launchd_installed_profile_list() {
   return 0
 }
 
-# schedule_launchd_render DEST LABEL PROFILE - render one plist, lint it,
-# and move it into place.
+# schedule_launchd_render DEST LABEL PROFILE [KIND] - render one plist, lint
+# it, and move it into place.
 schedule_launchd_render() {
-  local dest="$1" label="$2" profile="$3" tmp=""
+  local dest="$1" label="$2" profile="$3" kind="${4:-sync}" tmp=""
   temp_mktemp_into tmp "${dest}.tmp.XXXXXX" || die "cannot create temp file in $(dirname "$dest")"
-  schedule_render_template "$label" "$profile" >"$tmp" || {
+  schedule_render_template "$label" "$profile" "$kind" >"$tmp" || {
     temp_discard "$tmp"
     die "cannot render launchd template ${SCHEDULE_TEMPLATE_FILE}"
   }
@@ -348,14 +397,14 @@ schedule_launchd_render() {
   temp_discard "$tmp"
 }
 
-# schedule_launchd_install_agent PROFILE - render, bootstrap, and report one
-# agent (empty PROFILE = the active profile on the plain label).
+# schedule_launchd_install_agent PROFILE [KIND] - render, bootstrap, and
+# report one agent (empty PROFILE = the active profile on the plain label).
 schedule_launchd_install_agent() {
-  local profile="${1:-}" label="" dest="" bootstrap_out=""
-  label=${ schedule_agent_label "$profile";}
+  local profile="${1:-}" kind="${2:-sync}" label="" dest="" bootstrap_out=""
+  label=${ schedule_agent_label "$profile" "$kind";}
   dest="${HOME}/Library/LaunchAgents/${label}.plist"
   mkdir -p "$(dirname "$dest")"
-  schedule_launchd_render "$dest" "$label" "$profile"
+  schedule_launchd_render "$dest" "$label" "$profile" "$kind"
   launchctl bootout "gui/$UID/${label}" >/dev/null 2>&1 || true
   if ! bootstrap_out="$(launchctl bootstrap "gui/$UID" "$dest" 2>&1)"; then
     die "launchctl bootstrap failed for ${label}: ${bootstrap_out}"
@@ -365,7 +414,8 @@ schedule_launchd_install_agent() {
 }
 
 # schedule_launchd_install - the macOS path: render the active agent plus
-# one agent per configured profile.
+# one agent per configured profile, plus the same set of backup agents when
+# SCHEDULE_BACKUP=1.
 schedule_launchd_install() {
   [[ -f "$SCHEDULE_TEMPLATE_FILE" ]] || die "Missing launchd template: ${SCHEDULE_TEMPLATE_FILE}"
   schedule_validate
@@ -374,13 +424,21 @@ schedule_launchd_install() {
   # Remove profile jobs left by an earlier --profiles/SCHEDULE_PROFILES value
   # only after every currently requested agent was installed successfully.
   schedule_each_stale_agent schedule_launchd_uninstall_agent \
-    schedule_launchd_installed_profile_list
+    schedule_launchd_installed_profile_list || return $?
+  schedule_backup_enabled || return 0
+  schedule_each_agent schedule_launchd_install_agent backup || return $?
+  schedule_each_stale_agent schedule_launchd_uninstall_agent \
+    schedule_launchd_installed_profile_list backup
 }
 
-# schedule_launchd_uninstall_agent PROFILE - bootout and remove one plist.
+# schedule_launchd_uninstall_agent PROFILE [KIND] - bootout and remove one
+# plist. A backup agent that is not installed is skipped silently.
 schedule_launchd_uninstall_agent() {
-  local profile="${1:-}" label=""
-  label=${ schedule_agent_label "$profile";}
+  local profile="${1:-}" kind="${2:-sync}" label=""
+  label=${ schedule_agent_label "$profile" "$kind";}
+  if [[ "$kind" == "backup" && ! -e "${HOME}/Library/LaunchAgents/${label}.plist" ]]; then
+    return 0
+  fi
   launchctl bootout "gui/$UID/${label}" >/dev/null 2>&1 || true
   rm -f "${HOME}/Library/LaunchAgents/${label}.plist" || {
     printf 'cannot remove launchd agent %s\n' "${HOME}/Library/LaunchAgents/${label}.plist" >&2
@@ -392,9 +450,13 @@ schedule_launchd_uninstall_agent() {
 # schedule_launchd_uninstall - remove the active label and every configured or
 # discovered profile label, including profiles supplied only at install time.
 schedule_launchd_uninstall() {
+  local rc=0
   schedule_validate_profile_names
   schedule_each_known_agent schedule_launchd_uninstall_agent \
-    schedule_launchd_installed_profile_list
+    schedule_launchd_installed_profile_list || rc=1
+  schedule_each_known_agent schedule_launchd_uninstall_agent \
+    schedule_launchd_installed_profile_list backup || rc=1
+  return "$rc"
 }
 
 # schedule_status_mode PLIST - print the schedule mode, jitter, and watch
@@ -421,25 +483,29 @@ schedule_status_mode() {
   [[ -z "$watch" ]] || printf 'watch: %s\n' "$watch"
 }
 
-# schedule_launchd_status_agent PROFILE - report one agent: label, schedule
-# mode, and loaded state. rc 1 only when the plist exists but is not loaded.
+# schedule_launchd_status_agent PROFILE [KIND] - report one agent: label,
+# schedule mode, and loaded state. rc 1 only when the plist exists but is not
+# loaded. A backup agent that is neither installed nor requested is silent.
 schedule_launchd_status_agent() {
-  local profile="${1:-}" label="" dest=""
-  label=${ schedule_agent_label "$profile";}
+  local profile="${1:-}" kind="${2:-sync}" label="" dest="" prefix=""
+  label=${ schedule_agent_label "$profile" "$kind";}
+  prefix=${ schedule_kind_prefix "$kind";}
   dest="${HOME}/Library/LaunchAgents/${label}.plist"
   if [[ ! -f "$dest" ]]; then
-    printf 'not installed (%s)\n' "$dest"
+    if [[ "$kind" != "backup" ]] || schedule_backup_enabled; then
+      printf '%snot installed (%s)\n' "$prefix" "$dest"
+    fi
     return 0
   fi
   grep -q 'bin/sciebo' "$dest" 2>/dev/null ||
     printf "warning: plist runs the old scripts/sync.sh entrypoint; re-run '%s schedule install'\n" "$CLI_NAME" >&2
   if launchctl print "gui/$UID/${label}" >/dev/null 2>&1; then
-    printf 'installed and loaded: %s\n' "$dest"
+    printf '%sinstalled and loaded: %s\n' "$prefix" "$dest"
     launchctl print "gui/$UID/${label}" 2>&1 | sed -n '1,15p' || true
     schedule_status_mode "$dest"
     return 0
   fi
-  printf 'installed but not loaded: %s\n' "$dest"
+  printf '%sinstalled but not loaded: %s\n' "$prefix" "$dest"
   schedule_status_mode "$dest"
   return 1
 }
@@ -448,9 +514,13 @@ schedule_launchd_status_agent() {
 # discovered profile agent; any installed-but-not-loaded agent makes the
 # command fail.
 schedule_launchd_status() {
+  local rc=0
   schedule_validate_profile_names
   schedule_each_known_agent schedule_launchd_status_agent \
-    schedule_launchd_installed_profile_list
+    schedule_launchd_installed_profile_list || rc=1
+  schedule_each_known_agent schedule_launchd_status_agent \
+    schedule_launchd_installed_profile_list backup || rc=1
+  return "$rc"
 }
 
 # --- systemd --user backend -------------------------------------------------
@@ -466,22 +536,23 @@ schedule_systemd_watch_file() {
   printf '%s/%s.path' "$(schedule_systemd_unit_dir)" "${1:-$LAUNCHD_LABEL}"
 }
 
-# schedule_systemd_installed_profile_list - discover profile suffixes from any
-# owned service/timer/path unit. Looking at all three also finds and cleans up
-# partial installs rather than relying on the timer file alone.
+# schedule_systemd_installed_profile_list [KIND] - discover profile suffixes
+# from any owned service/timer/path unit. Looking at all three also finds and
+# cleans up partial installs rather than relying on the timer file alone.
 schedule_systemd_installed_profile_list() {
-  local dir="" path="" filename="" profile="" extension=""
+  local dir="" path="" filename="" profile="" extension="" base=""
+  base=${ schedule_base_label "${1:-sync}";}
   dir="$(schedule_systemd_unit_dir)"
   [[ -d "$dir" ]] || return 0
   while IFS= read -r -d '' path; do
     filename="${path##*/}"
     case "$filename" in
-      "$LAUNCHD_LABEL".*.service) extension=service ;;
-      "$LAUNCHD_LABEL".*.timer) extension=timer ;;
-      "$LAUNCHD_LABEL".*.path) extension=path ;;
+      "$base".*.service) extension=service ;;
+      "$base".*.timer) extension=timer ;;
+      "$base".*.path) extension=path ;;
       *) continue ;;
     esac
-    profile="${filename#"$LAUNCHD_LABEL".}"
+    profile="${filename#"$base".}"
     profile="${profile%."${extension}"}"
     case "$profile" in
       '' | . | .. | default | *[!A-Za-z0-9._-]*) continue ;;
@@ -506,16 +577,24 @@ schedule_systemd_quote() {
   esac
 }
 
-# schedule_systemd_service_content [LABEL] [PROFILE] - the oneshot service
-# that runs the same command as the launchd agent. With SCHEDULE_AT_LOGIN=1
-# it also gains the [Install] section that enables it at login.
+# schedule_systemd_service_content [LABEL] [PROFILE] [KIND] - the oneshot
+# service that runs the same command as the launchd agent. With
+# SCHEDULE_AT_LOGIN=1 it also gains the [Install] section that enables it at
+# login.
 schedule_systemd_service_content() {
-  local label="${1:-$LAUNCHD_LABEL}" profile="${2:-}" command=""
+  local kind="${3:-sync}" label="" profile="${2:-}" command=""
+  label="${1:-${ schedule_base_label "$kind";}}"
   command="$(schedule_systemd_quote "${SCIEBO_BASH:-/bin/bash}") $(schedule_systemd_quote "${PROJECT_DIR}/bin/sciebo")"
   [[ -z "$profile" ]] || command="${command} --profile $(schedule_systemd_quote "$profile")"
-  command="${command} sync --apply --quiet"
-  printf '[Unit]\n'
-  printf 'Description=sciebo sync (%s)\n\n' "$label"
+  if [[ "$kind" == "backup" ]]; then
+    command="${command} backup run --quiet"
+    printf '[Unit]\n'
+    printf 'Description=sciebo backup (%s)\n\n' "$label"
+  else
+    command="${command} sync --apply --quiet"
+    printf '[Unit]\n'
+    printf 'Description=sciebo sync (%s)\n\n' "$label"
+  fi
   printf '[Service]\n'
   printf 'Type=oneshot\n'
   printf 'ExecStart=%s\n' "$command"
@@ -525,15 +604,19 @@ schedule_systemd_service_content() {
   fi
 }
 
-# schedule_systemd_timer_content [LABEL] - OnCalendar for the daily
-# schedule, OnUnitActiveSec for SCHEDULE_INTERVAL, and RandomizedDelaySec
-# for jitter.
+# schedule_systemd_timer_content [LABEL] [KIND] - OnCalendar for the daily
+# schedule, OnUnitActiveSec for SCHEDULE_INTERVAL (sync only), and
+# RandomizedDelaySec for jitter. The backup kind is always daily at
+# SCHEDULE_BACKUP_HOUR:SCHEDULE_BACKUP_MINUTE.
 schedule_systemd_timer_content() {
-  local label="${1:-$LAUNCHD_LABEL}" interval="${SCHEDULE_INTERVAL:-}" jitter="${SCHEDULE_JITTER:-0}"
+  local kind="${2:-sync}" label="" interval="${SCHEDULE_INTERVAL:-}" jitter="${SCHEDULE_JITTER:-0}"
+  label="${1:-${ schedule_base_label "$kind";}}"
   printf '[Unit]\n'
-  printf 'Description=sciebo sync schedule (%s)\n\n' "$label"
+  printf 'Description=sciebo %s schedule (%s)\n\n' "$kind" "$label"
   printf '[Timer]\n'
-  if [[ "$interval" =~ ^[0-9]+$ ]] && [[ "$((10#$interval))" -gt 0 ]]; then
+  if [[ "$kind" == "backup" ]]; then
+    printf 'OnCalendar=*-*-* %02d:%02d:00\n' "$((10#${SCHEDULE_BACKUP_HOUR:-0}))" "$((10#${SCHEDULE_BACKUP_MINUTE:-0}))"
+  elif [[ "$interval" =~ ^[0-9]+$ ]] && [[ "$((10#$interval))" -gt 0 ]]; then
     printf 'OnBootSec=1min\n'
     printf 'OnUnitActiveSec=%ss\n' "$((10#$interval))"
   else
@@ -563,19 +646,19 @@ schedule_systemd_watch_content() {
   printf '\n[Install]\nWantedBy=paths.target\n'
 }
 
-# schedule_systemd_write_units PROFILE - write the service, timer, and
-# (when configured) watch units for one agent.
+# schedule_systemd_write_units PROFILE [KIND] - write the service, timer, and
+# (sync kind, when configured) watch units for one agent.
 schedule_systemd_write_units() {
-  local profile="${1:-}" label="" service="" timer="" watch=""
-  label=${ schedule_agent_label "$profile";}
+  local profile="${1:-}" kind="${2:-sync}" label="" service="" timer="" watch=""
+  label=${ schedule_agent_label "$profile" "$kind";}
   service="$(schedule_systemd_service_file "$label")"
   timer="$(schedule_systemd_timer_file "$label")"
   watch="$(schedule_systemd_watch_file "$label")"
-  schedule_systemd_service_content "$label" "$profile" >"$service" ||
+  schedule_systemd_service_content "$label" "$profile" "$kind" >"$service" ||
     die "cannot write systemd unit ${service}"
-  schedule_systemd_timer_content "$label" >"$timer" ||
+  schedule_systemd_timer_content "$label" "$kind" >"$timer" ||
     die "cannot write systemd unit ${timer}"
-  if [[ -n "${SCHEDULE_WATCH_PATH:-}" ]]; then
+  if [[ "$kind" != "backup" && -n "${SCHEDULE_WATCH_PATH:-}" ]]; then
     schedule_systemd_watch_content "$label" >"$watch" ||
       die "cannot write systemd unit ${watch}"
   else
@@ -583,15 +666,15 @@ schedule_systemd_write_units() {
   fi
 }
 
-# schedule_systemd_enable_agent PROFILE - enable and report one agent; with
-# SCHEDULE_AT_LOGIN=1 the service is enabled at login as well.
+# schedule_systemd_enable_agent PROFILE [KIND] - enable and report one agent;
+# with SCHEDULE_AT_LOGIN=1 the service is enabled at login as well.
 schedule_systemd_enable_agent() {
-  local profile="${1:-}" label="" timer=""
-  label=${ schedule_agent_label "$profile";}
+  local profile="${1:-}" kind="${2:-sync}" label="" timer=""
+  label=${ schedule_agent_label "$profile" "$kind";}
   timer="$(schedule_systemd_timer_file "$label")"
   systemctl --user enable --now "${label}.timer" >/dev/null 2>&1 ||
     die "systemctl --user enable failed for ${label}.timer"
-  if [[ -n "${SCHEDULE_WATCH_PATH:-}" ]]; then
+  if [[ "$kind" != "backup" && -n "${SCHEDULE_WATCH_PATH:-}" ]]; then
     systemctl --user enable --now "${label}.path" >/dev/null 2>&1 ||
       die "systemctl --user enable failed for ${label}.path"
   else
@@ -608,30 +691,46 @@ schedule_systemd_enable_agent() {
 }
 
 # schedule_systemd_install - write and enable the active agent plus one
-# agent per configured profile.
+# agent per configured profile, and the same set of backup agents when
+# SCHEDULE_BACKUP=1.
 schedule_systemd_install() {
   local dir=""
   schedule_validate
   dir="$(schedule_systemd_unit_dir)"
   mkdir -p "$dir"
   schedule_each_agent schedule_systemd_write_units || return $?
+  if schedule_backup_enabled; then
+    schedule_each_agent schedule_systemd_write_units backup || return $?
+  fi
   systemctl --user daemon-reload >/dev/null 2>&1 ||
     die "systemctl --user daemon-reload failed; is a user systemd session running?"
   schedule_each_agent schedule_systemd_enable_agent || return $?
+  if schedule_backup_enabled; then
+    schedule_each_agent schedule_systemd_enable_agent backup || return $?
+  fi
   # Reconcile jobs from an earlier profile set only after the new jobs are
   # enabled, then reload once more so removed unit files disappear from the
   # user manager.
   schedule_each_stale_agent schedule_systemd_remove_agent \
     schedule_systemd_installed_profile_list || return $?
+  if schedule_backup_enabled; then
+    schedule_each_stale_agent schedule_systemd_remove_agent \
+      schedule_systemd_installed_profile_list backup || return $?
+  fi
   systemctl --user daemon-reload >/dev/null 2>&1 ||
     die "systemctl --user daemon-reload failed after removing stale profile units"
 }
 
-# schedule_systemd_remove_agent PROFILE - disable and remove one agent.
+# schedule_systemd_remove_agent PROFILE [KIND] - disable and remove one
+# agent. A backup agent with no unit files is skipped silently.
 schedule_systemd_remove_agent() {
-  local profile="${1:-}" label="" watch=""
-  label=${ schedule_agent_label "$profile";}
+  local profile="${1:-}" kind="${2:-sync}" label="" watch=""
+  label=${ schedule_agent_label "$profile" "$kind";}
   watch="$(schedule_systemd_watch_file "$label")"
+  if [[ "$kind" == "backup" && ! -e "$(schedule_systemd_timer_file "$label")" &&
+  ! -e "$(schedule_systemd_service_file "$label")" ]]; then
+    return 0
+  fi
   systemctl --user disable --now "${label}.timer" >/dev/null 2>&1 || true
   systemctl --user disable --now "${label}.path" >/dev/null 2>&1 || true
   # The service may have been enabled by an earlier --at-login invocation;
@@ -652,6 +751,8 @@ schedule_systemd_uninstall() {
   schedule_validate_profile_names
   schedule_each_known_agent schedule_systemd_remove_agent \
     schedule_systemd_installed_profile_list || rc=1
+  schedule_each_known_agent schedule_systemd_remove_agent \
+    schedule_systemd_installed_profile_list backup || rc=1
   systemctl --user daemon-reload >/dev/null 2>&1 || true
   return "$rc"
 }
@@ -674,26 +775,30 @@ schedule_systemd_status_mode() {
   return 0
 }
 
-# schedule_systemd_status_agent PROFILE - report one agent: label, schedule
-# mode, and loaded state. rc 1 only when the timer exists but is not loaded.
+# schedule_systemd_status_agent PROFILE [KIND] - report one agent: label,
+# schedule mode, and loaded state. rc 1 only when the timer exists but is not
+# loaded. A backup agent that is neither installed nor requested is silent.
 schedule_systemd_status_agent() {
-  local profile="${1:-}" label="" timer="" service=""
-  label=${ schedule_agent_label "$profile";}
+  local profile="${1:-}" kind="${2:-sync}" label="" timer="" service="" prefix=""
+  label=${ schedule_agent_label "$profile" "$kind";}
+  prefix=${ schedule_kind_prefix "$kind";}
   timer="$(schedule_systemd_timer_file "$label")"
   service="$(schedule_systemd_service_file "$label")"
   if [[ ! -f "$timer" ]]; then
-    printf 'not installed (%s)\n' "$timer"
+    if [[ "$kind" != "backup" ]] || schedule_backup_enabled; then
+      printf '%snot installed (%s)\n' "$prefix" "$timer"
+    fi
     return 0
   fi
   grep -q 'bin/sciebo' "$service" 2>/dev/null ||
     printf "warning: systemd unit runs the old entrypoint; re-run '%s schedule install'\n" "$CLI_NAME" >&2
   if systemctl --user is-enabled "${label}.timer" >/dev/null 2>&1 &&
     systemctl --user is-active "${label}.timer" >/dev/null 2>&1; then
-    printf 'installed and loaded: %s\n' "$timer"
+    printf '%sinstalled and loaded: %s\n' "$prefix" "$timer"
     schedule_systemd_status_mode "$label"
     return 0
   fi
-  printf 'installed but not loaded: %s\n' "$timer"
+  printf '%sinstalled but not loaded: %s\n' "$prefix" "$timer"
   schedule_systemd_status_mode "$label"
   return 1
 }
@@ -702,9 +807,13 @@ schedule_systemd_status_agent() {
 # discovered profile agent; any installed-but-not-loaded agent makes the
 # command fail.
 schedule_systemd_status() {
+  local rc=0
   schedule_validate_profile_names
   schedule_each_known_agent schedule_systemd_status_agent \
-    schedule_systemd_installed_profile_list
+    schedule_systemd_installed_profile_list || rc=1
+  schedule_each_known_agent schedule_systemd_status_agent \
+    schedule_systemd_installed_profile_list backup || rc=1
+  return "$rc"
 }
 
 # schedule_install/schedule_uninstall/schedule_status - dispatch to the
@@ -755,10 +864,11 @@ cmd_schedule() {
 
   if [[ "$command" == "install" ]]; then
     shift
-    opt_begin "at-login:b profiles:s" schedule "install " "$@"
+    opt_begin "at-login:b profiles:s backup:b" schedule "install " "$@"
     opt_guard schedule "install: "
     opt_into SCHEDULE_AT_LOGIN at_login 1
     opt_into SCHEDULE_PROFILES profiles "${OPT_profiles:-}"
+    opt_into SCHEDULE_BACKUP backup 1
   fi
 
   if [[ "$command" == "status" ]]; then

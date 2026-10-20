@@ -172,6 +172,74 @@ _rclone_env_pass_name() {
   printf 'RCLONE_CONFIG_%s_PASS' "${1^^}"
 }
 
+# _rclone_global_env_into ASSOC_NAME - environment twin of
+# _rclone_global_flags_into: set the RCLONE_* variables rclone reads for the
+# same settings in the associative array named ASSOC_NAME, for children that
+# spawn rclone themselves (restic's rclone backend) and cannot take flags.
+# Keep the two builders in sync: every flag above has a variable here
+# (tests/unit/test_rclone_env.sh asserts the parity). The client key
+# passphrase is obscured exactly like --client-pass.
+# shellcheck disable=SC2034  # out-params are written through namerefs
+_rclone_global_env_into() {
+  local -n env_ref="$1"
+  local client_pass=""
+  if [[ "${TLS_INSECURE:-0}" == "1" ]]; then
+    env_ref[RCLONE_NO_CHECK_CERTIFICATE]=true
+    if [[ "${_RCLONE_TLS_WARNED:-0}" != "1" ]]; then
+      warn "TLS certificate verification is disabled (--trust); this connection is not authenticated"
+      _RCLONE_TLS_WARNED=1
+    fi
+  fi
+  if [[ -n "${SCIEBO_DEBUG:-}" ]]; then
+    env_ref[RCLONE_VERBOSE]=2
+  fi
+  [[ -z "${CLIENT_CERT:-}" ]] || env_ref[RCLONE_CLIENT_CERT]="$CLIENT_CERT"
+  [[ -z "${CLIENT_KEY:-}" ]] || env_ref[RCLONE_CLIENT_KEY]="$CLIENT_KEY"
+  if [[ -n "${CLIENT_KEY_PASSWORD:-}" ]]; then
+    client_pass=${ _rclone_client_pass;}
+    env_ref[RCLONE_CLIENT_PASS]="$client_pass"
+  fi
+  [[ -z "${CA_CERT:-}" ]] || env_ref[RCLONE_CA_CERT]="$CA_CERT"
+  [[ -z "${USER_AGENT:-}" ]] || env_ref[RCLONE_USER_AGENT]="$USER_AGENT"
+}
+
+# _rclone_proxy_env_into ASSOC_NAME STRIP_VAR_NAME - environment twin of the
+# proxy handling in rclone_cmd: an http(s) proxy sets
+# HTTP_PROXY/HTTPS_PROXY/ALL_PROXY in ASSOC_NAME, a socks5 proxy sets
+# RCLONE_HTTP_PROXY (the environment form of --http-proxy), and PROXY_TYPE=none
+# or PROXY_DIRECT=1 sets STRIP_VAR_NAME to true so the caller unsets the
+# inherited proxy variables in the child.
+# shellcheck disable=SC2034,SC2178,SC2004  # namerefs; keys are names, not arithmetic
+_rclone_proxy_env_into() {
+  local -n env_ref="$1"
+  local -n strip_ref="$2"
+  local pe_flag="" pe_value="" pe_url="" pe_key=""
+  _rclone_proxy_resolve strip_ref pe_flag pe_value pe_url
+  if [[ -n "$pe_url" ]]; then
+    for pe_key in HTTP_PROXY HTTPS_PROXY ALL_PROXY; do
+      env_ref[$pe_key]="$pe_url"
+    done
+  fi
+  [[ -z "$pe_flag" ]] || env_ref[RCLONE_HTTP_PROXY]="$pe_value"
+}
+
+# rclone_config_pass_env_name - print the RCLONE_CONFIG_<REMOTE>_PASS name
+# rclone reads for the configured remote (public wrapper for other adapters).
+rclone_config_pass_env_name() {
+  _rclone_env_pass_name "$RCLONE_REMOTE"
+}
+
+# rclone_config_pass_value - print the obscured app password to inject through
+# rclone_config_pass_env_name; rc 1 with empty output when the Keychain is not
+# in use or holds no password (the config file then carries the credential).
+rclone_config_pass_value() {
+  local secret=""
+  keychain_enabled || return 1
+  secret=${ remote_secret_obscured;} || secret=""
+  [[ -n "$secret" ]] || return 1
+  printf '%s' "$secret"
+}
+
 # rclone_cmd ARGS... - run rclone against the configured rclone config.
 # In Keychain mode the obscured app password is injected through
 # RCLONE_CONFIG_<REMOTE>_PASS, which affects only this remote and only the

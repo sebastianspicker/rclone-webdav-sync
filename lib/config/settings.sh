@@ -156,6 +156,89 @@ _validate_keys_readable() {
   done
 }
 
+# _validate_key_range KEY MIN MAX - the setting must be an integer within
+# MIN..MAX inclusive.
+_validate_key_range() {
+  local key="$1" min="$2" max="$3" value="${!1}"
+  case "$value" in
+    '' | *[!0-9]*)
+      die "setting '${key}' in ${SETTINGS_FILE} must be an integer ${min}-${max} (got '${value}')"
+      ;;
+  esac
+  { [[ "$((10#$value))" -ge "$min" ]] && [[ "$((10#$value))" -le "$max" ]]; } ||
+    die "setting '${key}' in ${SETTINGS_FILE} must be an integer ${min}-${max} (got '${value}')"
+}
+
+# _settings_relpath_into VAR PATH - normalise a remote-relative path into
+# VAR: collapse "//" and "/./", drop a leading "./" and any leading or
+# trailing slashes. "", "/" and "." all normalise to the empty string (the
+# remote's top level).
+_settings_relpath_into() {
+  local p="$2"
+  while [[ "$p" == *//* ]]; do p="${p//\/\//\/}"; done
+  while [[ "$p" == *"/./"* ]]; do p="${p//\/.\//\/}"; done
+  while [[ "$p" == ./* ]]; do p="${p#./}"; done
+  p="${p#/}"
+  p="${p%/}"
+  [[ "$p" != "." ]] || p=""
+  [[ "$p" != */. ]] || p="${p%/.}"
+  printf -v "$1" '%s' "$p"
+}
+
+# _settings_paths_overlap A B - true when the normalised remote paths are
+# equal or one lies inside the other, compared segment-wise ("restic" and
+# "restic2" do not overlap). An empty path is the remote's top level and
+# overlaps everything.
+_settings_paths_overlap() {
+  local a="" b=""
+  _settings_relpath_into a "$1"
+  _settings_relpath_into b "$2"
+  [[ -n "$a" && -n "$b" ]] || return 0
+  [[ "$a" == "$b" || "$a" == "$b"/* || "$b" == "$a"/* ]]
+}
+
+# _validate_backup_settings - the BACKUP_* / SCHEDULE_BACKUP* shape checks,
+# including the rule that the restic repository path and the sync tree
+# REMOTE_BASE never overlap.
+_validate_backup_settings() {
+  local norm=""
+  _validate_keys_uint \
+    BACKUP_KEEP_LAST BACKUP_KEEP_HOURLY BACKUP_KEEP_DAILY \
+    BACKUP_KEEP_WEEKLY BACKUP_KEEP_MONTHLY BACKUP_KEEP_YEARLY
+  _validate_keys_bool \
+    BACKUP_ONE_FILE_SYSTEM BACKUP_EXCLUDE_CACHES BACKUP_SKIP_IF_UNCHANGED \
+    BACKUP_PRUNE BACKUP_MAINTENANCE SCHEDULE_BACKUP
+  _validate_key_range BACKUP_PACK_SIZE 4 128
+  _validate_key_range BACKUP_CONNECTIONS 1 16
+  _validate_key_range SCHEDULE_BACKUP_HOUR 0 23
+  _validate_key_range SCHEDULE_BACKUP_MINUTE 0 59
+  _validate_keys_nonempty RESTIC_MIN_VERSION BACKUP_LAUNCHD_LABEL
+  validate_setting_one_of BACKUP_QUOTA_POLICY warn skip
+  validate_setting_one_of BACKUP_COMPRESSION auto off max
+  case "${BACKUP_HOST:-}" in
+    -* | *[[:space:][:cntrl:]]*)
+      die "BACKUP_HOST '${ printable "$BACKUP_HOST";}' must be a plain host name (no spaces, control bytes, or leading '-')"
+      ;;
+  esac
+
+  BACKUP_REMOTE_PATH="${BACKUP_REMOTE_PATH%/}"
+  [[ -n "$BACKUP_REMOTE_PATH" ]] || die "BACKUP_REMOTE_PATH must not be empty (see ${SETTINGS_FILE})"
+  case "$BACKUP_REMOTE_PATH" in
+    /* | *..*)
+      die "BACKUP_REMOTE_PATH '${BACKUP_REMOTE_PATH}' must be a relative path without '..'"
+      ;;
+    *"|"* | *[[:cntrl:]]*)
+      die "BACKUP_REMOTE_PATH '${ printable "$BACKUP_REMOTE_PATH";}' must not contain '|' or control bytes"
+      ;;
+  esac
+  _settings_relpath_into norm "$BACKUP_REMOTE_PATH"
+  [[ -n "$norm" ]] || die "BACKUP_REMOTE_PATH '${BACKUP_REMOTE_PATH}' must name a folder, not the remote's top level"
+  _settings_relpath_into norm "$REMOTE_BASE"
+  if [[ -n "$norm" ]] && _settings_paths_overlap "$BACKUP_REMOTE_PATH" "$REMOTE_BASE"; then
+    die "BACKUP_REMOTE_PATH '${BACKUP_REMOTE_PATH}' overlaps REMOTE_BASE '${REMOTE_BASE}': the restic repository and the sync tree must be separate, non-nested folders"
+  fi
+}
+
 # validate_settings - enforce value shapes after require_setting. Checks run
 # before path derivation and rclone discovery, so a bad settings file fails
 # fast. BW_LIMIT_UP/DOWN, CHUNK_SIZE, SCHEDULE_INTERVAL, SCHEDULE_WATCH_PATH,
@@ -223,6 +306,7 @@ validate_settings() {
       die "REMOTE_BASE '${ printable "$REMOTE_BASE";}' must not contain '|' or control bytes"
       ;;
   esac
+  _validate_backup_settings
 }
 
 # ---------------------------------------------------------------------------
@@ -372,7 +456,17 @@ _require_settings() {
     DELETE_FILES_THRESHOLD ASK_DELETE MOVE_TO_TRASH LOCAL_TRASH_DIR \
     SYMLINK_POLICY INVALID_NAME_POLICY CASE_CLASH_POLICY E2EE_POLICY \
     CHECKSUM PROXY_TYPE MIN_CHUNK_SIZE MAX_CHUNK_SIZE \
-    TARGET_CHUNK_UPLOAD_DURATION TARGET_UPLOAD_THROUGHPUT
+    TARGET_CHUNK_UPLOAD_DURATION TARGET_UPLOAD_THROUGHPUT \
+    RESTIC_BIN RESTIC_MIN_VERSION BACKUP_REMOTE_PATH BACKUP_PACK_SIZE \
+    BACKUP_CONNECTIONS BACKUP_CHUNK_SIZE BACKUP_COMPRESSION \
+    BACKUP_ONE_FILE_SYSTEM BACKUP_EXCLUDE_CACHES BACKUP_EXCLUDE_IF_PRESENT \
+    BACKUP_EXCLUDE_LARGER_THAN BACKUP_SKIP_IF_UNCHANGED BACKUP_TAGS BACKUP_HOST \
+    BACKUP_KEEP_LAST BACKUP_KEEP_HOURLY BACKUP_KEEP_DAILY BACKUP_KEEP_WEEKLY \
+    BACKUP_KEEP_MONTHLY BACKUP_KEEP_YEARLY BACKUP_KEEP_WITHIN \
+    BACKUP_PRUNE BACKUP_MAINTENANCE BACKUP_FORGET_EVERY BACKUP_CHECK_EVERY \
+    BACKUP_CHECK_READ_DATA_SUBSET BACKUP_QUOTA_POLICY BACKUP_CACHE_DIR \
+    BACKUP_PASSWORD_FILE SCHEDULE_BACKUP SCHEDULE_BACKUP_HOUR \
+    SCHEDULE_BACKUP_MINUTE BACKUP_LAUNCHD_LABEL
 
   validate_settings
 }
@@ -387,6 +481,7 @@ _derive_settings_paths() {
     : "${FOLDERS_FILE:=${PROFILE_DIR}/folders.conf}"
     : "${MANIFEST_GENERATED_FILE:=${PROFILE_DIR}/sources.generated.conf}"
     : "${ROOTS_FILE:=${PROFILE_DIR}/roots.conf}"
+    : "${BACKUPS_FILE:=${PROFILE_DIR}/backups.conf}"
     : "${FILTER_DIR:=${PROFILE_DIR}/filters}"
     : "${STATE_DIR:=${PROFILES_STATE_DIR}/${SCIEBO_PROFILE}}"
   else
@@ -394,6 +489,7 @@ _derive_settings_paths() {
     : "${FOLDERS_FILE:=${_SCIEBO_CONF_BASE}/folders.conf}"
     : "${MANIFEST_GENERATED_FILE:=${_SCIEBO_CONF_BASE}/sources.generated.conf}"
     : "${ROOTS_FILE:=${_SCIEBO_CONF_BASE}/roots.conf}"
+    : "${BACKUPS_FILE:=${_SCIEBO_CONF_BASE}/backups.conf}"
     : "${FILTER_DIR:=${_SCIEBO_CONF_BASE}/filters}"
     : "${STATE_DIR:=${_SCIEBO_CONF_STATE}}"
   fi
@@ -435,6 +531,11 @@ _derive_settings_paths() {
   BW_LIMIT_FILE="${BW_LIMIT_FILE:-${STATE_DIR}/bwlimit}"
   SERVER_EXCLUDE_FILE="${SERVER_EXCLUDE_FILE:-${STATE_DIR}/sync-exclude.lst}"
   SERVER_EXCLUDE_FILTER="${SERVER_EXCLUDE_FILTER:-${FILTER_DIR}/server-exclude.txt}"
+  # restic backup state (maintenance markers), the restic cache, and the
+  # KEYCHAIN=0 repository password file; a profile keeps its own.
+  BACKUP_STATE_DIR="${BACKUP_STATE_DIR:-${STATE_DIR}/backup}"
+  [[ -n "$BACKUP_CACHE_DIR" ]] || BACKUP_CACHE_DIR="${BACKUP_STATE_DIR}/cache"
+  [[ -n "$BACKUP_PASSWORD_FILE" ]] || BACKUP_PASSWORD_FILE="${PROFILE_DIR:-${_SCIEBO_CONF_BASE}}/backup.key"
   # The crypt-wrapped remote used by `setup --crypt` defaults to a sibling
   # of the plain remote.
   [[ -n "${CRYPT_REMOTE:-}" ]] || CRYPT_REMOTE="${RCLONE_REMOTE}-crypt"
@@ -446,6 +547,8 @@ _finalize_settings_rclone() {
   if [[ "${1:-}" == "--no-rclone" ]]; then RCLONE_BIN="${RCLONE_BIN:-rclone}"; else RCLONE_BIN="$(find_rclone)"; fi
   # shellcheck disable=SC2034  # read by the sync command module
   REMOTE_PREFIX="${RCLONE_REMOTE}:${REMOTE_BASE}"
+  # shellcheck disable=SC2034  # read by the backup command module
+  BACKUP_REPOSITORY="rclone:${RCLONE_REMOTE}:${BACKUP_REMOTE_PATH}"
 }
 
 # load_settings [--no-rclone] - source settings and derive every path.

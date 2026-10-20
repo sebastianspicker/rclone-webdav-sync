@@ -168,6 +168,7 @@ COMMAND|edit|extra|edit|download, edit, and upload one remote file
 COMMAND|ignored|core|ignored|list files excluded from syncing
 COMMAND|announcements|extra|announcements|list server announcements
 COMMAND|preview|extra|preview|download a preview image for a remote file
+COMMAND|backup|extra|backup|restic backups to the remote (init/run/restore/forget/check)
 COMMAND|download|core|download|download a remote file or directory
 COMMAND|update|core|update|update the local checkout from git
 COMMAND|help|core|-|show help for a command
@@ -316,6 +317,7 @@ SUB|schedule|status|show whether the agent is installed and loaded
 
 OPT|schedule|install|--at-login||flag|NONE|start the agent at login/boot
 OPT|schedule|install|--profiles|profiles|value|NONE|render one extra agent per profile
+OPT|schedule|install|--backup||flag|NONE|also install the daily backup agent
 
 # --- trash ----------------------------------------------------------
 SUB|trash|list|list trashed items (default)
@@ -596,6 +598,7 @@ OPT|account|status|--json||flag|NONE|print the status as JSON
 
 # --- logout ----------------------------------------------------------
 OPT|logout|-|--revoke||flag|NONE|revoke the app password on the server first
+OPT|logout|-|--keep-backup-key||flag|NONE|keep the restic repository password
 OPT|logout|-|--yes||flag|NONE|do not ask for confirmation
 
 # --- config ----------------------------------------------------------
@@ -786,6 +789,62 @@ OPT|announcements|-|--json||flag|NONE|print the announcements as JSON
 POS|preview|-|1|remote file|NONE
 OPT|preview|-|--output|file|value|FILES|write the image to FILE
 OPT|preview|-|--size|pixels|value|NONE|preview edge size in pixels
+
+# --- backup ----------------------------------------------------------
+SUB|backup|init|create the repository and store its password
+SUB|backup|run|back up every source, then run due maintenance
+SUB|backup|list|show the configured backup sources
+SUB|backup|add|add a backup source to backups.conf
+SUB|backup|remove|remove a backup source (snapshots are kept)
+SUB|backup|snapshots|list the snapshots in the repository
+SUB|backup|ls|list the files in a snapshot
+SUB|backup|restore|restore a snapshot into an empty directory
+SUB|backup|forget|show or apply the retention policy
+SUB|backup|check|verify the repository
+SUB|backup|unlock|remove stale repository locks
+SUB|backup|info|repository, versions, maintenance stamps, cache
+SUB|backup|key|print the repository password (key show)
+
+OPT|backup|init|--existing||flag|NONE|connect to a repository created elsewhere
+OPT|backup|init|--password-stdin||flag|NONE|read the repository password from stdin
+
+OPT|backup|run|--only|source name|value|NONE|back up only this source
+OPT|backup|run|--dry-run||flag|NONE|report what restic would store
+OPT|backup|run|--tag|tag|repeatable|NONE|add a restic tag to the snapshots
+OPT|backup|run|--no-maintenance||flag|NONE|skip the due forget/check maintenance
+OPT|backup|run|--quiet||flag|NONE|only print failures, warnings, and the summary
+OPT|backup|run|--json||flag|NONE|print the per-source results as JSON
+
+OPT|backup|list|--show-filters||flag|NONE|print the translated exclude patterns
+OPT|backup|list|--json||flag|NONE|print the sources as JSON
+
+POS|backup|add|1|local folder|DIRS
+OPT|backup|add|--name|name|value|NONE|source name (default: the folder name)
+OPT|backup|add|--filter|file|value|FILES|filter file in the filters directory
+
+POS|backup|remove|1|source name|NONE
+
+OPT|backup|snapshots|--only|source name|value|NONE|only snapshots of this source from this host
+OPT|backup|snapshots|--json||flag|NONE|print restic's JSON array
+
+POS|backup|ls|1|snapshot|NONE
+POS|backup|ls|?2|path|NONE
+
+POS|backup|restore|1|snapshot|NONE
+OPT|backup|restore|--target|directory|value|DIRS|directory to restore into
+OPT|backup|restore|--include|path|repeatable|NONE|restore only this path
+OPT|backup|restore|--dry-run||flag|NONE|report what would be restored
+OPT|backup|restore|--force||flag|NONE|restore into a non-empty directory or a sync folder
+
+OPT|backup|forget|--apply||flag|NONE|remove the snapshots the policy drops
+OPT|backup|forget|--prune||flag|NONE|also prune unreferenced data
+
+OPT|backup|check|--read-data-subset|spec|value|NONE|read this part of the data (N%, N/M, size)
+
+OPT|backup|info|--offline||flag|NONE|do not contact the repository
+OPT|backup|info|--json||flag|NONE|print the report as JSON
+
+POS|backup|key|1|action|ENUM:show
 
 # --- download ----------------------------------------------------------
 POS|download|-|1|remote path|NONE

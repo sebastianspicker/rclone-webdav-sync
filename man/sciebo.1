@@ -1,5 +1,5 @@
 .\" Man page for the sciebo command (rclone-webdav-sync).
-.TH SCIEBO 1 "2026-09-24" "rclone-webdav-sync" "User Commands"
+.TH SCIEBO 1 "2026-10-20" "rclone-webdav-sync" "User Commands"
 .SH NAME
 sciebo \- unofficial client for the sciebo (Hochschulcloud.NRW) service and other Nextcloud servers, synchronizing local directories with a WebDAV remote
 .SH SYNOPSIS
@@ -171,7 +171,11 @@ When
 .B QUOTA_WARN_PERCENT
 is above 0 it also reads the server quota once and reports WARN at or above
 the threshold (PASS below, WARN when the probe fails; offline it reports the
-threshold only).
+threshold only). The restic backup setup is checked too (restic version,
+repository password,
+.IR backups.conf ,
+filters, overlap with the sync tree, retention, cache and, online, the
+repository and its locks); users without backups get one PASS line.
 .TP
 .B \-\-offline
 Skip network checks; the encrypted-folder, external-storage, and big-folder
@@ -189,8 +193,9 @@ the document carries the policy objects
 .BR e2ee ,
 .BR external ,
 .BR delete_guard ,
+.BR big_folders ,
 and
-.BR big_folders .
+.BR backup .
 .SS "sciebo discover [\-\-write]"
 Scan the roots in
 .I config/roots.conf
@@ -339,7 +344,11 @@ Compare sizes only, skip hashes.
 .B \-\-quiet
 Only print failures and the summary.
 .SS "sciebo status [options]"
-Show the pause state and the last recorded run per configured source.
+Show the pause state and the last recorded run per configured source,
+including the sources in
+.I backups.conf
+(mode
+.BR backup ).
 Read-only.
 .TP
 .BI \-\-only " NAME"
@@ -573,8 +582,8 @@ older than
 .BR CHUNK_CLEANUP_MIN_AGE .
 .TP
 .B \-\-state
-Delete stale bisync workdirs, lock leftovers, atomic-write temp files, and
-orphaned mount records older than
+Delete stale bisync workdirs, lock leftovers of every named lock,
+atomic-write temp files, and orphaned mount records older than
 .BR STATE_CLEANUP_MIN_AGE .
 .TP
 .B \-\-junk
@@ -588,6 +597,9 @@ Delete files under
 .B MOUNT_CACHE_DIR
 older than
 .BR STATE_CLEANUP_MIN_AGE .
+Also runs
+.B restic cache \-\-cleanup
+when restic is installed and a repository password is stored.
 .TP
 .B \-\-support
 Keep the newest
@@ -612,6 +624,12 @@ and the per-source
 .I *.log
 files in
 .BR LOG_DIR .
+Backup logs appear as
+.I backup\-NAME
+(one per
+.I backups.conf
+entry) and
+.IR backup\-maintenance .
 Read-only: no run lock, no state writes, and no network.
 .TP
 .B list [\-\-json]
@@ -670,7 +688,16 @@ seconds, or when
 .B SCHEDULE_WATCH_PATH
 changes).
 .B SCHEDULE_JITTER
-adds a random delay before each run.
+adds a random delay before each run. With
+.B \-\-backup
+(or
+.BR SCHEDULE_BACKUP=1 )
+a second daily agent labelled
+.B BACKUP_LAUNCHD_LABEL
+runs
+.B sciebo backup run \-\-quiet
+at
+.BR SCHEDULE_BACKUP_HOUR : SCHEDULE_BACKUP_MINUTE .
 .TP
 .B install
 Render the unit(s) and start the agent/timer.
@@ -690,7 +717,10 @@ Install only: render one extra agent per profile, labelled
 .IR <LAUNCHD_LABEL>.<profile> ,
 each running with
 .BR \-\-profile
-(comma or space separated).
+(comma or space separated); applies to the backup agent too.
+.TP
+.B \-\-backup
+Install only: also install the daily backup agent.
 .SS "sciebo trash [subcommand] [options]"
 List or clean up the Nextcloud trashbin. The listing is read-only; IDs are
 the last path segment printed by the listing.
@@ -1337,11 +1367,14 @@ is enabled, otherwise it is stored obscured in the rclone config. The
 remote is validated with
 .BR "rclone lsd" ;
 a failed validation exits 1.
-.SS "sciebo logout [\-\-revoke] [\-\-yes]"
+.SS "sciebo logout [\-\-revoke] [\-\-keep\-backup\-key] [\-\-yes]"
 Remove the rclone remote entry and both Keychain items for the active remote
 (the plaintext
 .IB <remote>#plain
-slot and a legacy obscured slot). Manifests, state, and synced files are left
+slot and a legacy obscured slot). A stored restic repository password
+.RI ( <remote>#restic )
+is removed too, after a separate confirmation that says the backups are
+unreadable without a saved copy. Manifests, state, and synced files are left
 alone.
 .TP
 .B \-\-revoke
@@ -1353,6 +1386,9 @@ The revoke runs before the local credentials are removed, so the stored secret
 is still available; a failed revoke only warns and the local logout still
 runs. Non-interactive runs need
 .BR \-\-yes .
+.TP
+.B \-\-keep\-backup\-key
+Keep the restic repository password.
 .TP
 .B \-\-yes
 Do not ask for confirmation.
@@ -1393,8 +1429,9 @@ List: also show settings whose value is empty.
 .SS "sciebo support [\-\-output FILE] [\-\-no\-network] [\-\-json]"
 Build a redacted debug archive for bug reports: the version banner, the
 doctor report, redacted settings and rclone config, state listings, the
-newest logs (last 200 lines each), capabilities, and the scheduler/mount
-status. Passwords, secrets, tokens, and proxy values are replaced with
+newest logs (last 200 lines each), the newest backup logs,
+.IR backups.conf ,
+the backup info report, capabilities, and the scheduler/mount status. Passwords, secrets, tokens, and proxy values are replaced with
 REDACTED; the doctor always runs offline.
 .TP
 .BI \-\-output " FILE"
@@ -1984,6 +2021,216 @@ Only report the local vs upstream state.
 .TP
 .B \-\-json
 Print the report as JSON.
+.SS "sciebo backup init|run|list|add|remove|snapshots|ls|restore|forget|check|unlock|info|key [options]"
+Take
+.BR restic (1)
+snapshots of local folders and keep them, encrypted and deduplicated, in a
+repository on the same remote. Where
+.B sciebo sync
+keeps a mirror, this keeps history. The repository lives at
+.IR <RCLONE_REMOTE>:<BACKUP_REMOTE_PATH> ,
+a top-level folder outside the sync tree
+.BR REMOTE_BASE ;
+the two may never be equal or nested, and
+.BR init ,
+.BR doctor ,
+.BR "sciebo folders" ,
+and
+.B "sciebo provision"
+enforce that. restic reaches the server through
+.BR "rclone serve restic" ,
+so every rclone setting of the tool applies. restic 0.17 or newer is
+required
+.RB ( RESTIC_MIN_VERSION ).
+Sources are listed in
+.I config/backups.conf
+as
+.IR "name | local_path [| filter_file]" ;
+a filter file uses rclone filter syntax, but only exclude rules are
+accepted and it is translated to restic exclude patterns at run time. The
+repository password is generated by
+.BR init ,
+printed once, and stored under the keychain account
+.I <remote>#restic
+(or in
+.B BACKUP_PASSWORD_FILE
+with
+.BR KEYCHAIN=0 ).
+Keep a copy of it somewhere else: without the password the backups cannot
+be read. The command is in the extra tier.
+.TP
+.B init
+Create the repository, store a generated password, and print it once. It
+refuses a repository path that overlaps a sync pair.
+.TP
+.B \-\-existing
+.B init
+only: connect to a repository created elsewhere, verified with
+.BR "restic cat config" .
+Needs
+.B \-\-password\-stdin
+unless a password is already stored.
+.TP
+.B \-\-password\-stdin
+.B init
+only: read the repository password from one line of standard input instead of
+generating one.
+.TP
+.B run
+Back up every source (or one), one restic run at a time, then run due
+maintenance: forget (with prune when
+.BR BACKUP_PRUNE=1 )
+every
+.B BACKUP_FORGET_EVERY
+and a
+.B check
+every
+.BR BACKUP_CHECK_EVERY ,
+only when no source failed. Writes a run record per source and the logs
+.IR backup\-<name>\-<stamp>.log
+and
+.IR backup\-maintenance\-<stamp>.log .
+Exits 1 when a source or maintenance pass failed and 2 when
+.B BACKUP_QUOTA_POLICY=skip
+skipped the run because the quota is at or above
+.BR QUOTA_WARN_PERCENT .
+.TP
+.BI \-\-only " NAME"
+.B run
+and
+.BR snapshots :
+only this source.
+.TP
+.B \-\-dry\-run
+.B run
+and
+.BR restore :
+report what would be stored or restored; nothing is written.
+.TP
+.BI \-\-tag " TAG"
+.B run
+only: add a restic tag to the snapshots (repeatable).
+.TP
+.B \-\-no\-maintenance
+.B run
+only: skip the due forget/check maintenance.
+.TP
+.B \-\-quiet
+.B run
+only: print only failures, warnings, and the summary.
+.TP
+.B \-\-json
+.BR run ,
+.BR list ,
+.BR snapshots ,
+and
+.BR info :
+machine-readable output.
+.TP
+.B list
+Print the configured sources.
+.TP
+.B \-\-show\-filters
+.B list
+only: print each source's translated exclude patterns and filter errors.
+.TP
+.BI "add " LOCAL
+Add a source to
+.IR backups.conf .
+.TP
+.BI \-\-name " NAME"
+.B add
+only: source name (default: the folder's name).
+.TP
+.BI \-\-filter " FILE"
+.B add
+only: filter file in the filters directory, exclude rules only.
+.TP
+.BI "remove " NAME
+Remove a source; its snapshots stay in the repository.
+.TP
+.B snapshots
+List the snapshots in the repository.
+.TP
+.BI "ls " "SNAPSHOT " [PATH]
+List the files in a snapshot.
+.TP
+.BI "restore " SNAPSHOT
+Restore a snapshot. The target must be new or empty and must not overlap a
+sync pair's local folder.
+.TP
+.BI \-\-target " DIR"
+.B restore
+only: directory to restore into (required).
+.TP
+.BI \-\-include " PATH"
+.B restore
+only: restore only this path (repeatable).
+.TP
+.B \-\-force
+.B restore
+only: allow a non-empty directory or a sync pair's local folder. The root
+directory, the home directory, and its parents are always refused.
+.TP
+.B forget
+Show the retention plan from the
+.B BACKUP_KEEP_*
+settings as a dry run, for this host's snapshots only.
+.TP
+.B \-\-apply
+.B forget
+only: remove the snapshots the policy drops.
+.TP
+.B \-\-prune
+.B forget
+only: also prune unreferenced data (implied by
+.B \-\-apply
+when
+.BR BACKUP_PRUNE=1 ).
+Pruned packs land in the server's trash bin.
+.TP
+.B check
+Verify the repository.
+.TP
+.BI \-\-read\-data\-subset " SPEC"
+.B check
+only: read part of the data, as
+.IR N% ,
+.IR N/M ,
+or a size such as
+.I 2G
+(default
+.BR BACKUP_CHECK_READ_DATA_SUBSET ).
+.TP
+.B unlock
+Remove stale repository locks left by a crashed restic.
+.TP
+.B info
+Print the repository, restic and rclone versions, password storage, source
+count, last run/forget/check, retention policy, cache size, and snapshot
+count.
+.TP
+.B \-\-offline
+.B info
+only: do not contact the repository.
+.TP
+.B key show
+Print the repository password after an interactive confirmation; refused
+when non-interactive.
+.PP
+Before running, it verifies that no sync pair's remote folder overlaps the repository path (as do
+.B sync
+and
+.BR check ).
+Exit status: 0 on success (including sources that finished with
+unreadable files), 1 on failure (restic exit 10: no repository, run
+.BR init ;
+11: locked, see
+.BR unlock ;
+12: wrong password), 2 on a usage error or a run skipped by the quota
+policy, 130 or 143 when interrupted. Backup commands that write take the
+.B backup
+lock, which is independent of the sync lock.
 .SH FILES
 .TP
 .B config/settings.env
@@ -2013,6 +2260,18 @@ Manifest generated by
 .B config/roots.conf
 Roots scanned by
 .BR "sciebo discover" .
+.TP
+.B config/backups.conf
+Backup sources for
+.BR "sciebo backup" ;
+one
+.I name | local_path [| filter_file]
+line per source.
+.TP
+.B config/backup.key
+Repository password file used with
+.BR KEYCHAIN=0 ;
+mode 600.
 .TP
 .B config/filters/
 rclone filter files referenced by manifest entries, plus
@@ -2054,6 +2313,8 @@ the watch pid records (
 .IR watch/ ),
 the bandwidth marker (
 .IR bwlimit ),
+backup markers and the restic cache (
+.IR backup/ ),
 cached server sync-exclude list (
 .IR sync\-exclude.lst ),
 support archives (

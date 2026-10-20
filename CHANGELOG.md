@@ -6,17 +6,57 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Fixed
+## [0.3.0] - 2026-10-20
 
-- `schedule status` and `schedule uninstall` now discover profile jobs created
-  by an earlier `schedule install --profiles` invocation, and reinstalling
-  reconciles profiles that were removed from the requested set. systemd login
-  services are disabled based on installed state instead of current settings.
-- `make install` stages replacements before touching a working installation
-  and rolls back commit-time failures instead of reporting success with a
-  partial tree.
-- A trailing test-runner `-j` now exits with a usage error instead of looping,
-  and the layer checker no longer depends on opening `/dev/stderr` as a file.
+### Added
+
+- `backup`: restic snapshots of local folders, stored encrypted and
+  deduplicated in a repository on the same remote (`BACKUP_REMOTE_PATH`,
+  default `restic`, outside the sync tree). restic reaches the server through
+  `rclone serve restic`, so the account, proxy, TLS, bandwidth, and rate-limit
+  settings apply. Extra tier until a live sciebo run has passed.
+  - Subcommands `init`, `run`, `list`, `add`, `remove`, `snapshots`, `ls`,
+    `restore`, `forget`, `check`, `unlock`, `info`, and `key show`. `forget`
+    is a dry run without `--apply`; `restore` refuses non-empty targets and
+    sync folders without `--force`; `init` prints the generated password once.
+  - Sources in `config/backups.conf` (`name|local[|filter]`). rclone filter
+    files are translated to restic excludes; only exclude rules are accepted.
+  - Settings: `RESTIC_BIN`, `RESTIC_MIN_VERSION` (0.17), `BACKUP_HOST`,
+    `BACKUP_REMOTE_PATH`, pack size, connections, chunk size, compression,
+    the per-run exclude flags, tags, the `BACKUP_KEEP_*` retention policy,
+    prune and maintenance cadence, quota policy, cache and password-file
+    paths. The repository password lives in the keychain under
+    `<remote>#restic`, or in a mode-600 `backup.key` with `KEYCHAIN=0`.
+  - Maintenance from `backup run` when due: `forget`/prune every 30 days and
+    `check --read-data-subset` every 7 days, for this host's snapshots only
+    and only after every source succeeded.
+  - `schedule install --backup` (or `SCHEDULE_BACKUP=1`) adds a daily backup
+    agent (`BACKUP_LAUNCHD_LABEL`, `SCHEDULE_BACKUP_HOUR`,
+    `SCHEDULE_BACKUP_MINUTE`); `status` and `uninstall` know about it,
+    profiles included.
+  - `doctor` checks the backup setup (one PASS line when backups are unused)
+    and adds a `backup` object to `--json`; `status` lists backup sources;
+    `logs` lists `backup-NAME` and `backup-maintenance`; `support` collects
+    backup logs, `backups.conf`, and `backup info`; `cleanup --cache` runs
+    `restic cache --cleanup`; `folders` and `provision` refuse a remote folder
+    that overlaps the repository.
+  - Named locks (`state/locks/<name>.lock`, so a backup can run beside a
+    sync) and run-record namespaces (`state/last/@backup/<name>`).
+  - Makefile targets `backup`, `backup-check`, and `backup-forget`.
+
+### Changed
+
+- The macOS Keychain write runs `security` in interactive mode with the
+  secret hex-encoded on stdin, so neither the app password nor the restic
+  password appears in any process's arguments. The write is verified by
+  reading the item back.
+- `sync`, `check`, and `backup run` refuse to run while a pair's remote
+  folder overlaps `BACKUP_REMOTE_PATH`.
+- `logout` also offers to remove the restic repository password, after a
+  confirmation that spells out the consequence (`--yes` confirms,
+  `--keep-backup-key` keeps it).
+- `cleanup --state` removes stale lock directories of every named lock, not
+  only `sync.lock`.
 
 ## [0.2.0] - 2026-09-24
 
@@ -127,6 +167,7 @@ git discovery, Login Flow v2 with Keychain storage, capabilities probe,
 filters and `.nosync`, verify/status/pause, launchd scheduling, on-demand
 mounts, cleanup, and the read-only trashbin/version listings.
 
-[Unreleased]: https://github.com/sebastianspicker/rclone-webdav-sync/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/sebastianspicker/rclone-webdav-sync/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/sebastianspicker/rclone-webdav-sync/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/sebastianspicker/rclone-webdav-sync/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/sebastianspicker/rclone-webdav-sync/releases/tag/v0.1.0

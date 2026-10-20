@@ -11,6 +11,9 @@ Three groups:
 
 See the README's [comparison with `nextcloudcmd`](../README.md#compared-with-nextcloudcmd) for how this differs from the desktop client's single-shot command-line sync, and the [non-affiliation note](../README.md#not-affiliated-with-nextcloud-or-sciebo): this project is independent and not affiliated with, endorsed by, or supported by Nextcloud GmbH or the sciebo service operators.
 
+The desktop client has no backup feature, so `sciebo backup` (restic snapshots on the remote) is not in the tables below. See [docs/commands.md](commands.md#backup) and [docs/settings.md](settings.md#backups-restic).
+<!-- src: parity.md -->
+
 ## Parity implemented
 
 The table below lists every desktop-client feature this tool matches today, split into five groups so a specific feature is easy to find rather than scanning one long list: account and setup, syncing your files, safety and policies, server features, and monitoring/connection tooling. Each row names the command or setting and how the behavior compares.

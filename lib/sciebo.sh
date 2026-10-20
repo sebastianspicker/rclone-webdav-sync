@@ -76,6 +76,8 @@ source "${LIB_DIR}/base/ui.sh"
 source "${LIB_DIR}/adapters/proxy.sh"
 # shellcheck source=lib/adapters/rclone.sh
 source "${LIB_DIR}/adapters/rclone.sh"
+# shellcheck source=lib/adapters/restic.sh
+source "${LIB_DIR}/adapters/restic.sh"
 # shellcheck source=lib/adapters/http.sh
 source "${LIB_DIR}/adapters/http.sh"
 # shellcheck source=lib/adapters/nc_api.sh
@@ -95,6 +97,8 @@ source "${LIB_DIR}/adapters/notify.sh"
 source "${LIB_DIR}/config/settings.sh"
 # shellcheck source=lib/config/manifest.sh
 source "${LIB_DIR}/config/manifest.sh"
+# shellcheck source=lib/config/backupset.sh
+source "${LIB_DIR}/config/backupset.sh"
 
 # state: tool-written persistent state under STATE_DIR.
 # shellcheck source=lib/state/layout.sh
@@ -109,6 +113,8 @@ source "${LIB_DIR}/state/pause.sh"
 source "${LIB_DIR}/state/bw.sh"
 # shellcheck source=lib/state/lock.sh
 source "${LIB_DIR}/state/lock.sh"
+# shellcheck source=lib/state/backupstate.sh
+source "${LIB_DIR}/state/backupstate.sh"
 # shellcheck source=lib/state/pairflags.sh
 source "${LIB_DIR}/state/pairflags.sh"
 # shellcheck source=lib/state/seen.sh
@@ -127,6 +133,10 @@ source "${LIB_DIR}/sync/bigfolder.sh"
 source "${LIB_DIR}/sync/filters.sh"
 # shellcheck source=lib/sync/quota.sh
 source "${LIB_DIR}/sync/quota.sh"
+# shellcheck source=lib/sync/backup_filters.sh
+source "${LIB_DIR}/sync/backup_filters.sh"
+# shellcheck source=lib/sync/backup_policy.sh
+source "${LIB_DIR}/sync/backup_policy.sh"
 # shellcheck source=lib/sync/hydrate.sh
 source "${LIB_DIR}/sync/hydrate.sh"
 

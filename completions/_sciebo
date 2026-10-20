@@ -73,6 +73,7 @@ _sciebo_commands=(
   'ignored:list files excluded from syncing'
   'announcements:list server announcements'
   'preview:download a preview image for a remote file'
+  'backup:restic backups to the remote (init/run/restore/forget/check)'
   'download:download a remote file or directory'
   'update:update the local checkout from git'
   'help:show help for a command'
@@ -205,7 +206,8 @@ _sciebo_schedule() {
         install)
           _arguments ${_sciebo_global_specs[@]} \
             '--at-login[start the agent at login/boot]' \
-            '--profiles=[render one extra agent per profile]:profiles:'
+            '--profiles=[render one extra agent per profile]:profiles:' \
+            '--backup[also install the daily backup agent]'
           ;;
         uninstall)
           _arguments ${_sciebo_global_specs[@]}
@@ -818,6 +820,107 @@ _sciebo_logs() {
   esac
 }
 
+_sciebo_backup() {
+  local state
+  typeset -A opt_args
+  _arguments -C ${_sciebo_global_specs[@]} \
+    '1:subcommand:->sub' \
+    '*::argument:->args' && return 0
+  case $state in
+    sub)
+      local -a subs
+      subs=(
+        'init:create the repository and store its password'
+        'run:back up every source, then run due maintenance'
+        'list:show the configured backup sources'
+        'add:add a backup source to backups.conf'
+        'remove:remove a backup source (snapshots are kept)'
+        'snapshots:list the snapshots in the repository'
+        'ls:list the files in a snapshot'
+        'restore:restore a snapshot into an empty directory'
+        'forget:show or apply the retention policy'
+        'check:verify the repository'
+        'unlock:remove stale repository locks'
+        'info:repository, versions, maintenance stamps, cache'
+        'key:print the repository password (key show)'
+      )
+      _describe -t commands 'backup subcommand' subs
+      ;;
+    args)
+      case $words[1] in
+        init)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--existing[connect to a repository created elsewhere]' \
+            '--password-stdin[read the repository password from stdin]'
+          ;;
+        run)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--only=[back up only this source]:source name:' \
+            '--dry-run[report what restic would store]' \
+            '*--tag=[add a restic tag to the snapshots]:tag:' \
+            '--no-maintenance[skip the due forget/check maintenance]' \
+            '--quiet[only print failures, warnings, and the summary]' \
+            '--json[print the per-source results as JSON]'
+          ;;
+        list)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--show-filters[print the translated exclude patterns]' \
+            '--json[print the sources as JSON]'
+          ;;
+        add)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:local folder:_directories' \
+            '--name=[source name (default\: the folder name)]:name:' \
+            '--filter=[filter file in the filters directory]:file:_files'
+          ;;
+        remove)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:source name:'
+          ;;
+        snapshots)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--only=[only snapshots of this source from this host]:source name:' \
+            '--json[print restic'\''s JSON array]'
+          ;;
+        ls)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:snapshot:' \
+            '::path:'
+          ;;
+        restore)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:snapshot:' \
+            '--target=[directory to restore into]:directory:_directories' \
+            '*--include=[restore only this path]:path:' \
+            '--dry-run[report what would be restored]' \
+            '--force[restore into a non-empty directory or a sync folder]'
+          ;;
+        forget)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--apply[remove the snapshots the policy drops]' \
+            '--prune[also prune unreferenced data]'
+          ;;
+        check)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--read-data-subset=[read this part of the data (N%, N/M, size)]:spec:'
+          ;;
+        unlock)
+          _arguments ${_sciebo_global_specs[@]}
+          ;;
+        info)
+          _arguments ${_sciebo_global_specs[@]} \
+            '--offline[do not contact the repository]' \
+            '--json[print the report as JSON]'
+          ;;
+        key)
+          _arguments ${_sciebo_global_specs[@]} \
+            '1:action:(show)'
+          ;;
+      esac
+      ;;
+  esac
+}
+
 _sciebo() {
   local state line context
   typeset -A opt_args
@@ -1034,6 +1137,7 @@ _sciebo() {
         logout)
           _arguments ${_sciebo_global_specs[@]} \
             '--revoke[revoke the app password on the server first]' \
+            '--keep-backup-key[keep the restic repository password]' \
             '--yes[do not ask for confirmation]'
           ;;
         config)
@@ -1186,6 +1290,9 @@ _sciebo() {
             '1:remote file:' \
             '--output=[write the image to FILE]:file:_files' \
             '--size=[preview edge size in pixels]:pixels:'
+          ;;
+        backup)
+          _sciebo_backup
           ;;
         download)
           _arguments ${_sciebo_global_specs[@]} \

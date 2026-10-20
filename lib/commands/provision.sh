@@ -227,11 +227,15 @@ provision_validate_vfs() {
 
 # provision_check_duplicates PAIR_ADDED NAME SUB - when a folder pair was
 # requested, refuse a source name or remote folder that is already configured
-# in the active PROFILE. Loads the manifest index only in that case, so an
-# account-only run never touches it.
+# in the active PROFILE, or one that overlaps the restic repository path.
+# Loads the manifest index only in that case, so an account-only run never
+# touches it.
 provision_check_duplicates() {
   local pair_added="$1" name="$2" sub="$3"
   [[ "$pair_added" -eq 1 ]] || return 0
+  if backup_repo_overlaps_path "$sub"; then
+    die "remote folder '${sub}' overlaps the restic repository path '${BACKUP_REMOTE_PATH}' (BACKUP_REMOTE_PATH); the mirror must never contain the backup repository"
+  fi
   manifest_index_load
   if manifest_has_name "$name"; then
     die "a source named '${name}' already exists in profile '$(printable "$profile")'"

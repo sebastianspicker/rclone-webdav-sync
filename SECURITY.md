@@ -30,9 +30,13 @@ vulnerability, skip ahead to [Reporting a vulnerability](#reporting-a-vulnerabil
   that still holds the obscured value under account `RCLONE_REMOTE` is
   migrated once on first use: the item is revealed in memory and rewritten
   to the `#plain` slot; the legacy item is left in place and is removed by
-  `logout` (which deletes both items). On Linux the secret reaches the
-  backend on stdin, not in its argv; the macOS `security` argv caveat is
-  below. `KEYCHAIN=0` keeps the classic rclone-config behavior.
+  `logout` (which deletes both items). On every platform the secret reaches
+  the backend on stdin, never in its argv: `secret-tool`/`pass` read it
+  directly, and macOS `security` runs in interactive mode (`security -i`)
+  with the whole command, secret hex-encoded (`-X`), piped from a shell
+  builtin. The restic repository password uses the same path under account
+  `<RCLONE_REMOTE>#restic`. `KEYCHAIN=0` keeps the classic rclone-config
+  behavior (and a mode-600 `backup.key` file for the repository password).
 - `.env` (`ENV_FILE`) is a manual/legacy place for `SCIEBO_APP_PASSWORD`;
   the tool never requires it. `sciebo doctor` warns when `.env` is
   group/other readable or writable and when the rclone config is
@@ -120,12 +124,11 @@ process on the same machine.
 - `SCIEBO_DEBUG`/`--debug` adds `-v` to curl, whose verbose trace can print
   the `Authorization: Basic ...` request header (base64, trivially
   reversible). Use debug output for support, not for sharing.
-- `keychain_security_store` passes the secret in the macOS `security` argv;
-  only the same user can read it during the brief call. With the current
-  plaintext slot the value is the app password itself, so on macOS the
-  process table is exposed to the same user for the duration of the
-  `security` call. The Linux `secret-tool`/`pass` paths use stdin and do
-  not have this exposure.
+- `keychain_security_store` no longer passes the secret in the macOS
+  `security` argv: the command line goes to `security -i` on stdin with the
+  secret hex-encoded (`-X`), and the write is verified by reading the item
+  back. The Linux `secret-tool`/`pass` paths use stdin as before. Nothing in
+  the keychain write path is visible in the process table any more.
 - `remote_secret_plain` prefers the keychain plaintext slot, so HTTP
   commands no longer run `rclone reveal` during normal operation. A legacy
   obscured keychain item is revealed once for the migration. When the
@@ -231,8 +234,6 @@ as absolute; the concentration of these is in
 - `SCIEBO_DEBUG`/`--debug` output can contain a recoverable, base64-encoded
   credential and should be treated as sensitive, not pasted into a public
   bug report.
-- The macOS `security` CLI briefly exposes the plaintext app password in
-  the process table during the keychain-write call.
 - `socks5://` proxy credentials, and `nextcloudcmd`/`provision` invoked
   without the file-descriptor option, remain visible in argv.
 - The lock in [Lock semantics](#lock-semantics) protects against overlapping

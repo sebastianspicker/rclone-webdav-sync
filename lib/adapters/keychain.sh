@@ -26,6 +26,9 @@ KEYCHAIN_CACHE=""
 KEYCHAIN_CACHE_SET=0
 KEYCHAIN_PLAIN_CACHE=""
 KEYCHAIN_PLAIN_CACHE_SET=0
+# Per-process cache for the suffixed items (keychain_*_item), keyed by suffix.
+declare -gA KEYCHAIN_ITEM_CACHE=()
+declare -gA KEYCHAIN_ITEM_CACHE_SET=()
 # Memoized keychain-backend probe. keychain_enabled runs on every
 # rclone_cmd, and the platform probe used to fork subshells
 # ($(platform_keychain_backend) -> $(platform_os)) on each call. The cache
@@ -60,6 +63,8 @@ _keychain_cache_reset() {
   KEYCHAIN_BACKEND_CACHE=""
   KEYCHAIN_BACKEND_CACHE_KEY=""
   KEYCHAIN_BACKEND_CACHE_SET=0
+  KEYCHAIN_ITEM_CACHE=()
+  KEYCHAIN_ITEM_CACHE_SET=()
   return 0
 }
 
@@ -85,7 +90,11 @@ keychain_account() { printf '%s' "${RCLONE_REMOTE:-}"; }
 # keychain_account_plain - the plaintext app-password account for the remote.
 # The separate slot keeps the migration unambiguous: an existing install
 # holds the obscured value under keychain_account.
-keychain_account_plain() { printf '%s#plain' "${RCLONE_REMOTE:-}"; }
+keychain_account_plain() { keychain_account_item plain; }
+
+# keychain_account_item SUFFIX - the account of an additional per-remote item
+# (<remote>#<suffix>), e.g. `restic` for the repository password.
+keychain_account_item() { printf '%s#%s' "${RCLONE_REMOTE:-}" "${1:-}"; }
 
 # _keychain_pass_path ACCOUNT - the pass entry for service and account;
 # service and account may contain slashes, which map to pass directory levels.
@@ -93,17 +102,46 @@ _keychain_pass_path() {
   printf 'rclone-sciebo/%s/%s' "${KEYCHAIN_SERVICE:-}" "${1:-}"
 }
 
-# keychain_security_store ACCOUNT SECRET - macOS `security` backend. The
-# secret is passed in argv, so any local user who can run `ps` during the
-# short window before `security` replaces its argument vector can read it; in
-# exchange the rclone config holds no persistent, reversible secret. Dies with
-# a clear message when `security` fails.
+# _keychain_security_quote VALUE - VALUE double-quoted for one `security -i`
+# command line (account and service names). The interactive tokenizer's
+# escape rules are undocumented, so values that would need escaping are
+# refused instead of guessed at.
+_keychain_security_quote() {
+  case "$1" in
+    *'"'* | *"\\"* | *[[:cntrl:]]*)
+      die "keychain account/service '${ printable "$1";}' must not contain quotes, backslashes, or control characters"
+      ;;
+  esac
+  printf '"%s"' "$1"
+}
+
+# _keychain_hex_into VAR SECRET - store SECRET as lowercase hex in VAR (the
+# `security add-generic-password -X` payload: no quoting, no special bytes).
+_keychain_hex_into() {
+  # Private local name: VAR is commonly "hex" in callers and must not be shadowed.
+  local _kh_hex=""
+  _kh_hex="$(printf '%s' "$2" | od -An -v -tx1 | tr -d ' \n')"
+  printf -v "$1" '%s' "$_kh_hex"
+}
+
+# keychain_security_store ACCOUNT SECRET - macOS `security` backend. The whole
+# command travels on stdin (`security -i`), with the secret hex-encoded (-X),
+# so it never appears in any process's argv; the pipe comes from the printf
+# builtin, so no temp file holds it either. The write is verified by reading
+# the item back, which does not depend on the interactive mode's exit status.
+# Dies with a clear message when the item cannot be stored.
 keychain_security_store() {
-  local account="$1" secret="$2"
-  if ! security add-generic-password -U -a "$account" \
-    -s "${KEYCHAIN_SERVICE:-}" -w "$secret" >/dev/null 2>&1; then
-    die "could not store the app password in the macOS Keychain (service '${KEYCHAIN_SERVICE:-}', account '${account}'); check Keychain access"
-  fi
+  local account="$1" secret="$2" hex="" line="" stored=""
+  _keychain_hex_into hex "$secret"
+  [[ -n "$hex" ]] || die "could not encode the secret for the macOS Keychain"
+  printf -v line 'add-generic-password -U -a %s -s %s -X %s' \
+    "${ _keychain_security_quote "$account";}" \
+    "${ _keychain_security_quote "${KEYCHAIN_SERVICE:-}";}" "$hex"
+  printf '%s\n' "$line" | security -i >/dev/null 2>&1 || true
+  stored="$(security find-generic-password -a "$account" \
+    -s "${KEYCHAIN_SERVICE:-}" -w 2>/dev/null)" || stored=""
+  [[ "$stored" == "$secret" ]] ||
+    die "could not store the secret in the macOS Keychain (service '${KEYCHAIN_SERVICE:-}', account '${account}'); check Keychain access"
 }
 
 # keychain_secret_tool_store ACCOUNT SECRET - libsecret item, labeled with
@@ -210,6 +248,54 @@ keychain_store_plain() {
   remote_secret_invalidate
 }
 
+# keychain_store_item SUFFIX SECRET - overwrite the item <remote>#SUFFIX. Dies
+# like keychain_store_plain; `plain` delegates to it so the remote/HTTP caches
+# are invalidated too.
+keychain_store_item() {
+  local suffix="$1" secret="$2"
+  if [[ "$suffix" == "plain" ]]; then
+    keychain_store_plain "$secret"
+    return 0
+  fi
+  _keychain_write "$(keychain_account_item "$suffix")" "$secret"
+  KEYCHAIN_ITEM_CACHE[$suffix]="$secret"
+  KEYCHAIN_ITEM_CACHE_SET[$suffix]=1
+}
+
+# keychain_lookup_item SUFFIX - print the item's secret, rc 0. rc 1 with empty
+# output when key storage is unavailable or the item is absent. Successful
+# lookups are cached per process; `plain` shares keychain_lookup_plain's cache.
+keychain_lookup_item() {
+  local suffix="$1" secret="" account=""
+  if [[ "$suffix" == "plain" ]]; then
+    keychain_lookup_plain
+    return
+  fi
+  keychain_enabled || return 1
+  if [[ "${KEYCHAIN_ITEM_CACHE_SET[$suffix]:-0}" -eq 1 ]]; then
+    printf '%s' "${KEYCHAIN_ITEM_CACHE[$suffix]}"
+    return 0
+  fi
+  account=${ keychain_account_item "$suffix";}
+  secret=${ _keychain_read "$account";} || return 1
+  KEYCHAIN_ITEM_CACHE[$suffix]="$secret"
+  KEYCHAIN_ITEM_CACHE_SET[$suffix]=1
+  printf '%s' "$secret"
+}
+
+# keychain_delete_item SUFFIX - remove the item <remote>#SUFFIX. rc 0 when it
+# was deleted or already absent, rc 1 on an unexpected failure. Never dies.
+keychain_delete_item() {
+  local suffix="$1" rc=0
+  _keychain_remove "$(keychain_account_item "$suffix")" || rc=1
+  unset "KEYCHAIN_ITEM_CACHE[$suffix]" "KEYCHAIN_ITEM_CACHE_SET[$suffix]"
+  if [[ "$suffix" == "plain" ]]; then
+    KEYCHAIN_PLAIN_CACHE=""
+    KEYCHAIN_PLAIN_CACHE_SET=0
+  fi
+  return "$rc"
+}
+
 # keychain_lookup - print the legacy obscured password, rc 0. rc 1 with empty
 # output when key storage is unavailable or the item is absent. Successful
 # lookups are cached per process.
@@ -244,7 +330,7 @@ keychain_lookup_plain() {
   printf '%s' "$secret"
 }
 
-# keychain_delete - remove both the plaintext and the legacy obscured item.
+# keychain_delete - remove the plaintext and legacy obscured items.
 # rc 0 when they were deleted or already absent, rc 1 on an unexpected
 # failure. Never dies. Any resolved secret is dropped with the items,
 # including the remote/HTTP caches owned by lib/adapters/rclone.sh and lib/adapters/http.sh when
@@ -253,6 +339,10 @@ keychain_delete() {
   local rc=0
   _keychain_remove "$(keychain_account)" || rc=1
   _keychain_remove "$(keychain_account_plain)" || rc=1
+  # The restic repository password (item "restic") is deliberately left
+  # alone: lib/commands/logout.sh removes it only after its own confirmation.
+  KEYCHAIN_ITEM_CACHE=()
+  KEYCHAIN_ITEM_CACHE_SET=()
   KEYCHAIN_CACHE=""
   KEYCHAIN_CACHE_SET=0
   KEYCHAIN_PLAIN_CACHE=""

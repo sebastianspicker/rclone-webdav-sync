@@ -4,8 +4,8 @@
 # bash-completion drop-in, or copy it into a completions directory (for
 # example ~/.local/share/bash-completion/completions/sciebo).
 
-_sciebo_commands='setup doctor discover list check sync verify status pause resume folders mount umount mounts cleanup schedule trash versions share notifications activity presence lock unlock locks quota open conflicts retry account logout config support nextcloudcmd watch limit unlimited network filters file search recent comments favorites tags server hydrate provision logs edit ignored announcements preview download update help'
-_sciebo_dispatch_commands='folders schedule trash share presence account config filters file tags server logs'
+_sciebo_commands='setup doctor discover list check sync verify status pause resume folders mount umount mounts cleanup schedule trash versions share notifications activity presence lock unlock locks quota open conflicts retry account logout config support nextcloudcmd watch limit unlimited network filters file search recent comments favorites tags server hydrate provision logs edit ignored announcements preview backup download update help'
+_sciebo_dispatch_commands='folders schedule trash share presence account config filters file tags server logs backup'
 _sciebo_global_opts='-h --help --profile --trust --non-interactive --debug --log-file --confdir --log-dir --log-expire --version -V'
 
 _sciebo_compgen() {
@@ -104,6 +104,7 @@ _sciebo_subs_for() {
     'tags') printf '%s\n' 'list create assign clear' ;;
     'server') printf '%s\n' 'info capabilities status' ;;
     'logs') printf '%s\n' 'list show tail path' ;;
+    'backup') printf '%s\n' 'init run list add remove snapshots ls restore forget check unlock info key' ;;
     *) printf '\n' ;;
   esac
 }
@@ -130,7 +131,7 @@ _sciebo_options_for() {
     'umount:-') printf '%s\n' '--folder --mountpoint --all --sudo' ;;
     'mounts:-') printf '%s\n' '--folder --check --prune --json' ;;
     'cleanup:-') printf '%s\n' '--logs --uploads --state --junk --cache --support --keep --apply' ;;
-    'schedule:install') printf '%s\n' '--at-login --profiles' ;;
+    'schedule:install') printf '%s\n' '--at-login --profiles --backup' ;;
     'trash:restore') printf '%s\n' '--all --yes' ;;
     'trash:rm') printf '%s\n' '--yes' ;;
     'trash:empty') printf '%s\n' '--yes' ;;
@@ -169,7 +170,7 @@ _sciebo_options_for() {
     'account:info') printf '%s\n' '--json' ;;
     'account:avatar') printf '%s\n' '--output --size' ;;
     'account:status') printf '%s\n' '--json' ;;
-    'logout:-') printf '%s\n' '--revoke --yes' ;;
+    'logout:-') printf '%s\n' '--revoke --keep-backup-key --yes' ;;
     'config:list') printf '%s\n' '--json --all' ;;
     'config:get') printf '%s\n' '--json' ;;
     'config:check') printf '%s\n' '--json' ;;
@@ -200,6 +201,15 @@ _sciebo_options_for() {
     'ignored:-') printf '%s\n' '--source --json' ;;
     'announcements:-') printf '%s\n' '--limit --no-dismiss --json' ;;
     'preview:-') printf '%s\n' '--output --size' ;;
+    'backup:init') printf '%s\n' '--existing --password-stdin' ;;
+    'backup:run') printf '%s\n' '--only --dry-run --tag --no-maintenance --quiet --json' ;;
+    'backup:list') printf '%s\n' '--show-filters --json' ;;
+    'backup:add') printf '%s\n' '--name --filter' ;;
+    'backup:snapshots') printf '%s\n' '--only --json' ;;
+    'backup:restore') printf '%s\n' '--target --include --dry-run --force' ;;
+    'backup:forget') printf '%s\n' '--apply --prune' ;;
+    'backup:check') printf '%s\n' '--read-data-subset' ;;
+    'backup:info') printf '%s\n' '--offline --json' ;;
     'download:-') printf '%s\n' '--dry-run --force --resume --continue --quiet --json --progress' ;;
     'update:-') printf '%s\n' '--check --json' ;;
     *) printf '\n' ;;
@@ -302,6 +312,7 @@ _sciebo_opt_lookup() {
     'cleanup:-:--apply') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
     'schedule:install:--at-login') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
     'schedule:install:--profiles') _SCIEBO_OPT_KIND=value; _SCIEBO_OPT_ACTION=none ;;
+    'schedule:install:--backup') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
     'trash:restore:--all') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
     'trash:restore:--yes') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
     'trash:rm:--yes') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
@@ -440,6 +451,7 @@ _sciebo_opt_lookup() {
     'account:avatar:--size') _SCIEBO_OPT_KIND=value; _SCIEBO_OPT_ACTION=none ;;
     'account:status:--json') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
     'logout:-:--revoke') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
+    'logout:-:--keep-backup-key') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
     'logout:-:--yes') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
     'config:list:--json') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
     'config:list:--all') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
@@ -536,6 +548,29 @@ _sciebo_opt_lookup() {
     'announcements:-:--json') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
     'preview:-:--output') _SCIEBO_OPT_KIND=value; _SCIEBO_OPT_ACTION=files ;;
     'preview:-:--size') _SCIEBO_OPT_KIND=value; _SCIEBO_OPT_ACTION=none ;;
+    'backup:init:--existing') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
+    'backup:init:--password-stdin') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
+    'backup:run:--only') _SCIEBO_OPT_KIND=value; _SCIEBO_OPT_ACTION=none ;;
+    'backup:run:--dry-run') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
+    'backup:run:--tag') _SCIEBO_OPT_KIND=repeatable; _SCIEBO_OPT_ACTION=none ;;
+    'backup:run:--no-maintenance') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
+    'backup:run:--quiet') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
+    'backup:run:--json') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
+    'backup:list:--show-filters') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
+    'backup:list:--json') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
+    'backup:add:--name') _SCIEBO_OPT_KIND=value; _SCIEBO_OPT_ACTION=none ;;
+    'backup:add:--filter') _SCIEBO_OPT_KIND=value; _SCIEBO_OPT_ACTION=files ;;
+    'backup:snapshots:--only') _SCIEBO_OPT_KIND=value; _SCIEBO_OPT_ACTION=none ;;
+    'backup:snapshots:--json') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
+    'backup:restore:--target') _SCIEBO_OPT_KIND=value; _SCIEBO_OPT_ACTION=dirs ;;
+    'backup:restore:--include') _SCIEBO_OPT_KIND=repeatable; _SCIEBO_OPT_ACTION=none ;;
+    'backup:restore:--dry-run') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
+    'backup:restore:--force') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
+    'backup:forget:--apply') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
+    'backup:forget:--prune') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
+    'backup:check:--read-data-subset') _SCIEBO_OPT_KIND=value; _SCIEBO_OPT_ACTION=none ;;
+    'backup:info:--offline') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
+    'backup:info:--json') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
     'download:-:--dry-run') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
     'download:-:--force') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
     'download:-:--resume') _SCIEBO_OPT_KIND=flag; _SCIEBO_OPT_ACTION=none ;;
@@ -635,6 +670,12 @@ _sciebo_pos_action() {
     'edit:-:0') _SCIEBO_POS_ACTION=none ;;
     'ignored:-:0') _SCIEBO_POS_ACTION=none ;;
     'preview:-:0') _SCIEBO_POS_ACTION=none ;;
+    'backup:add:0') _SCIEBO_POS_ACTION=dirs ;;
+    'backup:remove:0') _SCIEBO_POS_ACTION=none ;;
+    'backup:ls:0') _SCIEBO_POS_ACTION=none ;;
+    'backup:ls:1') _SCIEBO_POS_ACTION=none ;;
+    'backup:restore:0') _SCIEBO_POS_ACTION=none ;;
+    'backup:key:0') _SCIEBO_POS_ACTION=enum:show ;;
     'download:-:0') _SCIEBO_POS_ACTION=none ;;
     'download:-:1') _SCIEBO_POS_ACTION=none ;;
     'help:-:0') _SCIEBO_POS_ACTION=commands ;;

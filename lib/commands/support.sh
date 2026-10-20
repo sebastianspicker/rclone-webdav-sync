@@ -149,12 +149,12 @@ support_sort_capped() {
   printf '%s\n' "${lines[@]:0:$limit}" | sed 's/^[0-9][0-9]* //'
 }
 
-# support_newest_files DIR LIMIT - print up to LIMIT regular files from DIR,
-# newest first. Log names are sanitized by the tooling, so line-based
-# sorting is safe here.
+# support_newest_files DIR LIMIT [GLOB] - print up to LIMIT regular files from
+# DIR (optionally only names matching GLOB), newest first. Log names are
+# sanitized by the tooling, so line-based sorting is safe here.
 support_newest_files() {
-  local dir="$1" limit="$2" file="" record="" list=""
-  for file in "$dir"/*; do
+  local dir="$1" limit="$2" glob="${3:-*}" file="" record="" list=""
+  for file in "$dir"/$glob; do
     [[ -f "$file" ]] || continue
     record="$(support_stat_mtime_name "$file")" || continue
     list="${list}${record}"$'\n'
@@ -224,6 +224,8 @@ support_add_runstate() {
   return 0
 }
 
+# support_add_logs OUTDIR - redacted tails of the newest 5 logs, plus the
+# newest 3 backup-*.log files so a noisy sync cannot crowd them out.
 support_add_logs() {
   local outdir="$1" file="" count=0
   mkdir -p "$outdir" 2>/dev/null || true
@@ -235,6 +237,14 @@ support_add_logs() {
       support_redact_stream >"$outdir/$(basename "$file")" || true
     [[ "$count" -lt 5 ]] || break
   done < <(support_newest_files "$LOG_DIR" 5)
+  count=0
+  while IFS= read -r file; do
+    [[ -n "$file" ]] || continue
+    count=$((count + 1))
+    tail -n 200 "$file" 2>/dev/null |
+      support_redact_stream >"$outdir/$(basename "$file")" || true
+    [[ "$count" -lt 3 ]] || break
+  done < <(support_newest_files "$LOG_DIR" 3 'backup-*.log')
   return 0
 }
 
@@ -265,6 +275,8 @@ support_collect() {
   support_add_settings "${SETTINGS_LOCAL_FILE:-}" "$stage/settings.txt"
   support_add_settings "${SETTINGS_PROFILE_FILE:-}" "$stage/settings.txt"
   support_add_settings "${SETTINGS_PROFILE_LOCAL_FILE:-}" "$stage/settings.txt"
+  : >"$stage/backups.conf"
+  support_add_settings "${BACKUPS_FILE:-}" "$stage/backups.conf"
   support_add_rclone_config "$stage/rclone-config.txt"
   support_add_state "$stage/state.txt"
   support_add_runstate "$stage/runstate.txt"
@@ -272,6 +284,7 @@ support_collect() {
   support_add_capabilities "$stage/capabilities.txt"
   support_add_subcommand "$stage/scheduler.txt" schedule status
   support_add_subcommand "$stage/mounts.txt" mounts
+  support_add_subcommand "$stage/backup-info.txt" backup info --offline --json
 }
 
 cmd_support() {
@@ -295,7 +308,8 @@ cmd_support() {
   [[ -n "$files" ]] || files=0
   if tar -czf "$output" -C "$SUPPORT_STAGE" -- \
     version.txt doctor.txt settings.txt rclone-config.txt state.txt \
-    runstate.txt capabilities.txt scheduler.txt mounts.txt logs 2>/dev/null; then
+    runstate.txt capabilities.txt scheduler.txt mounts.txt backups.conf \
+    backup-info.txt logs 2>/dev/null; then
     rc=0
   else
     rc=1

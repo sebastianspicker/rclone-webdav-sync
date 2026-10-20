@@ -42,6 +42,7 @@ the version and fails fast with a clear message when it is too old.
 - [Capabilities probing](#capabilities-probing)
 - [Profiles](#profiles)
 - [Platform backends](#platform-backends)
+- [Backups (restic)](#backups-restic)
 - [Signal handling](#signal-handling)
 - [Parallel sync](#parallel-sync)
 - [Command conventions](#command-conventions)
@@ -64,12 +65,12 @@ command spawns `bin/sciebo` instead of calling it as a function.
 | Layer | Directory | Owns | May depend on |
 | --- | --- | --- | --- |
 | base | `lib/base/` | paths, logging, `die`/`usage_error` (`core.sh`); string/UTF-8 helpers (`text.sh`); XML/JSON parsing (`xml.sh`); the option parser (`opts.sh`); keeping secrets out of argv/ps (`secrets.sh`); stat/atomic-write/`safe_source` (`fsutil.sh`); `--json`/table output (`output.sh`); duration/epoch helpers (`duration.sh`); prompts (`ui.sh`) | nothing else in `lib/` |
-| adapters | `lib/adapters/` | external programs and services: proxy classification (`proxy.sh`); rclone (`rclone.sh`); curl/DAV/OCS transport (`http.sh`); Nextcloud domain calls (`nc_api.sh`); the capabilities probe (`capabilities.sh`); app-password storage (`keychain.sh`); OS backend selection (`platform.sh`); notifications (`notify.sh`) | base |
-| config | `lib/config/` | user-authored configuration: layered settings, profiles, path derivation (`settings.sh`); the manifest/pair model (`manifest.sh`) | base, adapters |
-| state | `lib/state/` | tool-written state under `STATE_DIR`: layout/versioning (`layout.sh`); run records (`runstate.sh`); the failure blacklist (`blacklist.sh`); pause marker (`pause.sh`); bandwidth marker (`bw.sh`); the run lock (`lock.sh`); per-pair flags (`pairflags.sh`); seen-id caches (`seen.sh`) | base, adapters, config |
-| sync | `lib/sync/` | domain rules shared by several commands: rclone-argv policy gates (`policy.sh`); case-clash scanner (`case_clash.sh`); E2EE/external-storage engine (`remote_paths.sh`); large-folder discovery (`bigfolder.sh`); filter accessors (`filters.sh`); remote size/quota (`quota.sh`); hydrate/download resolution (`hydrate.sh`) | base, adapters, config, state |
+| adapters | `lib/adapters/` | external programs and services: proxy classification (`proxy.sh`); rclone (`rclone.sh`); curl/DAV/OCS transport (`http.sh`); Nextcloud domain calls (`nc_api.sh`); the capabilities probe (`capabilities.sh`); app-password storage (`keychain.sh`, which also holds the generic per-suffix items such as `<remote>#restic`); restic (`restic.sh`); OS backend selection (`platform.sh`); notifications (`notify.sh`) | base |
+| config | `lib/config/` | user-authored configuration: layered settings, profiles, path derivation (`settings.sh`); the manifest/pair model (`manifest.sh`); the backup source model (`backupset.sh`) | base, adapters |
+| state | `lib/state/` | tool-written state under `STATE_DIR`: layout/versioning (`layout.sh`); run records (`runstate.sh`); the failure blacklist (`blacklist.sh`); pause marker (`pause.sh`); bandwidth marker (`bw.sh`); the run lock and other named locks (`lock.sh`); per-pair flags (`pairflags.sh`); seen-id caches (`seen.sh`); backup maintenance markers (`backupstate.sh`) | base, adapters, config |
+| sync | `lib/sync/` | domain rules shared by several commands: rclone-argv policy gates (`policy.sh`); case-clash scanner (`case_clash.sh`); E2EE/external-storage engine (`remote_paths.sh`); large-folder discovery (`bigfolder.sh`); filter accessors (`filters.sh`); remote size/quota (`quota.sh`); hydrate/download resolution (`hydrate.sh`); rclone-to-restic filter translation (`backup_filters.sh`); retention, overlap, quota-gate, and restore-target rules for backups (`backup_policy.sh`) | base, adapters, config, state |
 | cli | `lib/cli/` | process entry: the generated registry (`registry.sh`); global options, dispatch, help, traps (`main.sh`); version banner (`version.sh`) | base, adapters, config, state, sync |
-| commands | `lib/commands/` | one file per command group, e.g. `setup.sh`, `sync.sh`, `folders.sh` | every layer below; never another command module |
+| commands | `lib/commands/` | one file per command group, e.g. `setup.sh`, `sync.sh`, `folders.sh`, `backup.sh` (the `backup` subcommand family) | every layer below; never another command module |
 
 <!-- src: architecture.md#layers -->
 
@@ -187,6 +188,9 @@ overrides the test suites rely on. `settings_init_paths` derives every path
 idempotent.
 <!-- src: architecture.md#state-and-configuration -->
 
+`lib/config/backupset.sh` is the same idea for `backups.conf`: `backupset_parse_line` validates one `name|local[|filter]` line into `BACKUP_ENTRY_*`, `backupset_each` walks the valid entries, `backupset_names`/`backupset_count`/`backupset_has_name` answer lookups, `backupset_append`/`backupset_remove` replace the file atomically, and `backupset_render` prints the table or JSON `backup list` shows. `settings.sh` derives `BACKUPS_FILE` (profile aware), `BACKUP_STATE_DIR`, `BACKUP_CACHE_DIR`, `BACKUP_PASSWORD_FILE`, and `BACKUP_REPOSITORY`, and validates the `BACKUP_*` keys, including the rule that `BACKUP_REMOTE_PATH` never overlaps `REMOTE_BASE`.
+<!-- src: architecture.md#state-and-configuration -->
+
 `lib/config/manifest.sh` owns the `mode|local|remote[|filter]` manifest
 format, the list of configured folder pairs (the sync list): `manifest_parse_line`
 validates one line, `manifest_index_load` builds the sorted name/remote
@@ -207,11 +211,12 @@ blacklist files; that reuse is why duplicate names are rejected.
 | State module | File(s) under `STATE_DIR` | Holds |
 | --- | --- | --- |
 | `lib/state/layout.sh` | `VERSION` | the state layout version |
-| `lib/state/runstate.sh` | `last/<name>`, `history/<name>.log` | last-run record and trimmed history per source |
+| `lib/state/runstate.sh` | `last/<name>`, `history/<name>.log`; namespaced: `last/@backup/<name>`, `history/@backup/<name>.log` | last-run record and trimmed history per source |
+| `lib/state/backupstate.sh` | `backup/last-run`, `backup/last-forget`, `backup/last-check` (and `backup/cache/`, the restic cache) | epoch markers (mode 600) deciding when backup maintenance is due |
 | `lib/state/blacklist.sh` | `blacklist/<name>` | failure counts and errors per excluded path |
 | `lib/state/pause.sh` | `paused` | pause marker (`until=<epoch>`, `0` = indefinite) |
 | `lib/state/bw.sh` | `bwlimit` | bandwidth-limit marker (`until`/`up`/`down`) |
-| `lib/state/lock.sh` | `lock/sync.lock/` | the single-run lock directory (`pid`, `start`) |
+| `lib/state/lock.sh` | `locks/sync.lock/`, `locks/backup.lock/` | named lock directories (`pid`, `start`) |
 | `lib/state/pairflags.sh` | `pairs/<name>` | per-pair `paused`/`hidden` flags |
 | `lib/state/seen.sh` | one file per cache | seen server-side ids (notifications, activity) |
 | `lib/sync/bigfolder.sh` | `bigfolder/scan-<name>` | per-name scan cache and reported-once folder names |
@@ -230,18 +235,25 @@ tests.
 
 `lib/state/lock.sh` implements a single-run lock, the safeguard that stops
 two sync/cleanup runs from overlapping on the same machine, under
-`LOCK_DIR/sync.lock`. Acquisition is atomic (`mkdir`), with `pid` and
+`LOCK_DIR/sync.lock`. Locks are named: `acquire_lock [NAME]` takes
+`LOCK_DIR/<NAME>.lock` (default `sync`), so `sciebo backup` holds
+`backup.lock` and can run beside a sync; one process may hold several names
+(`LOCK_HELD_BY_NAME` maps each to its path, `LOCK_HELD` keeps the first) and
+messages name the kind ("Another backup run is active"). Acquisition is atomic (`mkdir`), with `pid` and
 `start` (the process's `lstart`) recorded inside. A lock is stale only when
 the pid is gone, the command line no longer looks like this tool (matched
 against `*bin/sciebo*`, which is why that path must stay stable), or the
 start time differs (pid recycling); the stale directory is renamed aside
 before removal, so a concurrent takeover cannot delete a fresh lock.
-`acquire_lock` is reentrant within a process (the outermost holder wins, so
-the folder wizard can commit under a lock); `release_lock` only removes a
-lock owned by the current pid and is idempotent, so the EXIT trap can run
-after a signal handler already released it. `sync` (unless `--no-lock`),
+`acquire_lock` is reentrant per name within a process (the outermost holder
+wins, so the folder wizard can commit under a lock); `release_lock [NAME]`
+only removes a lock owned by the current pid, releases every held name when
+called without one, and is idempotent, so the EXIT trap can run after a
+signal handler already released it. `sync` (unless `--no-lock`),
 `cleanup`, `discover --write`, `folders add|import|remove|choose`, and the
-wizard's commit take the lock; `verify` and `status` never do.
+wizard's commit take the `sync` lock; `backup init|run|add|remove|check|unlock`
+and `forget --apply` take the `backup` lock; `verify`, `status`, and the
+read-only backup subcommands never do.
 <!-- src: architecture.md#lock-design -->
 
 ## Run records, history, blacklist, pause
@@ -249,7 +261,14 @@ wizard's commit take the lock; `verify` and `status` never do.
 - `lib/state/runstate.sh` writes one key=value record per source after every
   entry run (time, stamp, mode, status, rc, conflicts, log path, detail),
   parsed, never sourced, and appends a TAB-separated line to
-  `history/<name>.log`, trimmed to `HISTORY_MAX_ENTRIES`.
+  `history/<name>.log`, trimmed to `HISTORY_MAX_ENTRIES`. The `*_ns`
+  variants (`runstate_write_ns`, `runstate_read_ns`, `runstate_history_ns`)
+  take a namespace and keep records one directory down, `last/@<NS>/<name>`
+  and `history/@<NS>/<name>.log`; `backup run` uses the namespace `backup`
+  (`last/@backup/`), so a backup source and a sync pair may share a name: the
+  `@` is outside `sanitize_name`'s alphabet, so even a pair named `backup`
+  cannot collide. The namespace must already be in `sanitize_name` form, so
+  it cannot escape `STATE_DIR`.
 - `lib/state/blacklist.sh` tracks failed paths as
   `count<TAB>path<TAB>error`, the retry blacklist. `sync` adds rclone
   `--exclude` patterns for paths at the threshold; `retry` clears entries.
@@ -340,7 +359,12 @@ touches the remote (settings in
   `SCHEDULE_WATCH_PATH` changes, with `SCHEDULE_JITTER`.
   `SCHEDULE_AT_LOGIN`/`--at-login` adds `RunAtLoad`/`WantedBy=default.target`;
   `SCHEDULE_PROFILES`/`--profiles` renders one `<LAUNCHD_LABEL>.<profile>`
-  agent per extra profile.
+  agent per extra profile. With `--backup`/`SCHEDULE_BACKUP=1` it renders a
+  second agent of kind `backup` from the same template, labelled
+  `BACKUP_LAUNCHD_LABEL` (`<label>.<profile>` per profile), that runs
+  `backup run --quiet` daily at `SCHEDULE_BACKUP_HOUR:SCHEDULE_BACKUP_MINUTE`;
+  the agent kind is threaded through the install/uninstall/status helpers
+  as an optional last argument.
 <!-- src: architecture.md#watch-and-schedule -->
 
 ## HTTP / DAV / OCS layer
@@ -449,15 +473,60 @@ The Linux key-storage backends pass the secret on stdin, so it never appears
 in process arguments.
 <!-- src: architecture.md#platform-backends -->
 
+## Backups (restic)
+
+`sciebo backup` (`lib/commands/backup.sh`) moves no data itself: it builds
+a restic command line and runs it. The process tree is
+
+```
+sciebo backup run
+  └─ restic backup <local> ...             child; env: RESTIC_*, RCLONE_*
+       └─ rclone serve restic --stdio      started by restic, inherits the env
+            └─ HTTPS PUT/GET/PROPFIND      sciebo WebDAV
+```
+
+`lib/adapters/restic.sh` owns that wiring. `restic_env_into` collects one
+associative array of environment variables (`RESTIC_REPOSITORY`,
+`RESTIC_PASSWORD`, `RESTIC_CACHE_DIR`, `RESTIC_COMPRESSION`,
+`RESTIC_PACK_SIZE`, plus the `RCLONE_*` twins of the flags `rclone_cmd`
+passes: config path, app password, chunk size, `RCLONE_BWLIMIT`,
+`RCLONE_TPSLIMIT`, TLS, user agent, proxy) and `restic_cmd` executes restic
+in a subshell that exports them, so no secret ever reaches argv. It first
+unsets any inherited `RESTIC_PASSWORD_FILE`, `RESTIC_PASSWORD_COMMAND`,
+`RESTIC_REPOSITORY_FILE`, and `RESTIC_FROM_*`, so only this tool's values
+apply. The flag
+table is shared with `rclone.sh` (`_rclone_global_env_into` next to
+`_rclone_global_flags_into`). `RESTIC_BWLIMIT` is a shared global owned by
+`restic.sh`: the command layer sets it from `bw_effective_limit` before each
+call, because an adapter cannot call the state layer. restic's exit codes
+are mapped in `restic_rc_status` (0 ok, 3 warn, anything else failed) and
+`restic_rc_describe` (10 no repository, 11 locked, 12 wrong password), and
+`restic_stderr_hint` names HTTP 507 and 423 responses.
+
+`backup run` mirrors `sync`'s signal model: restic runs in the background
+and the parent `wait`s, so an INT/TERM trap runs at once, terminates restic
+(which removes its own repository lock), and exits 128+signal while the EXIT
+trap releases `backup.lock`. Sources run strictly one after another. The
+`backup` command keeps `status`/`doctor` independent of it: they read the
+`last/@backup` records and `backupstate` markers and call the `restic_*`
+adapter functions, never `backup.sh`.
+
+The rclone-to-restic filter translation (`lib/sync/backup_filters.sh`), the
+retention flags, the repository/sync-tree overlap test, the quota gate, and
+the restore-target guard (`lib/sync/backup_policy.sh`) are pure helpers in
+the `sync` layer so `doctor`, `folders`, and `provision` can use the same
+rules the `backup` command does.
+<!-- src: architecture.md#backups-restic -->
+
 ## Signal handling
 
 `bin/sciebo` traps INT/TERM through `sciebo_main`: release the lock and exit
 130/143. `sync` installs its own trap around a run, backgrounding the rclone
 child so the trap runs immediately (a foreground child defers traps until it
 exits); on a signal it TERMs the child (and its direct children) or every
-live parallel worker, then exits 128+signal. The EXIT trap is the single
-release point for the lock, keeping lock handling correct on both clean and
-signal exits.
+live parallel worker, then exits 128+signal; `backup run` does the same with its restic
+child. The EXIT trap is the single release point for the locks, keeping
+lock handling correct on both clean and signal exits.
 <!-- src: architecture.md#signals -->
 
 ## Parallel sync
@@ -522,6 +591,9 @@ per-command conventions (`ENTRY_*`, `MNT_*`) that predate this rule;
 | `POLICY_REMOTE_*` | `lib/sync/remote_paths.sh` | `policy_remote_paths_apply`'s result state, read by `sync`/`doctor`/the folder wizard |
 | `QUOTA_*`, `REMOTE_SIZE_CACHE`, `REMOTE_SIZE_BYTES` | `lib/sync/quota.sh` | per-process quota/size figures read by `sync`, `doctor`, and the folder picker |
 | `MANIFEST_DUP_NAMES`, `MANIFEST_DUP_REMOTES`, `MANIFEST_NAMES`, `MANIFEST_MATCH_*` | `lib/config/manifest.sh` | `manifest_index_load`'s output, read by `doctor`/`watch`/`hydrate` |
+| `RESTIC_BWLIMIT`, `RESTIC_STRIP_PROXY`, `RESTIC_CAPTURE_OUT`, `RESTIC_CAPTURE_ERR` | `lib/adapters/restic.sh` | the bandwidth limit the command layer hands to restic's rclone child, the proxy out-flag of `restic_env_into`, and the temp files `restic_capture` leaves for its caller |
+| `BACKUP_ENTRY_*` | `lib/config/backupset.sh` | `backupset_parse_line`'s output (name, raw local path, filter, error), read by `backup`/`doctor`/`status` |
+| `LOCK_HELD`, `LOCK_HELD_BY_NAME` | `lib/state/lock.sh` | the first held lock path and the name-to-path map of every held lock |
 | `CHOOSE_*`, `P_*` | `lib/commands/folders.sh` | private to the folder picker/wizard |
 
 <!-- src: architecture.md#global-naming -->
@@ -584,6 +656,18 @@ depends on them:
 - The completions at `completions/{sciebo.bash,_sciebo,sciebo.fish}`.
 - `scripts/sync.sh` and `scripts/nextcloudcmd` keep forwarding to
   `bin/sciebo sync`/`bin/sciebo nextcloudcmd` for old automation.
+- The keychain items: `<RCLONE_REMOTE>#plain` (app password) and
+  `<RCLONE_REMOTE>#restic` (restic repository password) within
+  `KEYCHAIN_SERVICE`; the `KEYCHAIN=0` fallback file `backup.key`.
+- The restic repository path on the remote (`BACKUP_REMOTE_PATH`, default
+  `restic`): existing repositories live there, so changing it orphans them;
+  it must never overlap `REMOTE_BASE`.
+- The run-record namespace `backup` (`last/@backup/`, `history/@backup/`) and
+  the log names `backup-<name>-<stamp>.log`.
+- The backup agent label `BACKUP_LAUNCHD_LABEL` (default
+  `de.rclone-sciebo.backup`) and the command it embeds, `bin/sciebo backup
+  run --quiet`.
+- `config/backups.conf` (`name|local[|filter]`).
 - Settings keys in `config/settings.env` and the `OWNCLOUD_*` alias names
   nextcloudcmd/the desktop client use.
 - The state file formats in the ownership table in
@@ -631,6 +715,11 @@ this project's documentation:
 | profile | An independent, named account setup (its own remote, sync list, filters, and state), used to manage more than one Nextcloud account. |
 | filter file | A plain-text rule file (rclone syntax) that excludes or includes paths from a sync. |
 | capabilities probe | A one-time-per-cache-window API call that discovers what the connected server supports (chunk size, trashbin, checksums, version). |
+| restic | The third-party backup program behind `sciebo backup`; it reaches the remote through `rclone serve restic`. |
+| repository | The restic data store at `<RCLONE_REMOTE>:<BACKUP_REMOTE_PATH>`, kept outside the sync tree. |
+| snapshot | One restic backup of one source at one point in time. |
+| retention policy | The `BACKUP_KEEP_*` rules that decide which snapshots `backup forget` keeps. |
+| prune | The restic step that deletes data no remaining snapshot needs. |
 | metered network | A connection this tool can detect and treat more cautiously, e.g. a mobile hotspot. |
 | blacklist (failure) | The list of paths this tool has temporarily stopped retrying after repeated failures, until `sciebo retry` clears them. |
 | watch | An optional, foreground command that syncs a folder as soon as it changes; not a background service. |

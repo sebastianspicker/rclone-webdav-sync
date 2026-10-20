@@ -58,7 +58,8 @@ Options:
               under every manifest source directory and older than
               JUNK_CLEANUP_MIN_AGE
   --cache     delete files under MOUNT_CACHE_DIR older than
-              STATE_CLEANUP_MIN_AGE
+              STATE_CLEANUP_MIN_AGE; also runs 'restic cache --cleanup'
+              when restic is installed and a repository password is stored
   --support   keep the newest support-*.tar.gz archives under STATE_DIR
               and delete the older ones
   --keep N    archives to keep for --support (default 5)
@@ -263,7 +264,7 @@ cleanup_do_state_locks() {
     [[ -n "$dir" ]] || continue
     cleanup_candidate "$dir" CLEANUP_STATE_FOUND CLEANUP_STATE_DELETED remove
   done < <(find "$LOCK_DIR" -mindepth 1 -maxdepth 1 -type d \
-    \( -name 'sync.lock.stale.*' -o -name 'sync.lock.release.*' \) \
+    \( -name '*.lock.stale.*' -o -name '*.lock.release.*' \) \
     -mmin "+${min_age}" 2>/dev/null)
 }
 
@@ -360,12 +361,43 @@ cleanup_do_junk() {
   [[ "$CLEANUP_JUNK_FOUND" -gt 0 ]] || log "no junk files older than ${JUNK_CLEANUP_MIN_AGE}"
 }
 
-# cleanup_do_cache - scan MOUNT_CACHE_DIR for files older than
-# STATE_CLEANUP_MIN_AGE. A missing or empty cache directory sets
-# CLEANUP_CACHE_EMPTY, which the summary reports as 'cache: nothing to do'.
+# cleanup_do_cache_restic - prune old restic cache directories with
+# `restic cache --cleanup` (--apply) or print what would run (dry run). Skips
+# with a notice when restic is missing or no repository password is stored;
+# a failing restic only warns and marks the cleanup as errored.
+cleanup_do_cache_restic() {
+  local secret=""
+  secret="$(restic_password 2>/dev/null)" || secret=""
+  if ! restic_available || [[ -z "$secret" ]]; then
+    # Say so only when backups are in use at all; otherwise stay silent so
+    # the output for users without backups is unchanged.
+    if [[ -n "$secret" || "$(backupset_count)" -gt 0 ]]; then
+      log "restic cache: skipped (restic not installed / no repository password)"
+    fi
+    return 0
+  fi
+  secret=""
+  if [[ "$CLEANUP_APPLY" -eq 0 ]]; then
+    log "would run: restic cache --cleanup"
+    return 0
+  fi
+  if restic_cmd cache --cleanup --no-size >/dev/null 2>&1; then
+    log "restic cache: cleaned"
+  else
+    err "restic cache --cleanup failed"
+    CLEANUP_HAD_ERROR=1
+  fi
+  return 0
+}
+
+# cleanup_do_cache - prune the restic cache, then scan MOUNT_CACHE_DIR for
+# files older than STATE_CLEANUP_MIN_AGE. A missing or empty cache directory
+# sets CLEANUP_CACHE_EMPTY, which the summary reports as 'cache: nothing to
+# do'.
 cleanup_do_cache() {
   local min_age="" file
   CLEANUP_CACHE_EMPTY=0
+  cleanup_do_cache_restic
   if [[ ! -d "$MOUNT_CACHE_DIR" ]] ||
     [[ -z "$(find "$MOUNT_CACHE_DIR" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
     CLEANUP_CACHE_EMPTY=1

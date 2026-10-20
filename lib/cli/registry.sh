@@ -8,7 +8,7 @@
 # lib/cli/main.sh/lib/sciebo.sh for how they are consumed.
 
 # shellcheck disable=SC2034  # read by lib/cli/main.sh's is_command
-SCIEBO_COMMANDS="setup doctor discover list check sync verify status pause resume folders mount umount mounts cleanup schedule trash versions share notifications activity presence lock unlock locks quota open conflicts retry account logout config support nextcloudcmd watch limit unlimited network filters file search recent comments favorites tags server hydrate provision logs edit ignored announcements preview download update"
+SCIEBO_COMMANDS="setup doctor discover list check sync verify status pause resume folders mount umount mounts cleanup schedule trash versions share notifications activity presence lock unlock locks quota open conflicts retry account logout config support nextcloudcmd watch limit unlimited network filters file search recent comments favorites tags server hydrate provision logs edit ignored announcements preview backup download update"
 
 # shellcheck disable=SC2034  # read by lib/sciebo.sh's sciebo_command_module
 declare -gA SCIEBO_COMMAND_MODULE=(
@@ -65,6 +65,7 @@ declare -gA SCIEBO_COMMAND_MODULE=(
   [ignored]=ignored
   [announcements]=announcements
   [preview]=preview
+  [backup]=backup
   [download]=download
   [update]=update
 )
@@ -124,6 +125,7 @@ declare -gA SCIEBO_COMMAND_TIER=(
   [ignored]=core
   [announcements]=extra
   [preview]=extra
+  [backup]=extra
   [download]=core
   [update]=core
 )

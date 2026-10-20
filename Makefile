@@ -18,6 +18,7 @@ CODE_ITEMS := bin lib scripts launchd completions docs man \
 .PHONY: help setup doctor discover list check sync verify status pause resume bisync-resync \
 	folders folders-list mount umount mount-status \
 	cleanup-logs cleanup-logs-apply cleanup-uploads cleanup-uploads-apply trash \
+	backup backup-check backup-forget \
 	check-bash lint hooks gen screenshots schedule-install schedule-uninstall schedule-status \
 	version install uninstall update dist clean-dist
 
@@ -86,6 +87,15 @@ cleanup-uploads-apply: ## delete stale chunk uploads
 
 trash: ## list the Nextcloud trashbin (read-only)
 	$(SCIEBO) trash
+
+backup: ## back up every source in config/backups.conf (restic)
+	$(SCIEBO) backup run
+
+backup-check: ## verify the restic repository (read-data subset)
+	$(SCIEBO) backup check
+
+backup-forget: ## dry run of the backup retention policy (no changes)
+	$(SCIEBO) backup forget
 
 check-bash: ## fail fast unless the selected bash is 5.3+
 	@$(BASH) -c 'if ((BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 503)); then \

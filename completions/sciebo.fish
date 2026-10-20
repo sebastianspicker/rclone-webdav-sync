@@ -59,6 +59,7 @@ function __fish_sciebo_commands
         ignored \
         announcements \
         preview \
+        backup \
         download \
         update \
         help
@@ -66,7 +67,7 @@ end
 
 function __fish_sciebo_is_dispatch
     switch $argv[1]
-        case folders schedule trash share presence account config filters file tags server logs
+        case folders schedule trash share presence account config filters file tags server logs backup
             return 0
     end
     return 1
@@ -350,6 +351,22 @@ function __fish_sciebo_opt_takes_value
             return 0
         case 'preview:-:--size'
             return 0
+        case 'backup:run:--only'
+            return 0
+        case 'backup:run:--tag'
+            return 0
+        case 'backup:add:--name'
+            return 0
+        case 'backup:add:--filter'
+            return 0
+        case 'backup:snapshots:--only'
+            return 0
+        case 'backup:restore:--target'
+            return 0
+        case 'backup:restore:--include'
+            return 0
+        case 'backup:check:--read-data-subset'
+            return 0
     end
     switch $argv[3]
         case --profile --log-file --confdir --log-dir --log-expire
@@ -542,6 +559,7 @@ complete -c sciebo -n '__fish_sciebo_at cleanup -' -l apply -d 'actually delete 
 complete -c sciebo -f -n '__fish_sciebo_needs_sub; and __fish_sciebo_cmd_is schedule' -a 'install uninstall status'
 complete -c sciebo -n '__fish_sciebo_at schedule install' -l at-login -d 'start the agent at login/boot'
 complete -c sciebo -n '__fish_sciebo_at schedule install' -l profiles -d 'render one extra agent per profile' -r
+complete -c sciebo -n '__fish_sciebo_at schedule install' -l backup -d 'also install the daily backup agent'
 complete -c sciebo -f -n '__fish_sciebo_needs_sub; and __fish_sciebo_cmd_is trash' -a 'list restore rm empty'
 complete -c sciebo -n '__fish_sciebo_at trash restore' -l all -d 'restore every listed item'
 complete -c sciebo -n '__fish_sciebo_at trash restore' -l yes -d 'skip the confirmation'
@@ -687,6 +705,7 @@ complete -c sciebo -n '__fish_sciebo_at account avatar' -l output -d 'write the 
 complete -c sciebo -n '__fish_sciebo_at account avatar' -l size -d 'avatar pixel size' -r
 complete -c sciebo -n '__fish_sciebo_at account status' -l json -d 'print the status as JSON'
 complete -c sciebo -n '__fish_sciebo_at logout -' -l revoke -d 'revoke the app password on the server first'
+complete -c sciebo -n '__fish_sciebo_at logout -' -l keep-backup-key -d 'keep the restic repository password'
 complete -c sciebo -n '__fish_sciebo_at logout -' -l yes -d 'do not ask for confirmation'
 complete -c sciebo -f -n '__fish_sciebo_needs_sub; and __fish_sciebo_cmd_is config' -a 'list get check edit'
 complete -c sciebo -n '__fish_sciebo_at config list' -l json -d 'print the result as JSON'
@@ -786,6 +805,32 @@ complete -c sciebo -n '__fish_sciebo_at announcements -' -l no-dismiss -d 'accep
 complete -c sciebo -n '__fish_sciebo_at announcements -' -l json -d 'print the announcements as JSON'
 complete -c sciebo -n '__fish_sciebo_at preview -' -l output -d 'write the image to FILE' -r
 complete -c sciebo -n '__fish_sciebo_at preview -' -l size -d 'preview edge size in pixels' -r
+complete -c sciebo -f -n '__fish_sciebo_needs_sub; and __fish_sciebo_cmd_is backup' -a 'init run list add remove snapshots ls restore forget check unlock info key'
+complete -c sciebo -n '__fish_sciebo_at backup init' -l existing -d 'connect to a repository created elsewhere'
+complete -c sciebo -n '__fish_sciebo_at backup init' -l password-stdin -d 'read the repository password from stdin'
+complete -c sciebo -n '__fish_sciebo_at backup run' -l only -d 'back up only this source' -r
+complete -c sciebo -n '__fish_sciebo_at backup run' -l dry-run -d 'report what restic would store'
+complete -c sciebo -n '__fish_sciebo_at backup run' -l tag -d 'add a restic tag to the snapshots' -r
+complete -c sciebo -n '__fish_sciebo_at backup run' -l no-maintenance -d 'skip the due forget/check maintenance'
+complete -c sciebo -n '__fish_sciebo_at backup run' -l quiet -d 'only print failures, warnings, and the summary'
+complete -c sciebo -n '__fish_sciebo_at backup run' -l json -d 'print the per-source results as JSON'
+complete -c sciebo -n '__fish_sciebo_at backup list' -l show-filters -d 'print the translated exclude patterns'
+complete -c sciebo -n '__fish_sciebo_at backup list' -l json -d 'print the sources as JSON'
+complete -c sciebo -n '__fish_sciebo_at backup add' -l name -d 'source name (default: the folder name)' -r
+complete -c sciebo -n '__fish_sciebo_at backup add' -l filter -d 'filter file in the filters directory' -r
+complete -c sciebo -n '__fish_sciebo_at backup add' -f -a '(__fish_complete_directories)'
+complete -c sciebo -n '__fish_sciebo_at backup snapshots' -l only -d 'only snapshots of this source from this host' -r
+complete -c sciebo -n '__fish_sciebo_at backup snapshots' -l json -d 'print restic\'s JSON array'
+complete -c sciebo -n '__fish_sciebo_at backup restore' -l target -d 'directory to restore into' -r -f -a '(__fish_complete_directories)'
+complete -c sciebo -n '__fish_sciebo_at backup restore' -l include -d 'restore only this path' -r
+complete -c sciebo -n '__fish_sciebo_at backup restore' -l dry-run -d 'report what would be restored'
+complete -c sciebo -n '__fish_sciebo_at backup restore' -l force -d 'restore into a non-empty directory or a sync folder'
+complete -c sciebo -n '__fish_sciebo_at backup forget' -l apply -d 'remove the snapshots the policy drops'
+complete -c sciebo -n '__fish_sciebo_at backup forget' -l prune -d 'also prune unreferenced data'
+complete -c sciebo -n '__fish_sciebo_at backup check' -l read-data-subset -d 'read this part of the data (N%, N/M, size)' -r
+complete -c sciebo -n '__fish_sciebo_at backup info' -l offline -d 'do not contact the repository'
+complete -c sciebo -n '__fish_sciebo_at backup info' -l json -d 'print the report as JSON'
+complete -c sciebo -n '__fish_sciebo_at backup key' -f -a 'show'
 complete -c sciebo -n '__fish_sciebo_at download -' -l dry-run -d 'report what would be transferred; change nothing'
 complete -c sciebo -n '__fish_sciebo_at download -' -l force -d 'download even when the destination matches'
 complete -c sciebo -n '__fish_sciebo_at download -' -l resume -d 'continue a partial file'

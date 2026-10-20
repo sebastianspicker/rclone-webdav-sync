@@ -66,6 +66,18 @@ DOCTOR_BIG_FOLDER_CHECKED=0
 # and combined output.
 DOCTOR_ABOUT_OK=0
 DOCTOR_ABOUT_OUT=""
+# Backup report state for the --json "backup" object: set by
+# doctor_check_backup (reachable and locks stay null when the repository is
+# not probed).
+DOCTOR_BACKUP_CONFIGURED=0
+DOCTOR_BACKUP_SOURCES=0
+DOCTOR_BACKUP_VERSION=""
+DOCTOR_BACKUP_PASSWORD=0
+DOCTOR_BACKUP_PASSWORD_ERROR=""
+DOCTOR_BACKUP_REACHABLE=null
+DOCTOR_BACKUP_LOCKS=null
+DOCTOR_BACKUP_RETENTION=""
+DOCTOR_BACKUP_CACHE_BYTES=null
 
 usage_doctor() {
   usage_emit <<'EOF'
@@ -81,7 +93,11 @@ config), free space on the state filesystem, the proxy mode, server
 capabilities (cached or probed), end-to-end encryption (the server
 capability and the configured sources), the cached server exclude list,
 state directories, filter files (parsed by rclone), the manifest set
-(duplicate names/remotes and overlapping local directories), name hygiene
+(duplicate names/remotes and overlapping local directories), the restic
+backup setup (restic version, repository password, backups.conf, filters,
+overlap with the sync tree, retention, cache, and, online, repository
+reachability, locks and the age of the last integrity check; one PASS line
+when no backups are configured), name hygiene
 (platform-invalid names and case-only collisions in existing local trees),
 case clashes per source, mounted external storages, conflict copies in the
 local trees, the watch pid record, the network and metered state, network
@@ -165,6 +181,7 @@ doctor_print_json() {
   doctor_json_paths external "${EXTERNAL_STORAGE_POLICY:-ask}" "$DOCTOR_EXTERNAL_PATHS" "$DOCTOR_EXTERNAL_CHECKED"
   doctor_json_delete_guard
   doctor_json_big_folders
+  doctor_json_backup
   output_json_array_begin checks
   while IFS=$'\t' read -r name level detail; do
     [[ -n "$level" ]] || continue
@@ -1638,6 +1655,306 @@ doctor_check_runtime() {
   doctor_check_launchd_agent
 }
 
+# doctor_backup_password_state - classify the repository password without
+# ever printing it or dying: stored (rc 0), missing (rc 1), or unsafe (rc 2,
+# with restic_password's complaint in DOCTOR_BACKUP_PASSWORD_ERROR). The
+# lookup runs in a subshell so its die() cannot end the doctor run, and its
+# stdout (the secret) is discarded.
+doctor_backup_password_state() {
+  local rc=0 err=""
+  DOCTOR_BACKUP_PASSWORD_ERROR=""
+  err="$(restic_password 2>&1 >/dev/null)" || rc=$?
+  if [[ "$rc" -eq 0 ]]; then
+    return 0
+  fi
+  if [[ -n "$err" ]]; then
+    DOCTOR_BACKUP_PASSWORD_ERROR="${err//$'\n'/ }"
+    return 2
+  fi
+  return 1
+}
+
+# doctor_backup_check_restic - restic present and at least RESTIC_MIN_VERSION.
+doctor_backup_check_restic() {
+  local min="${RESTIC_MIN_VERSION:-0.17}" version=""
+  local hint="distro packages are often older; use 'restic self-update' or Homebrew"
+  if ! restic_available; then
+    doctor_report_named backup FAIL "backups: restic not found; ${hint}"
+    return 0
+  fi
+  version=${ restic_version;}
+  DOCTOR_BACKUP_VERSION="$version"
+  if [[ -z "$version" ]]; then
+    doctor_report_named backup FAIL "backups: cannot read the restic version; ${hint}"
+  elif restic_version_at_least "${min%%.*}" "${min#*.}"; then
+    doctor_report_named backup PASS "backups: restic ${version} found (>= ${min})"
+  else
+    doctor_report_named backup FAIL "backups: restic ${version} is older than the required ${min}; ${hint}"
+  fi
+  return 0
+}
+
+# doctor_backup_check_password - report whether a repository password is
+# stored (keychain item or mode-600 file).
+doctor_backup_check_password() {
+  local rc=0
+  doctor_backup_password_state || rc=$?
+  case "$rc" in
+    0)
+      DOCTOR_BACKUP_PASSWORD=1
+      doctor_report_named backup PASS "backups: repository password stored"
+      ;;
+    2) doctor_report_named backup FAIL "backups: repository password unusable: ${DOCTOR_BACKUP_PASSWORD_ERROR}" ;;
+    *) doctor_report_named backup FAIL "backups: no repository password; run '${CLI_NAME} backup init'" ;;
+  esac
+  return 0
+}
+
+# doctor_backup_source_entry - backupset walk callback for one valid source:
+# WARN when its local directory is missing and FAIL when its filter file is
+# absent or does not translate (restic only takes exclude rules).
+doctor_backup_source_entry() {
+  local path="" filter="" errors="" local_label=""
+  DOCTOR_BACKUP_SOURCES=$((DOCTOR_BACKUP_SOURCES + 1))
+  path=${ backupset_resolve_local "$BACKUP_ENTRY_LOCAL";} || path="$BACKUP_ENTRY_LOCAL"
+  local_label=${ printable "$path";}
+  if [[ ! -d "$path" ]]; then
+    doctor_report_named backup WARN "backups: source '${BACKUP_ENTRY_NAME}': local dir ${local_label} does not exist"
+  fi
+  [[ -n "$BACKUP_ENTRY_FILTER" ]] || return 0
+  if ! filter=${ backup_filter_resolve "$BACKUP_ENTRY_FILTER";}; then
+    doctor_report_named backup FAIL "backups: source '${BACKUP_ENTRY_NAME}': filter file ${BACKUP_ENTRY_FILTER} not found in ${FILTER_DIR}"
+    return 0
+  fi
+  if ! errors="$(backup_filter_check "$filter" 2>&1)"; then
+    errors=${ printable "${errors//$'\n'/; }";}
+    doctor_report_named backup FAIL "backups: source '${BACKUP_ENTRY_NAME}': filter ${BACKUP_ENTRY_FILTER} is not usable: ${errors}"
+  fi
+  return 0
+}
+
+# doctor_backup_check_sources - parse backups.conf (FAIL per invalid line with
+# file:line) and check every valid source. Sets DOCTOR_BACKUP_SOURCES.
+doctor_backup_check_sources() {
+  local raw="" line="" lineno=0 file="" valid=0
+  file=${ backupset_file;}
+  DOCTOR_BACKUP_SOURCES=0
+  if [[ -f "$file" ]]; then
+    while IFS= read -r raw || [[ -n "$raw" ]]; do
+      lineno=$((lineno + 1))
+      trim_into line "$raw"
+      [[ -n "$line" && "$line" != "#"* ]] || continue
+      if backupset_parse_line "$line"; then
+        valid=$((valid + 1))
+        doctor_backup_source_entry
+      else
+        doctor_report_named backup FAIL "backups: ${file}:${lineno}: ${BACKUP_ENTRY_ERROR}"
+      fi
+    done <"$file"
+  fi
+  if [[ "$valid" -gt 0 ]]; then
+    doctor_report_named backup PASS "backups: ${valid} source(s) in ${file}"
+  else
+    doctor_report_named backup WARN "backups: no valid sources in ${file}; add one with '${CLI_NAME} backup add'"
+  fi
+  return 0
+}
+
+# doctor_backup_check_overlap - FAIL when a sync/pull/bisync entry's remote
+# overlaps the restic repository path.
+doctor_backup_check_overlap() {
+  local names="" name=""
+  names=$(backup_repo_overlaps_manifest 2>/dev/null) || names=""
+  [[ -n "$names" ]] || return 0
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    doctor_report_named backup FAIL "backups: manifest entry '${name}' overlaps the repository path '${BACKUP_REMOTE_PATH}'; the mirror could upload into or delete the repository"
+  done <<<"$names"
+  return 0
+}
+
+# doctor_backup_check_chunk_size - WARN when a non-zero BACKUP_CHUNK_SIZE is
+# smaller than the pack size (every pack would be split into several PUTs).
+doctor_backup_check_chunk_size() {
+  local chunk="" pack="${BACKUP_PACK_SIZE:-64}"
+  [[ -n "${BACKUP_CHUNK_SIZE:-}" ]] || return 0
+  chunk=${ size_suffix_bytes "$BACKUP_CHUNK_SIZE" 2>/dev/null;} || return 0
+  [[ "$chunk" -gt 0 ]] || return 0
+  case "$pack" in '' | *[!0-9]*) return 0 ;; esac
+  if [[ "$chunk" -lt "$((10#$pack * 1048576))" ]]; then
+    doctor_report_named backup WARN "backups: BACKUP_CHUNK_SIZE (${BACKUP_CHUNK_SIZE}) is smaller than BACKUP_PACK_SIZE (${pack} MiB); each pack upload is split into several requests"
+  fi
+  return 0
+}
+
+# doctor_backup_retention_summary - one-line retention policy for the report
+# and the JSON document.
+doctor_backup_retention_summary() {
+  local item="" flag="" out=""
+  local -a keep=()
+  if ! backup_keep_args_into keep 2>/dev/null; then
+    printf 'empty (forget refused)'
+    return 0
+  fi
+  for item in "${keep[@]}"; do
+    if [[ "$item" == --* ]]; then
+      flag="${item#--}"
+    else
+      out+="${out:+, }${flag} ${item}"
+    fi
+  done
+  printf '%s' "$out"
+}
+
+# doctor_backup_check_policy - PASS lines for the retention policy and the
+# maintenance cadence.
+doctor_backup_check_policy() {
+  DOCTOR_BACKUP_RETENTION=${ doctor_backup_retention_summary;}
+  doctor_report_named backup PASS "backups: retention ${DOCTOR_BACKUP_RETENTION}"
+  doctor_report_named backup PASS "backups: maintenance ${ label_bool "${BACKUP_MAINTENANCE:-0}" on off;} (forget every ${BACKUP_FORGET_EVERY:-off}, check every ${BACKUP_CHECK_EVERY:-off}, prune ${ label_bool "${BACKUP_PRUNE:-0}" on off;})"
+  return 0
+}
+
+# doctor_backup_check_cache - size of the restic cache: PASS info, WARN above
+# 2 GiB.
+doctor_backup_check_cache() {
+  local kib=""
+  [[ -d "${BACKUP_CACHE_DIR:-}" ]] || return 0
+  kib="$(du -sk "$BACKUP_CACHE_DIR" 2>/dev/null)" || return 0
+  kib="${kib%%[[:space:]]*}"
+  case "$kib" in '' | *[!0-9]*) return 0 ;; esac
+  DOCTOR_BACKUP_CACHE_BYTES=$((10#$kib * 1024))
+  if [[ "$kib" -gt 2097152 ]]; then
+    doctor_report_named backup WARN "backups: restic cache is ${ format_size_bytes "$DOCTOR_BACKUP_CACHE_BYTES";} (${BACKUP_CACHE_DIR}); consider '${CLI_NAME} cleanup'"
+  else
+    doctor_report_named backup PASS "backups: restic cache is ${ format_size_bytes "$DOCTOR_BACKUP_CACHE_BYTES";}"
+  fi
+  return 0
+}
+
+# doctor_backup_check_ages - last run (info) and last integrity check (WARN
+# when never or older than twice BACKUP_CHECK_EVERY).
+doctor_backup_check_ages() {
+  local last="" every="" now=""
+  now=${ now_epoch;}
+  if last=${ backupstate_last run;}; then
+    doctor_report_named backup PASS "backups: last run ${ backupstate_age_human run;} ago"
+  else
+    doctor_report_named backup PASS "backups: no backup run recorded yet"
+  fi
+  if last=${ backupstate_last check;}; then
+    every=${ duration_seconds "${BACKUP_CHECK_EVERY:-}" 2>/dev/null;} || every=0
+    if [[ "$every" -gt 0 && "$((now - last))" -gt "$((every * 2))" ]]; then
+      doctor_report_named backup WARN "backups: last integrity check was ${ backupstate_age_human check;} ago (cadence ${BACKUP_CHECK_EVERY}); run '${CLI_NAME} backup check'"
+    else
+      doctor_report_named backup PASS "backups: last integrity check ${ backupstate_age_human check;} ago"
+    fi
+  else
+    doctor_report_named backup WARN "backups: no integrity check yet; run '${CLI_NAME} backup check'"
+  fi
+  return 0
+}
+
+# doctor_backup_check_repository - probe the repository (`cat config`) and
+# count locks. Sets DOCTOR_BACKUP_REACHABLE and DOCTOR_BACKUP_LOCKS.
+doctor_backup_check_repository() {
+  local rc=0 hint="" stderr_text="" locks=""
+  restic_capture doctor-probe cat config || rc=$?
+  stderr_text="$(<"$RESTIC_CAPTURE_ERR")"
+  temp_discard "$RESTIC_CAPTURE_OUT"
+  temp_discard "$RESTIC_CAPTURE_ERR"
+  case "$rc" in
+    0)
+      DOCTOR_BACKUP_REACHABLE=true
+      doctor_report_named backup PASS "backups: repository reachable (${ restic_repository;})"
+      ;;
+    10)
+      DOCTOR_BACKUP_REACHABLE=false
+      doctor_report_named backup WARN "backups: repository not initialized; run '${CLI_NAME} backup init'"
+      return 0
+      ;;
+    11)
+      DOCTOR_BACKUP_REACHABLE=false
+      doctor_report_named backup WARN "backups: repository is locked; see '${CLI_NAME} backup unlock'"
+      return 0
+      ;;
+    12)
+      DOCTOR_BACKUP_REACHABLE=false
+      doctor_report_named backup FAIL "backups: wrong repository password"
+      return 0
+      ;;
+    *)
+      DOCTOR_BACKUP_REACHABLE=false
+      hint=${ restic_stderr_hint "$stderr_text";}
+      doctor_report_named backup FAIL "backups: repository probe failed: ${ restic_rc_describe "$rc";}${hint:+ (${hint})}"
+      return 0
+      ;;
+  esac
+  rc=0
+  restic_capture doctor-locks list locks || rc=$?
+  if [[ "$rc" -eq 0 ]]; then
+    locks="$(grep -c '[0-9a-f]' "$RESTIC_CAPTURE_OUT" 2>/dev/null || true)"
+    DOCTOR_BACKUP_LOCKS="${locks:-0}"
+    if [[ "$DOCTOR_BACKUP_LOCKS" -gt 0 ]]; then
+      doctor_report_named backup WARN "backups: ${DOCTOR_BACKUP_LOCKS} repository lock(s) present; if no backup is running, clear stale locks with '${CLI_NAME} backup unlock'"
+    else
+      doctor_report_named backup PASS "backups: no repository locks"
+    fi
+  fi
+  temp_discard "$RESTIC_CAPTURE_OUT"
+  temp_discard "$RESTIC_CAPTURE_ERR"
+  return 0
+}
+
+# doctor_check_backup - the restic backup setup: nothing but one PASS line
+# when the feature is unused, else the offline checks (restic, password,
+# backups.conf, locals, filters, overlap, sizing, policy) and, unless
+# --offline, a repository probe plus the maintenance ages. Never dies.
+doctor_check_backup() {
+  local count="" rc=0
+  count=${ backupset_count;}
+  doctor_backup_password_state || rc=$?
+  if [[ "$count" -eq 0 && "$rc" -eq 1 ]]; then
+    doctor_report_named backup PASS "backups: not configured (add sources with '${CLI_NAME} backup add')"
+    return 0
+  fi
+  DOCTOR_BACKUP_CONFIGURED=1
+  doctor_backup_check_restic
+  doctor_backup_check_password
+  doctor_backup_check_sources
+  doctor_backup_check_overlap
+  doctor_backup_check_chunk_size
+  doctor_backup_check_policy
+  doctor_backup_check_cache
+  if [[ "$DOCTOR_OFFLINE" -eq 1 ]]; then
+    doctor_report_named backup PASS "backups: offline: repository not probed"
+  elif [[ "$DOCTOR_BACKUP_PASSWORD" -eq 1 ]] && restic_available && remote_configured; then
+    doctor_backup_check_repository
+  fi
+  doctor_backup_check_ages
+  return 0
+}
+
+# doctor_json_backup - emit the top-level "backup" object.
+doctor_json_backup() {
+  local value="" epoch=""
+  output_json_object_begin backup
+  output_json_kv_bool configured "$DOCTOR_BACKUP_CONFIGURED"
+  output_json_kv_raw sources "$DOCTOR_BACKUP_SOURCES"
+  output_json_kv restic_version "$DOCTOR_BACKUP_VERSION"
+  output_json_kv repository "${ restic_repository;}"
+  output_json_kv_bool password_stored "$DOCTOR_BACKUP_PASSWORD"
+  output_json_kv_raw reachable "$DOCTOR_BACKUP_REACHABLE"
+  output_json_kv_raw locks "$DOCTOR_BACKUP_LOCKS"
+  for value in run forget check; do
+    epoch=${ backupstate_last "$value";} || epoch="null"
+    output_json_kv_raw "last_${value}" "$epoch"
+  done
+  output_json_kv retention "$DOCTOR_BACKUP_RETENTION"
+  output_json_kv_raw cache_bytes "$DOCTOR_BACKUP_CACHE_BYTES"
+  output_json_object_end
+}
+
 cmd_doctor() {
   opt_begin "offline:b json:b" doctor "" "$@"
   opt_guard doctor
@@ -1666,6 +1983,14 @@ cmd_doctor() {
   DOCTOR_EXTERNAL_CHECKED=0
   DOCTOR_BIG_FOLDER_OVER=""
   DOCTOR_BIG_FOLDER_CHECKED=0
+  DOCTOR_BACKUP_CONFIGURED=0
+  DOCTOR_BACKUP_SOURCES=0
+  DOCTOR_BACKUP_VERSION=""
+  DOCTOR_BACKUP_PASSWORD=0
+  DOCTOR_BACKUP_REACHABLE=null
+  DOCTOR_BACKUP_LOCKS=null
+  DOCTOR_BACKUP_RETENTION=""
+  DOCTOR_BACKUP_CACHE_BYTES=null
   # A configured TLS file that is missing or unreadable must be reported as a
   # FAIL, not abort load_settings: tolerate it here and let
   # doctor_check_tls_client explain it.
@@ -1706,6 +2031,7 @@ cmd_doctor() {
   doctor_check_watch
   doctor_check_network
   doctor_check_runtime
+  doctor_check_backup
   doctor_check_policies
   doctor_check_case_clashes
   doctor_check_e2ee_paths

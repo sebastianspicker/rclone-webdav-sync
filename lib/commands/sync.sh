@@ -1563,6 +1563,19 @@ sync_parse_options() {
   return 0
 }
 
+# sync_backup_overlap_guard - refuse to run while any pair's remote folder
+# overlaps the restic repository path (a hand-edited manifest or a changed
+# BACKUP_REMOTE_PATH can bypass the guards in folders/provision); a sync
+# would otherwise upload into or delete from the repository.
+sync_backup_overlap_guard() {
+  local overlaps=""
+  if overlaps=${ backup_repo_overlaps_manifest;}; then
+    overlaps="${overlaps//$'\n'/, }"
+    die "sync pair(s) ${overlaps} overlap the restic repository path '${BACKUP_REMOTE_PATH}' (BACKUP_REMOTE_PATH); fix the manifest or the setting before syncing"
+  fi
+  return 0
+}
+
 # sync_bootstrap - step 2 of cmd_sync: everything between option parsing
 # and the entry walk, in the run's original order: `--list` renders the
 # same rows as `sciebo list` (lib/config/manifest.sh's manifest_list_render;
@@ -1608,6 +1621,7 @@ sync_bootstrap() {
   fi
   sync_quota_warn
   manifest_index_load
+  sync_backup_overlap_guard
   if [[ -n "$only" ]]; then
     manifest_require_name "$only"
   fi
