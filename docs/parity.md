@@ -72,7 +72,7 @@ The desktop client's safe-by-default behavior, skipping risky files, asking befo
 | E2EE and external-storage gates | `E2EE_POLICY=warn\|exclude\|allow` (`exclude`), `EXTERNAL_STORAGE_POLICY=allow\|warn\|ask\|skip` (`ask`) | Checked by the sync preflight, `doctor`, and `folders choose`. For pull/bisync entries, an E2EE remote root skips the source and an encrypted subfolder is excluded; server-mounted external storages (`oc:permissions` `M`) ask on a TTY and skip otherwise (subfolders only warn). |
 | Big-folder handling | `BIG_FOLDER_POLICY=warn\|ask\|skip` (`ask`), `BIG_FOLDER_EXISTING_POLICY=warn\|skip\|allow` (`warn`), `BIG_FOLDER_SIZE` | The wizard gates a newly picked remote folder above `BIG_FOLDER_SIZE` (asking on a terminal); already-configured sources that grew past it are warned about by default, skipped with `skip`, and left silent with `allow`. |
 | Symlinks and checksums | `SYMLINK_POLICY=skip\|follow\|translate` (`skip`), `CHECKSUM=0\|1` (`0`) | Symlinks are skipped like the desktop client; `follow` dereferences and `translate` writes rclone `.rclonelink` files. `CHECKSUM=1` compares by checksum (`--checksum`; bisync `--compare size,modtime,checksum`) where the server supports it. |
-| Move-to-trash and the delete guard | `MOVE_TO_TRASH=0\|1`, `LOCAL_TRASH_DIR`, `ASK_DELETE=1`, `DELETE_FILES_THRESHOLD=100`, `MAX_DELETE`, `sync --yes` | Pull/bisync deletions can go to the local trash (`--backup-dir`, default `<state>/trash`) instead of disappearing. An apply that would delete more than the threshold is stopped (`--max-delete`): a terminal asks once, a non-interactive run fails the source unless `sync --yes` is given, and an explicit `MAX_DELETE` wins. |
+| Move-to-trash and the delete guard | `MOVE_TO_TRASH=0\|1`, `LOCAL_TRASH_DIR`, `ASK_DELETE=1`, `DELETE_FILES_THRESHOLD=100`, `MAX_DELETE`, `sync --yes` | Pull/bisync deletions can go to the local trash (`--backup-dir`, default `<state>/trash`) instead of disappearing. An apply that would delete more than the threshold (bisync: more than half of the files, rclone's own brake) is stopped (`--max-delete`): a terminal asks once, a non-interactive run fails the source unless `sync --yes` is given, and an explicit `MAX_DELETE` wins. |
 | Policy reporting | `doctor [--json]`, `server capabilities [--json]`, `account status [--json]`, `folders list [--json]`, `folders remove --purge` | `doctor` reports the effective policies, per-source E2EE/external-storage scans, local case clashes, the delete guard, and big folders; `--json` adds the structured policy objects. `--offline` prints the policies without scanning. |
 <!-- src: parity.md#parity-implemented -->
 
@@ -167,9 +167,10 @@ run touches:
 - `E2EE_POLICY=exclude` keeps end-to-end encrypted folders out of the
   transfer; `allow` downloads the encrypted blobs, which other clients can
   read but this tool cannot.
-- `ASK_DELETE=1` with `DELETE_FILES_THRESHOLD=100` stops an apply that would
-  delete more files. A `sync` on a terminal asks once; a non-interactive run
-  needs `sync --yes`. `MOVE_TO_TRASH=1` avoids the deletion question for
+- `ASK_DELETE=1` with `DELETE_FILES_THRESHOLD=100` stops a sync/pull apply
+  that would delete more files; a bisync apply stops when it would delete
+  more than half of the files (rclone bisync's own limit). A `sync` on a
+  terminal asks once; a non-interactive run needs `sync --yes`. `MOVE_TO_TRASH=1` avoids the deletion question for
   pull/bisync by moving local files into `LOCAL_TRASH_DIR` (or `BACKUP_DIR`).
 <!-- src: parity.md#policy-caveats -->
 

@@ -832,6 +832,19 @@ share_print_sharees() {
     < <(xml_records "$1" element shareType shareWith label)
 }
 
+# share_link_options_given - rc 0 when any option that shapes a public link
+# (--password, --expire, --note, --permissions, --label, --download,
+# --file-drop, --file-request) was given. copy-link reuses an existing link
+# only without them, so a requested password or expiry is never dropped.
+share_link_options_given() {
+  local opt="" setvar=""
+  for opt in password expire note permissions label download file_drop file_request; do
+    setvar="OPT_${opt}_SET"
+    [[ -z "${!setvar:-}" ]] || return 0
+  done
+  return 1
+}
+
 # share_run_link SUB - create (or reuse, for copy-link) a public link share.
 share_run_link() {
   local sub="$1" mask="" default_mask=1
@@ -844,7 +857,7 @@ share_run_link() {
   require_safe_remote_path "$SHARE_ARG1"
   SHARE_REMOTE="$SHARE_ARG1"
   share_load_remote
-  if [[ "$sub" == "copy-link" ]] && share_reuse_link; then
+  if [[ "$sub" == "copy-link" ]] && ! share_link_options_given && share_reuse_link; then
     mask="$SHARE_RECORD_PERMISSIONS"
   else
     mask="$(share_parse_permissions "${OPT_permissions:-}" "$default_mask")"

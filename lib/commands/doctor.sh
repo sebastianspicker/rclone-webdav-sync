@@ -821,7 +821,8 @@ doctor_check_network() {
 }
 
 # doctor_check_filters - validate clutter.txt plus every *.txt filter file
-# through rclone's own --filter-from parser.
+# through rclone's own --filter-from parser. fleeting.txt is skipped: it holds
+# the `cleanup --junk` globs, not filter rules.
 doctor_check_filters() {
   local filter="" checked=0 failures=0
   local -a filters=() validate_args=()
@@ -833,7 +834,7 @@ doctor_check_filters() {
   while IFS= read -r filter; do
     filters+=("$filter")
     validate_args+=(--filter-from "$filter")
-  done < <(find "$FILTER_DIR" -maxdepth 1 -type f -name '*.txt' 2>/dev/null | LC_ALL=C sort)
+  done < <(find "$FILTER_DIR" -maxdepth 1 -type f -name '*.txt' ! -name fleeting.txt 2>/dev/null | LC_ALL=C sort)
   checked="${#filters[@]}"
   if [[ "$checked" -eq 0 ]]; then
     doctor_report FAIL "no *.txt filter files found in ${FILTER_DIR}"
@@ -1435,7 +1436,7 @@ doctor_check_delete_guard() {
   case "$ask" in
     1)
       case "$max" in
-        -1) doctor_report_named "delete guard" PASS "delete guard: ASK_DELETE=1, DELETE_FILES_THRESHOLD=${threshold} (runs stop after ${threshold} deletion(s) unless --yes)" ;;
+        -1) doctor_report_named "delete guard" PASS "delete guard: ASK_DELETE=1, DELETE_FILES_THRESHOLD=${threshold} (sync/pull runs stop after ${threshold} deletion(s), bisync runs at more than half of the files, unless --yes)" ;;
         *) doctor_report_named "delete guard" PASS "delete guard: ASK_DELETE=1, DELETE_FILES_THRESHOLD=${threshold}, MAX_DELETE=${max} (explicit cap overrides the guard)" ;;
       esac
       ;;

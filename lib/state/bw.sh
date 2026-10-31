@@ -29,8 +29,9 @@ _bw_file() {
 
 # bw_rate_valid RATE - true when RATE is safe to hand to rclone's --bwlimit:
 # empty (the marker's "off"), the literal off, or a number with an optional
-# decimal fraction, an optional [kKMGT][i]B suffix, and an optional /second
-# (or /s) tail. Whitespace, control bytes, and any other marker content
+# decimal fraction and an optional rclone size suffix: b/B (bytes), or one
+# of k/M/G/T/P/E in either case, optionally followed by i, I, or iB (rclone
+# rejects "MB", "kb", and a "/s" tail, so those are refused here too). Whitespace, control bytes, and any other marker content
 # fail the anchored pattern, so a tampered marker is ignored on read
 # instead of reaching rclone's argv (sync.sh consumes bw_effective_limit
 # verbatim).
@@ -39,7 +40,7 @@ bw_rate_valid() {
   case "$rate" in
     '' | off) return 0 ;;
   esac
-  [[ "$rate" =~ ^([0-9]+([.][0-9]+)?|[.][0-9]+)([kKMGT][iI]?[Bb]?)?([/][sS](econd)?)?$ ]]
+  [[ "$rate" =~ ^([0-9]+([.][0-9]+)?|[.][0-9]+)([bB]|[kKmMgGtTpPeE](i|I|iB)?)?$ ]]
 }
 
 # bw_marker_read - parse the marker into BW_MARKER_UP, BW_MARKER_DOWN, and

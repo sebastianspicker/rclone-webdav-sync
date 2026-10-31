@@ -61,8 +61,8 @@ validate_profile_name() {
   local name="$1"
   [[ -n "$name" ]] || die "profile name must not be empty"
   case "$name" in
-    . | .. | *[!A-Za-z0-9._-]*)
-      die "invalid profile name '${ printable "$name";}': use letters, digits, dot, dash, or underscore"
+    . | .. | -* | *[!A-Za-z0-9._-]*)
+      die "invalid profile name '${ printable "$name";}': use letters, digits, dot, dash, or underscore (not starting with a dash)"
       ;;
   esac
   [[ "$name" != "default" ]] || die "'default' is reserved; omit --profile for the default profile"
@@ -395,6 +395,30 @@ _load_settings_files() {
   fi
 }
 
+# profile_remote_inherited - rc 0 when a named profile is active but neither
+# of its settings files assigns RCLONE_REMOTE, so it silently uses the
+# project's (the default profile's) rclone remote. setup and logout refuse
+# that case: writing or deleting the remote would change the default account.
+profile_remote_inherited() {
+  local f=""
+  [[ -n "${SCIEBO_PROFILE:-}" && -n "${PROFILE_DIR:-}" ]] || return 1
+  [[ "${RCLONE_REMOTE:-}" == "${SETTINGS_PROJECT_RCLONE_REMOTE:-}" ]] || return 1
+  for f in "${SETTINGS_PROFILE_FILE:-}" "${SETTINGS_PROFILE_LOCAL_FILE:-}"; do
+    [[ -n "$f" && -f "$f" ]] || continue
+    LC_ALL=C grep -E -q '^[[:space:]]*(export[[:space:]]+)?RCLONE_REMOTE=' "$f" 2>/dev/null && return 1
+  done
+  return 0
+}
+
+# require_own_profile_remote ACTION - die with the fix when
+# profile_remote_inherited; ACTION names what was refused.
+require_own_profile_remote() {
+  profile_remote_inherited || return 0
+  die "profile '${SCIEBO_PROFILE}' has no RCLONE_REMOTE of its own and would ${1} the default profile's rclone remote '${RCLONE_REMOTE}'.
+  Give it its own remote: add RCLONE_REMOTE=${SETTINGS_PROJECT_RCLONE_REMOTE}-${SCIEBO_PROFILE} to ${SETTINGS_PROFILE_LOCAL_FILE:-its settings.local.env}
+  (or RCLONE_REMOTE=${RCLONE_REMOTE} there to share the default account on purpose)."
+}
+
 # _apply_profile_layer - a named profile layers its own defaults and
 # overrides on top of the project-wide files. Profile assignments are plain
 # (like settings.local.env), so they win over environment variables.
@@ -558,6 +582,9 @@ _finalize_settings_rclone() {
 load_settings() {
   settings_init_paths
   _load_settings_files
+  # The project-level remote, before a profile can override it; see
+  # profile_remote_inherited.
+  SETTINGS_PROJECT_RCLONE_REMOTE="${RCLONE_REMOTE:-}"
   _apply_profile_layer
   _require_settings
   _derive_settings_paths

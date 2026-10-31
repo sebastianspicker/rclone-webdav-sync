@@ -132,7 +132,7 @@ provision_read_password() {
     fi
     # opt_read_fd_secret (lib/base/core.sh) owns the shared fd vocabulary, keeping
     # provision worded like nextcloudcmd's --password-fd.
-    opt_read_fd_secret provision --apppassword-fd out "$fd"
+    opt_read_fd_secret provision --apppassword-fd "$out" "$fd"
     return 0
   fi
   [[ -n "${OPT_apppassword:-}" ]] || usage_error provision "--apppassword is required"
@@ -291,6 +291,7 @@ cmd_provision() {
   provision_profile_create "$profile" "$remote"
   SCIEBO_PROFILE="$profile"
   load_settings
+  require_own_profile_remote overwrite
   ensure_state_dirs
   mkdir -p "$(dirname "$RCLONE_CONFIG")"
 

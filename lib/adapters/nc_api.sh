@@ -205,13 +205,13 @@ nc_user_info() {
   ocs_request GET '/cloud/user'
   fields="$(xml_fields "$HTTP_BODY" id displayname email)"
   record_split "$fields" NC_USER_ID NC_USER_DISPLAY NC_USER_EMAIL
-  [[ -n "$NC_USER_ID" ]] || NC_USER_ID="$HTTP_USER"
+  [[ -n "$NC_USER_ID" ]] || NC_USER_ID="${HTTP_DAV_UID:-$HTTP_USER}"
 }
 
 # nc_avatar_url [SIZE] - the authenticated avatar URL for the active user.
 nc_avatar_url() {
   [[ -n "$HTTP_BASE" ]] || http_remote_info
-  printf '%s/avatar/%s/%s' "$HTTP_BASE" "$(http_urlencode "$HTTP_USER")" "${1:-128}"
+  printf '%s/avatar/%s/%s' "$HTTP_BASE" "$(http_urlencode "${HTTP_DAV_UID:-$HTTP_USER}")" "${1:-128}"
 }
 
 # nc_avatar_download FILE [SIZE] - download the avatar; dies on failure.

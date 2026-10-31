@@ -25,6 +25,7 @@ Subcommands:
                           staleness of the server cache
   show NAME               print one filter file (bare file name)
   check                   validate every *.txt filter with rclone's parser
+                          (fleeting.txt holds cleanup globs and is skipped)
 
 `filters sync` replaces the cache (sync-exclude.lst) and the generated
 server filter (server-exclude.txt) atomically and takes no run lock.
@@ -253,7 +254,8 @@ filters_cmd_show() {
 }
 
 # filters_cmd_check - parse every *.txt filter with rclone and report
-# PASS/FAIL per file; exit 1 when any file is rejected.
+# PASS/FAIL per file; exit 1 when any file is rejected. fleeting.txt (the
+# `cleanup --junk` globs) is not a filter and is skipped.
 filters_cmd_check() {
   local file="" name="" message="" failures=0 checked=0
   local -a files=() check_args=()
@@ -269,7 +271,7 @@ filters_cmd_check() {
     [[ -n "$file" ]] || continue
     files+=("$file")
     check_args+=(--filter-from "$file")
-  done < <(find "$FILTER_DIR" -maxdepth 1 -type f -name '*.txt' 2>/dev/null | LC_ALL=C sort)
+  done < <(find "$FILTER_DIR" -maxdepth 1 -type f -name '*.txt' ! -name fleeting.txt 2>/dev/null | LC_ALL=C sort)
   checked="${#files[@]}"
   if [[ "$checked" -eq 0 ]]; then
     warn "no *.txt filter files found in ${FILTER_DIR}"

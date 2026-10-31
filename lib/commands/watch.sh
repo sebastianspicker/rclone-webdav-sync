@@ -244,12 +244,16 @@ watch_scan_all() {
 }
 
 # watch_run_sync NAME - spawn one sync for NAME. Never in-process, never
-# with the run lock held here; a paused watcher skips with a warning.
+# with the run lock held here; a paused watcher skips with a warning. Returns
+# 1 when the change was not synced (paused, or the sync failed, e.g. because
+# another run held the lock), so the caller keeps it pending; the last-run
+# stamp is set either way, so retries are spaced by the min interval.
 watch_run_sync() {
   local name="${1:-}" rc=0
   if pause_active; then
     warn "watch: sync is paused; not syncing '${name}' (run '${CLI_NAME} resume')"
-    return 0
+    watch_last_run_set "$name"
+    return 1
   fi
   watch_note "watch: ${name} changed, syncing"
   if [[ "$WATCH_RUN_QUIET" == true ]]; then
@@ -257,9 +261,9 @@ watch_run_sync() {
   else
     "${PROJECT_DIR}/bin/sciebo" sync --apply --quiet --only "$name" || rc=$?
   fi
-  [[ "$rc" -eq 0 ]] || warn "watch: sync for '${name}' failed (exit ${rc})"
+  [[ "$rc" -eq 0 ]] || warn "watch: sync for '${name}' failed (exit ${rc}); will retry"
   watch_last_run_set "$name"
-  return 0
+  [[ "$rc" -eq 0 ]]
 }
 
 # watch_notify TITLE MESSAGE - desktop notification through notify_send;
@@ -415,7 +419,9 @@ watch_flush_due() {
       last=${ watch_last_run "$name";}
       if [[ $((now_epoch - last)) -ge "$WATCH_RUN_INTERVAL" ]]; then
         WATCH_PENDING[i]=""
-        watch_run_sync "$name"
+        # A change that was not synced stays pending (re-armed now), so it is
+        # retried instead of being dropped.
+        watch_run_sync "$name" || WATCH_PENDING[i]=${ now_mono;}
       fi
     fi
     i=$((i + 1))
@@ -483,21 +489,22 @@ watch_loop() {
 }
 
 # watch_once - one detection cycle: scan every source and sync the changed
-# ones immediately, then report the summary.
+# ones immediately, then report the summary. Returns 1 when a changed source
+# could not be synced (paused or failed).
 watch_once() {
-  local i=0 changed=0 count="${#WATCH_SRC_NAMES[@]}"
+  local i=0 changed=0 count="${#WATCH_SRC_NAMES[@]}" failed=0
   watch_scan_all
   changed="$WATCH_SCAN_CHANGED"
   i=0
   while [[ "$i" -lt "$count" ]]; do
     if [[ -n "${WATCH_PENDING[$i]:-}" ]]; then
       WATCH_PENDING[i]=""
-      watch_run_sync "${WATCH_SRC_NAMES[$i]}"
+      watch_run_sync "${WATCH_SRC_NAMES[$i]}" || failed=1
     fi
     i=$((i + 1))
   done
   watch_note "watch: once: ${count} source(s) checked, ${changed} changed"
-  return 0
+  [[ "$failed" -eq 0 ]]
 }
 
 # --- signals -----------------------------------------------------------------
@@ -594,7 +601,7 @@ cmd_watch() {
 
   if [[ "$WATCH_RUN_ONCE" == true ]]; then
     watch_pid_guard
-    watch_once
+    watch_once || return 1
     return 0
   fi
   watch_pid_claim

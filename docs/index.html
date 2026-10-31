@@ -352,7 +352,7 @@ bin/sciebo status           <span class="c"># last run per source</span>
       <li>Don't run <code>bisync</code> on repositories you are actively working on.</li>
       <li><code>pull</code> deletions are permanent locally, and <code>--resync</code> can delete in both directions.</li>
       <li>Bisync conflict copies stay local by default (<code>CONFLICT_UPLOAD=0</code>); <code>conflicts --resolve</code> reviews and resolves them, and <code>keep-both</code> renames a copy so the next run uploads it.</li>
-      <li>Safe-by-default policies exclude non-portable names, local case-only collisions, and E2EE folders, and gate external storages and big folders; an apply that would delete more than <code>DELETE_FILES_THRESHOLD</code> files stops unless <code>sync --yes</code> is given.</li>
+      <li>Safe-by-default policies exclude non-portable names, local case-only collisions, and E2EE folders, and gate external storages and big folders; an apply that would delete more than <code>DELETE_FILES_THRESHOLD</code> files (bisync: more than half of the files) stops unless <code>sync --yes</code> is given.</li>
       <li>Multi-account setups are supported through profiles (<code>--profile</code>, <code>account import</code>). Not implemented: Nextcloud E2EE, a native file-provider/virtual-files overlay, and a background daemon or notify_push.</li>
       <li>This tool is not supported by the sciebo operators; report problems with it here, not to sciebo support. Keep backups.</li>
     </ul>

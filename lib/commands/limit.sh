@@ -109,6 +109,12 @@ cmd_limit() {
   [[ -z "${OPT_up_SET:-}" && -z "${OPT_down_SET:-}" && -z "${OPT_until_SET:-}" ]] || writes=1
   limit_validate_options "$writes" "$show" "$clear"
   load_settings --no-rclone
+  # Refuse rates rclone's --bwlimit would reject before they reach the marker;
+  # a stored bad rate would fail every later sync.
+  bw_rate_valid "$up" ||
+    usage_error limit "invalid --up rate '${ printable "$up";}' (examples: 512k, 2M, 1.5M, 1G)"
+  bw_rate_valid "$down" ||
+    usage_error limit "invalid --down rate '${ printable "$down";}' (examples: 512k, 2M, 1.5M, 1G)"
   if [[ "$clear" == true ]]; then
     bw_marker_clear
     limit_emit_current

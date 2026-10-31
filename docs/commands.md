@@ -219,7 +219,7 @@ becomes `rclone-sciebo/<name>` when the default service is left unchanged.
 | Subcommand | Behavior |
 | --- | --- |
 | `list` (default) | table of `PROFILE`, `REMOTE`, `BASE`, `SOURCES`, `KEYCHAIN SERVICE`; named profiles also show `ready` or `no state yet`. |
-| `add NAME [--remote R] [--base B]` | create `config/profiles/NAME` with an empty sync list, an empty `folders.conf`, an empty `roots.conf`, a copied `filters/clutter.txt`, a generated `settings.local.env`, and `state/profiles/NAME`. With `--remote`/`--base` those values are written; without them, run `setup --login` under the profile next. |
+| `add NAME [--remote R] [--base B]` | create `config/profiles/NAME` with an empty sync list, an empty `folders.conf`, an empty `roots.conf`, a copied `filters/clutter.txt`, a generated `settings.local.env`, and `state/profiles/NAME`. With `--remote`/`--base` those values are written; without `--remote` the profile gets its own rclone remote `<RCLONE_REMOTE>-NAME` (e.g. `sciebo-work`), then run `setup --login` under the profile. A profile that inherits the default profile's remote (one created by an older version, without `RCLONE_REMOTE` in its settings) is refused by `setup` and `logout`, which would otherwise rewrite or delete the default account's remote; set `RCLONE_REMOTE` in the profile's `settings.local.env` as the message says. |
 | `import [options]` | import accounts and folder pairs from the Nextcloud desktop client's `nextcloud.cfg` (see below). |
 | `remove NAME [--yes]` | delete the profile's config directory and state directory. Prompts on a terminal; without a TTY (or with `--non-interactive`) `--yes` is required, otherwise exit 2. |
 | `use NAME` | print how to activate the profile: `export SCIEBO_PROFILE=NAME` or `sciebo --profile NAME ...`. |
@@ -255,7 +255,10 @@ maps the values that have an equivalent in this tool — `chunkSize`,
 `newBigFolderSizeLimit`, and `logDebug` — into the profile's
 `settings.local.env`; the desktop client's folder pairs
 (`localPath`/`targetPath`) are added as `bisync` pairs, and pairs that are
-already configured are counted as skipped. The desktop client's per-folder
+already configured are counted as skipped. Because `targetPath` is relative
+to the account root, a profile without sync entries also gets
+`REMOTE_BASE="."`; a profile that already has entries keeps its
+`REMOTE_BASE` (with a warning), so its imported folders resolve below it. The desktop client's per-folder
 `paused` and `ignoreHiddenFiles` booleans are persisted as the pair's
 `paused`/`hidden` flags under `PAIR_FLAGS_DIR` (default
 `<STATE_DIR>/pairs`), so an imported paused pair is skipped by `sync` and
@@ -499,7 +502,7 @@ Manage the rclone filter files in `FILTER_DIR`.
 | `sync [--json]` | fetch the server's `sync-exclude.lst`, cache the raw body (`state/sync-exclude.lst`), and regenerate the server filter (`filters/server-exclude.txt`). Atomic; takes no run lock. |
 | `list [--json]` | table of `*.txt` filter files (`NAME`, `RULES`, `MTIME`, `SERVER`) plus the age and staleness of the server cache. |
 | `show NAME` | print one filter file (bare file name). |
-| `check` | validate every `*.txt` filter with rclone's parser, one `PASS`/`FAIL` line per file; exits 1 when any file is rejected. A directory with no `*.txt` files warns. |
+| `check` | validate every `*.txt` filter with rclone's parser (except `fleeting.txt`, the `cleanup --junk` globs), one `PASS`/`FAIL` line per file; exits 1 when any file is rejected. A directory with no `*.txt` files warns. |
 
 `filters sync` honors `HTTP_TIMEOUT`, `HTTP_RETRIES`, `HTTP_RETRY_DELAY`,
 `HTTP_FOLLOW_REDIRECTS`/`HTTP_MAX_REDIRS`, and `TLS_INSECURE`/`--trust`; an
@@ -601,6 +604,11 @@ for that pair alone, like `SKIP_HIDDEN=1` does globally. `account import`
 writes both flags from the desktop client's per-folder `paused` and
 `ignoreHiddenFiles`.
 
+When `choose`, `add` or `import` records a `bisync` pair whose local folder
+does not exist yet, the folder is created (the first `sync --resync
+--apply` fills it). Upload (`sync`) pairs are not given an empty folder;
+`pull` pairs create theirs on the first apply.
+
 `choose` options:
 
 | Option | Effect |
@@ -610,7 +618,7 @@ writes both flags from the desktop client's per-folder `paused` and
 | `--mode MODE` | fix the direction for all picks (`sync`, `pull`, or `bisync`); otherwise every pick is prompted with `DEFAULT_PAIR_MODE` as default. |
 | `--select` | pick which immediate subfolders to sync (include flow); the complement becomes excludes. |
 | `--no-fzf` | always use the numbered menu, even when `fzf` is installed. |
-| `--no-dry-run` | do not offer the `check --only NAME` dry run after adding pairs. |
+| `--no-dry-run` | do not offer the `check --only NAME` dry run after adding pairs (a new bisync pair gets `check --resync --only NAME`, a preview of its first resync). |
 
 The picker shows unconfigured remote folders (already-configured ones are
 skipped with a note), uses `fzf` when available and interactive, and
@@ -821,13 +829,17 @@ Behavior highlights:
   (default, `--skip-links`), `follow` (`--copy-links`), or `translate`
   (`--links`).
 - The delete guard: with `ASK_DELETE=1` (the default) and an unlimited
-  `MAX_DELETE` (`-1`), each apply passes `--max-delete
+  `MAX_DELETE` (`-1`), each `sync`/`pull` apply passes `--max-delete
   DELETE_FILES_THRESHOLD` (default 100, per
-  [docs/settings.md](settings.md)). When rclone stops because the
-  threshold was reached, a terminal asks once to continue without the
-  cap; a non-interactive run fails the entry with `delete guard: more
-  than N file(s) to delete; re-run with --yes to allow`. `--yes` disables
-  the guard for the run, and an explicit `MAX_DELETE >= 0` overrides it.
+  [docs/settings.md](settings.md)). A `bisync` entry keeps rclone
+  bisync's own brake instead, which stops a run that would delete more
+  than half of the files on either side (for bisync, `--max-delete` is a
+  percentage, so the file-count threshold is not passed). When rclone
+  stops at the limit, a terminal asks once to continue past it; a
+  non-interactive run fails the entry with `delete guard: … to delete;
+  re-run with --yes to allow`. `--yes` lifts the guard for the run
+  (bisync: a run stopped by the brake is re-run with `--force`), and an
+  explicit `MAX_DELETE >= 0` overrides it.
   <!-- src: commands.md#sync; the literal default (100) is documented in docs/settings.md, cross-referenced here, not restated as this file's own claim -->
 - The backup repository guard: every `sync` and `check` run verifies that no
   pair's remote folder overlaps `BACKUP_REMOTE_PATH` and refuses to run
@@ -950,7 +962,7 @@ active.
 | `--only NAME` | watch only this source; repeatable. An unknown name fails. |
 | `--remote-interval N` | check the remote every N seconds and notify when it differs; 0 disables (default `WATCH_REMOTE_INTERVAL`). |
 | `--backend BACKEND` | `auto`, `fswatch`, `inotify`, or `poll` (default `WATCH_BACKEND`); a requested backend that is not installed fails. |
-| `--once` | run one detection cycle, sync affected sources, exit. |
+| `--once` | run one detection cycle, sync affected sources, exit (exit 1 when a changed source could not be synced). Without `--once`, a change whose sync fails, is paused, or finds another run holding the lock stays pending and is retried. |
 | `--notify` | allow desktop notifications (overrides `NOTIFY`). Mutually exclusive with `--no-notify`. |
 | `--no-notify` | disable desktop notifications even when `NOTIFY=1`. Mutually exclusive with `--notify`. |
 | `--quiet` | only warnings and errors. |
@@ -1333,7 +1345,7 @@ Options for `install`:
 | Option | Effect |
 | --- | --- |
 | `--at-login` | start the agent at login/boot (`RunAtLoad` on launchd, `[Install] WantedBy=default.target` on systemd); overrides `SCHEDULE_AT_LOGIN=1`. |
-| `--profiles LIST` | render one extra agent per profile, labelled `<LAUNCHD_LABEL>.<profile>`, each running with `--profile`; comma or space separated, overrides `SCHEDULE_PROFILES`. Every listed profile directory must exist. Applies to the backup agent too. |
+| `--profiles LIST` | render one extra agent per profile, labelled `<LAUNCHD_LABEL>.<profile>`, each running with `--profile`; comma or space separated, overrides `SCHEDULE_PROFILES`. Every listed profile directory must exist. Applies to the backup agent too. Run under `--profile NAME`, `schedule install`/`status`/`uninstall` address only that profile's own `<LAUNCHD_LABEL>.NAME` agent. From the default profile, `schedule install` removes `<LAUNCHD_LABEL>.NAME` agents that are not listed in `SCHEDULE_PROFILES`/`--profiles`, so list every profile there if you manage them from the default profile. |
 | `--backup` | also install the daily backup agent (sets `SCHEDULE_BACKUP=1` for this run). |
 
 The run lock prevents overlap with manual runs. Mounts are never
@@ -1351,9 +1363,12 @@ state/runstate listings, the newest logs (last 200 lines each, at most
 five, plus the newest three `backup-*.log` files), `backups.conf`, the
 `backup info --offline --json` report, capabilities, and the scheduler/mount
 status. The restic repository password never appears in it. Passwords, secrets,
-tokens, and proxy values are replaced with `REDACTED`; `.env` is never
-included. The doctor always runs offline, so the archive needs no network
-access.
+tokens, and proxy values are replaced with `REDACTED`, in settings and
+rclone config as well as in log lines (Nextcloud app passwords, curl
+`-u user:password`, `key=value` and JSON credential fields, URL
+userinfo); `.env` is never included. The masking is pattern-based, so look
+over the archive before you share it. The doctor always runs offline, so
+the archive needs no network access.
 
 | Option | Effect |
 | --- | --- |
@@ -1540,8 +1555,8 @@ sciebo trash empty [--yes]
 ```
 
 List or clean up the Nextcloud trashbin. The listing (default) is
-read-only: original name, original location, deletion time, and size.
-IDs are the last path segment printed by the listing.
+read-only: original name, original location, deletion time, size, and
+the item ID (last column) that `restore` and `rm` take.
 
 | Action | Behavior |
 | --- | --- |
@@ -1618,7 +1633,7 @@ shares default to read-only (`1`), the other share types to all (`31`).
 | `send-email ID` | ask the server to email an existing share to its recipient (`POST /shares/{id}/send-email`). |
 | `remote-list [--json]` | list the accepted federated shares (`GET /remote_shares`) as an `ID`/`Type`/`Owner`/`Target` table, or as `{"remote_shares":[...]}` with `--json`. |
 | `search QUERY` | find sharees: users, groups, email, federated, circles, guests, and Talk rooms (a server that rejects the extra types is retried with users and groups only). Results are labelled with the sharee type. |
-| `copy-link SUB [options]` | reuse SUB's existing public link or create one, then copy it with `pbcopy` when available (otherwise print it). |
+| `copy-link SUB [options]` | reuse SUB's existing public link or create one, then copy it with `pbcopy` when available (otherwise print it). With `--password`, `--expire`, `--note`, `--permissions`, `--label`, `--download`, `--file-drop` or `--file-request` a new link with those settings is always created. |
 | `copy-internal SUB` | copy a direct internal link (`<base>/index.php/f/<fileid>`) with `pbcopy` when available (otherwise print it). |
 | `incoming [--json]` | list shares shared with you, adding a `Shared-by` column; `--json` prints the shares as JSON. |
 

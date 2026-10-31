@@ -160,15 +160,20 @@ conflicts_find() {
 # conflicts_derive_base NAME [KIND] - derive the original base name from a
 # conflict file's basename: cut at the first kind-specific suffix, strip
 # trailing separators (space, dot, dash, underscore, open paren), and append
-# the conflict file's extension when the result has none. Prints nothing
-# when no usable name remains.
+# the extension that follows the marker (`name (conflicted copy …).ext`),
+# unless the result already ends in it. Only an alphanumeric last segment
+# counts as an extension, so a dotted date inside the marker is not one.
+# Prints nothing when no usable name remains.
 conflicts_derive_base() {
-  local name="$1" kind="${2:-copy}" result="" last="" ext=""
+  local name="$1" kind="${2:-copy}" result="" last="" ext="" tail=""
   if [[ "$kind" == "case" ]]; then
     result="${name%%"${CONFLICTS_CASE_PATTERN}"*}"
+    tail="${name#*"${CONFLICTS_CASE_PATTERN}"}"
   else
     result="${name%%"${CONFLICT_PATTERN}"*}"
+    tail="${name#*"${CONFLICT_PATTERN}"}"
   fi
+  [[ "$tail" != "$name" ]] || tail=""
   while [[ -n "$result" ]]; do
     last="${result:${#result}-1:1}"
     case "$last" in
@@ -176,9 +181,11 @@ conflicts_derive_base() {
       *) break ;;
     esac
   done
-  if [[ -n "$result" && "$result" != *.* && "$name" == *.* ]]; then
-    ext="${name##*.}"
-    [[ -n "$ext" ]] && result="${result}.${ext}"
+  if [[ -n "$result" && "$tail" == *.* ]]; then
+    ext="${tail##*.}"
+    if [[ -n "$ext" && "$ext" != *[![:alnum:]]* && "$result" != *".${ext}" ]]; then
+      result="${result}.${ext}"
+    fi
   fi
   printf '%s' "$result"
 }
@@ -533,10 +540,16 @@ _conflicts_apply_keep_local() {
 }
 
 # _conflicts_apply_keep_remote - the keep-remote arm: delete the conflict
-# file, keeping the original; a failed delete warns.
+# file, keeping the original; a failed delete warns. When the original is
+# missing the conflict copy is the only one, so it is kept and counted as
+# failed.
 _conflicts_apply_keep_remote() {
-  local p_rel=""
-  if rm -f -- "$CONFLICTS_REC_CONFLICT"; then
+  local p_rel="" p_base=""
+  if [[ ! -f "$CONFLICTS_REC_BASE_ABS" ]]; then
+    p_rel=${ printable "${CONFLICTS_REC_REL}";}
+    p_base=${ printable "${CONFLICTS_REC_BASE_REL}";}
+    _conflicts_count fail "conflicts: keeping '${p_rel}': the original '${p_base}' does not exist"
+  elif rm -f -- "$CONFLICTS_REC_CONFLICT"; then
     _conflicts_count ok
   else
     p_rel=${ printable "${CONFLICTS_REC_REL}";}
@@ -846,9 +859,12 @@ conflicts_run_list() {
 
 # conflicts_run_resolve ONLY MODE APPLY - plan the resolve actions for the
 # manifest (filtered by ONLY) and, with APPLY, confirm and carry them out;
-# print the plan or result. Returns the command status.
+# print the plan or result. Returns the command status. An apply holds the
+# run lock from planning to the last move, so a scheduled or `watch` sync
+# cannot run while files are renamed or deleted inside its folders.
 conflicts_run_resolve() {
   local only="$1" mode="$2" apply="$3" total=0
+  [[ "$apply" != true ]] || acquire_lock
   manifest_each conflicts_each_resolve_entry "$only" "$mode"
   total="${#CONFLICTS_PLAN[@]}"
   if [[ "$apply" == true ]]; then

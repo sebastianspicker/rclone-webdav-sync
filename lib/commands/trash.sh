@@ -8,6 +8,10 @@ TRASH_RECORD_LOCATION=""
 TRASH_RECORD_DELETED=""
 TRASH_RECORD_SIZE=""
 TRASH_RECORD_ID=""
+# Listing layout shared by the header and trash_print_row. The ID column is
+# what `trash restore ID` and `trash rm ID` take.
+TRASH_LIST_HEADER_FORMAT='%-32s %-32s %-16s %-10s %s\n'
+TRASH_LIST_HEADERS=("Original name" "Location" "Deleted" "Size" "ID")
 
 # IDs validated for the current subcommand (newline-separated).
 TRASH_IDS=""
@@ -40,8 +44,7 @@ Usage: sciebo trash [list]
 
 List or clean up the Nextcloud trashbin of the configured remote. The
 listing (`list`, the default) is read-only: original name, original
-location, deletion time, and size. IDs are the last path segment printed
-by the listing.
+location, deletion time, size, and the ID that restore and rm take.
 
 Commands:
   list           list trashed items (default)
@@ -116,9 +119,9 @@ trash_valid_id() {
 # trash_collection_url / trash_item_url ID / trash_restore_url ID - WebDAV
 # URLs of the trash collection, one trashed item, and an item's absolute
 # restore target (Destination header).
-trash_collection_url() { nc_dav_url "trashbin/${HTTP_USER}/trash"; }
-trash_item_url() { nc_dav_url "trashbin/${HTTP_USER}/trash/$(http_urlencode "$1")"; }
-trash_restore_url() { nc_dav_url "trashbin/${HTTP_USER}/restore/$(http_urlencode "$1")"; }
+trash_collection_url() { nc_dav_url "trashbin/${HTTP_DAV_UID:-$HTTP_USER}/trash"; }
+trash_item_url() { nc_dav_url "trashbin/${HTTP_DAV_UID:-$HTTP_USER}/trash/$(http_urlencode "$1")"; }
+trash_restore_url() { nc_dav_url "trashbin/${HTTP_DAV_UID:-$HTTP_USER}/restore/$(http_urlencode "$1")"; }
 
 # trash_propfind - PROPFIND the trash collection (Depth 1) and print the
 # raw XML. HTTP failures die through nc_dav_request.
@@ -203,7 +206,8 @@ trash_print_row() {
   size=${ printable "$TRASH_RECORD_SIZE";}
   when=${ epoch_to_stamp_or_raw "$deleted";}
   size=${ format_size_bytes "$size";}
-  printf '%-32s %-32s %-16s %s\n' "$name" "$location" "$when" "$size"
+  # shellcheck disable=SC2059  # the shared listing format
+  printf "$TRASH_LIST_HEADER_FORMAT" "$name" "$location" "$when" "$size" "${ printable "$TRASH_RECORD_ID";}"
   return 0
 }
 
@@ -215,7 +219,7 @@ trash_cmd_list() {
   http_load_context
   xml="$(trash_propfind)"
   output_rows "no trashed files" trash_print_row 0 \
-    '%-32s %-32s %-16s %s\n' "Original name" "Location" "Deleted" "Size" \
+    "$TRASH_LIST_HEADER_FORMAT" "${TRASH_LIST_HEADERS[@]}" \
     < <(trash_parse_xml "$xml")
   return 0
 }

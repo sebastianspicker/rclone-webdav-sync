@@ -147,8 +147,10 @@ process on the same machine.
 
 ### Proxy credentials
 
-- An explicit `http://` or `https://` `PROXY` with embedded userinfo
-  (`http://user:pass@host`) is exported to the curl/rclone child as
+- An `http://` or `https://` `PROXY` with embedded userinfo
+  (`http://user:pass@host`, any letter case in the scheme, or the
+  scheme-less `user:pass@host:port`, read as http unless
+  `PROXY_TYPE=socks5`) is exported to the curl/rclone child as
   `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY`, so it stays out of the child argv
   (the environment is readable only by the same user, same as the other
   password paths). A `socks5://` `PROXY` still travels as `-x` for curl and

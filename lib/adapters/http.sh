@@ -28,6 +28,10 @@
 
 HTTP_BASE=""
 HTTP_USER=""
+# The internal user id from the remote URL (/remote.php/dav/files/<uid>/),
+# which names the user's DAV collections. It differs from the login name on
+# LDAP/SSO servers; HTTP_USER (the login) stays the credential.
+HTTP_DAV_UID=""
 HTTP_DAV_ROOT=""
 HTTP_FILES_ROOT=""
 HTTP_OCS_ROOT=""
@@ -107,7 +111,15 @@ http_remote_info() {
   [[ -n "$base" ]] || die "cannot derive the server base from remote url '$(printable "$url")'"
   HTTP_BASE="$base"
   HTTP_DAV_ROOT="${base}/remote.php/dav"
-  HTTP_FILES_ROOT="${HTTP_DAV_ROOT}/files/${HTTP_USER}"
+  HTTP_DAV_UID="${url#*/remote.php/dav/files/}"
+  HTTP_DAV_UID="${HTTP_DAV_UID%%/*}"
+  [[ -n "$HTTP_DAV_UID" ]] || HTTP_DAV_UID="$HTTP_USER"
+  case "$HTTP_DAV_UID" in
+    . | .. | *[?#]* | *%2[fF]*)
+      die "remote url '$(printable "$url")' has an invalid user segment after /remote.php/dav/files/; re-run '${CLI_NAME} setup'"
+      ;;
+  esac
+  HTTP_FILES_ROOT="${HTTP_DAV_ROOT}/files/${HTTP_DAV_UID}"
   HTTP_OCS_ROOT="${base}/ocs/v2.php"
 }
 
@@ -554,7 +566,14 @@ _http_run_curl() {
   if [[ -n "$proxy_env" ]]; then
     export HTTP_PROXY="$proxy_env" HTTPS_PROXY="$proxy_env" ALL_PROXY="$proxy_env"
   fi
-  curl -sS --max-time "${HTTP_TIMEOUT:-30}" --connect-timeout "${HTTP_CONNECT_TIMEOUT:-15}" \
+  # API calls are capped at HTTP_TIMEOUT in total. A file transfer
+  # (http_fetch_to_file sets HTTP_TRANSFER=1) may take as long as it needs
+  # and is only aborted when it stalls: under 1 byte/s for HTTP_TIMEOUT s.
+  local -a time_limit=(--max-time "${HTTP_TIMEOUT:-30}")
+  if [[ "${HTTP_TRANSFER:-0}" == 1 ]]; then
+    time_limit=(--speed-limit 1 --speed-time "${HTTP_TIMEOUT:-30}")
+  fi
+  curl -sS "${time_limit[@]}" --connect-timeout "${HTTP_CONNECT_TIMEOUT:-15}" \
     --retry "${HTTP_RETRIES:-2}" --retry-delay "${HTTP_RETRY_DELAY:-1}" --retry-all-errors --retry-connrefused \
     ${follow[@]+"${follow[@]}"} \
     ${tls_flag:+"$tls_flag"} ${http_ver_flag:+"$http_ver_flag"} ${SCIEBO_DEBUG:+-v} \
@@ -959,34 +978,84 @@ http_fetch_stdout() {
 # statuses load the body into HTTP_BODY and die through http_die_http_error.
 # When HTTP_FETCH_EMPTY_MSG is set and the successful body is empty, dies with
 # that message instead of moving the temp (TARGET keeps its previous content);
-# the variable is cleared by every call. Returns 0 on a moved body.
+# the variable is cleared by every call. When HTTP_FETCH_RESUME_FROM is set
+# to TARGET's size, the request asks for the rest (`-C N`, a Range header):
+# a 206 body is appended to a copy of TARGET, a 200 body replaces it, and a
+# 416 leaves the already complete TARGET alone; also cleared by every call.
+# Returns 0 on a moved body.
 http_fetch_to_file() {
-  local url="$1" target="$2" notfound="$3" rc=0 tmp="" empty_msg=""
+  local url="$1" target="$2" notfound="$3" rc=0 tmp="" body="" empty_msg="" resume_from=""
   shift 3
   empty_msg="${HTTP_FETCH_EMPTY_MSG:-}"
+  resume_from="${HTTP_FETCH_RESUME_FROM:-}"
   HTTP_FETCH_EMPTY_MSG=""
+  HTTP_FETCH_RESUME_FROM=""
   [[ ! -L "$target" ]] || die "refusing to write through symlink: ${target}"
   temp_mktemp_into tmp "${target}.tmp.XXXXXX" ||
     die "cannot create temp file for ${target}"
-  if http_curl "$url" "$@" >"$tmp"; then rc=0; else rc=$?; fi
+  if [[ -n "$resume_from" ]]; then
+    # Resume: the body (a 206 range starting at RESUME_FROM) goes to a second
+    # temp and is joined with a copy of the partial TARGET below, so TARGET
+    # itself is only replaced by the complete result.
+    temp_mktemp_into body "${target}.tmp.XXXXXX" || {
+      temp_discard "$tmp"
+      die "cannot create temp file for ${target}"
+    }
+    if HTTP_TRANSFER=1 http_curl "$url" -C "$resume_from" "$@" >"$body"; then rc=0; else rc=$?; fi
+    if [[ "$rc" -eq 33 ]]; then
+      # curl exit 33: the server ignores byte ranges. Fetch the whole file
+      # instead; its 200 body replaces TARGET below.
+      if HTTP_TRANSFER=1 http_curl "$url" "$@" >"$body"; then rc=0; else rc=$?; fi
+    fi
+  else
+    body="$tmp"
+    if HTTP_TRANSFER=1 http_curl "$url" "$@" >"$tmp"; then rc=0; else rc=$?; fi
+  fi
+  if [[ -n "$resume_from" && "$HTTP_CODE" == "416" ]]; then
+    # Range not satisfiable: TARGET already holds the whole file.
+    temp_discard "$body"
+    temp_discard "$tmp"
+    return 0
+  fi
   if [[ "$rc" -ne 0 || "$HTTP_CODE" == "000" ]]; then
+    [[ "$body" == "$tmp" ]] || temp_discard "$body"
     temp_discard "$tmp"
     die "GET ${url} failed: ${HTTP_ERROR:-curl exit ${rc}}"
   fi
   case "$HTTP_CODE" in
     2* | 3*) ;;
     404)
+      [[ "$body" == "$tmp" ]] || temp_discard "$body"
       temp_discard "$tmp"
       [[ -z "$notfound" ]] || die "$notfound"
       die "GET ${url} failed: HTTP 404"
       ;;
     *)
       # shellcheck disable=SC2034  # read by http_die_http_error via HTTP_BODY
-      HTTP_BODY="$(<"$tmp")"
+      HTTP_BODY="$(<"$body")"
+      [[ "$body" == "$tmp" ]] || temp_discard "$body"
       temp_discard "$tmp"
       http_die_http_error GET "$url"
       ;;
   esac
+  if [[ "$body" != "$tmp" ]]; then
+    # 206: partial TARGET + range. Any other success (a server that ignored
+    # the Range header and sent 200) is the whole file on its own.
+    if [[ "$HTTP_CODE" == "206" ]]; then
+      { cat -- "$target" && cat -- "$body"; } >"$tmp" || {
+        temp_discard "$body"
+        temp_discard "$tmp"
+        die "cannot write ${target}"
+      }
+    else
+      cat -- "$body" >"$tmp" || {
+        temp_discard "$body"
+        temp_discard "$tmp"
+        die "cannot write ${target}"
+      }
+    fi
+    temp_discard "$body"
+  fi
   if [[ -n "$empty_msg" && ! -s "$tmp" ]]; then
     temp_discard "$tmp"
     die "$empty_msg"

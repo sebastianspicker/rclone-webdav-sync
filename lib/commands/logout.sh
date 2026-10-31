@@ -94,6 +94,7 @@ cmd_logout() {
   # item is never silently kept).
   revoke="${OPT_revoke:-0}"
   load_settings
+  require_own_profile_remote delete
 
   # Soft confirmation gate, previously logout_confirm: --yes skips the
   # question, a non-interactive run without --yes is a usage error, and a

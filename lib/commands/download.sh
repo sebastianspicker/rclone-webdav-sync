@@ -2,7 +2,7 @@
 # download.sh command module - download a remote path below the remote base.
 #
 # A single file is fetched over WebDAV through lib/adapters/http.sh (binary-safe, and
-# resumable with --resume/--continue via curl's `-C -`); a destination that
+# resumable with --resume/--continue via a Range request); a destination that
 # already matches the remote size is skipped unless --force. A directory (or
 # a DEST ending in "/") falls back to `rclone copy` with hydrate's filter
 # layering and reports the copied byte/file counts from rclone's JSON stats.
@@ -169,12 +169,12 @@ download_emit_dir() {
 
 # download_dav_file SUB DEST FORCE RESUME - GET SUB over WebDAV into DEST.
 # Skips the transfer when DEST matches the remote size (unless FORCE or
-# RESUME) and continues a partial DEST with `-C -` when RESUME. The body goes
+# RESUME) and continues a partial DEST from its current size when RESUME
+# (a Range request; see http_fetch_to_file). The body goes
 # through the shared http_fetch_to_file, so a DEST that is a symlink is
 # refused and a failed request never truncates an existing DEST.
 download_dav_file() {
   local sub="$1" dest="$2" force="$3" resume="$4" url="" size=0
-  local -a resume_arg=()
   url="$(nc_path_url "${REMOTE_BASE}/${sub}")"
   DOWNLOAD_SKIPPED=0
   DOWNLOAD_FILES=0
@@ -194,8 +194,19 @@ download_dav_file() {
     fi
   fi
   mkdir -p "$(dirname "$dest")" || die "cannot create destination for ${dest}"
-  [[ "$resume" -eq 0 || ! -f "$dest" ]] || resume_arg=(-C -)
-  http_fetch_to_file "$url" "$dest" "" ${resume_arg[@]+"${resume_arg[@]}"}
+  [[ "$force" -eq 0 ]] || resume=0
+  if [[ "$resume" -ne 0 && -s "$dest" ]]; then
+    # shellcheck disable=SC2034  # read by http_fetch_to_file in lib/adapters/http.sh
+    HTTP_FETCH_RESUME_FROM="$(wc -c <"$dest" | tr -d ' ')"
+  fi
+  http_fetch_to_file "$url" "$dest" ""
+  if [[ "$resume" -ne 0 && -n "$DOWNLOAD_REMOTE_SIZE" ]]; then
+    # A resumed file is only as good as its join: when the remote changed
+    # since the partial download, the sizes disagree.
+    size="$(wc -c <"$dest" | tr -d ' ')"
+    [[ "$size" == "$DOWNLOAD_REMOTE_SIZE" ]] ||
+      die "resumed download of '$(printable "$sub")' has ${size} bytes, the remote ${DOWNLOAD_REMOTE_SIZE}; the remote file may have changed. Re-run with --force to download it again"
+  fi
   DOWNLOAD_FILES=1
   if [[ -n "$DOWNLOAD_REMOTE_SIZE" ]]; then
     DOWNLOAD_BYTES="$DOWNLOAD_REMOTE_SIZE"

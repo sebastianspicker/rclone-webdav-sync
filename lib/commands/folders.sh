@@ -198,6 +198,24 @@ folders_check_remote() {
   fi
 }
 
+# folders_create_bisync_local MODE LOCAL - create the local folder of a new
+# bisync pair, so `check` and `sync --resync --apply` can run right away (the
+# first resync fills it from the remote). Sync (upload) pairs are left alone:
+# an empty upload source would mirror deletions onto the remote. A failure
+# only warns; the pair is already recorded and sync reports the missing dir.
+folders_create_bisync_local() {
+  local mode="$1" dir=""
+  [[ "$mode" == bisync ]] || return 0
+  expand_local_path_into dir "$2"
+  [[ ! -d "$dir" ]] || return 0
+  if mkdir -p -- "$dir" 2>/dev/null; then
+    printf 'Created local folder %s\n' "${ printable "$dir";}"
+  else
+    warn "cannot create local folder '${ printable "$dir";}'; create it before the first sync"
+  fi
+  return 0
+}
+
 # folders_commit_pending [STYLE] - commit the pending P_* pairs. Every pair
 # (and its remote) is validated before the first pair filter or manifest
 # entry is written, so a bad pair can never leave a partial selection
@@ -232,6 +250,7 @@ folders_commit_pending() {
       filter="$MANIFEST_PAIR_FILTER"
     fi
     manifest_append_pair "${P_MODES[$i]}" "${P_LOCALS[$i]}" "${P_SUBS[$i]}" "$filter"
+    folders_create_bisync_local "${P_MODES[$i]}" "${P_LOCALS[$i]}"
     remote_display=${ remote_spec "${P_SUBS[$i]}";}
     remote_display=${ printable "$remote_display";}
     if [[ "$style" == "import" ]]; then
@@ -720,8 +739,12 @@ folders_edit_compute_filter() {
 
 # folders_edit_commit_apply - rewrite the manifest and pair filter for the
 # edit; the caller holds the run lock. Returns 1 when the pair is already
-# gone (nothing was written).
+# gone (nothing was written). The new rules are validated before the old
+# line is removed, so a bad exclude cannot lose the pair.
 folders_edit_commit_apply() {
+  if [[ "$FOLDERS_EDIT_FILTER_CHANGE" -eq 1 && "${#FOLDERS_EDIT_RULES_ARR[@]}" -gt 0 ]]; then
+    manifest_check_pair_rules "${FOLDERS_EDIT_RULES_ARR[@]}"
+  fi
   manifest_remove_pair "$FOLDERS_EDIT_NAME" || return 1
   if [[ "$FOLDERS_EDIT_FILTER_CHANGE" -eq 1 ]]; then
     if [[ -n "$FOLDERS_EDIT_NEW_FILTER" ]]; then
@@ -1063,10 +1086,12 @@ choose_remote_dirs() {
 }
 
 # choose_pick_mode SUB MODE_FIXED - set CHOOSE_PAIR_MODE from MODE_FIXED or
-# an interactive 1/2/3 prompt (three invalid answers abort).
+# an interactive 1/2/3 prompt (three invalid answers abort). Every pick
+# starts from an empty answer, so one pick's direction never carries over.
 choose_pick_mode() {
   local sub="$1" fixed="$2" num=1 answer="" tries=0
   local -a modes=(bisync pull sync)
+  CHOOSE_PAIR_MODE=""
   if [[ -n "$fixed" ]]; then
     CHOOSE_PAIR_MODE="$fixed"
     return 0
@@ -1333,18 +1358,27 @@ choose_gather_pair() {
 }
 
 # choose_offer_dry_run - offer to dry-run the pairs just added, one
-# `sciebo check --only` per pair; rc 1 if any run failed.
+# `sciebo check --only` per pair (`check --resync` for a bisync pair that was
+# never initialised, previewing its first resync); rc 1 if any run failed.
 choose_offer_dry_run() {
-  local name="" rc=0 failed=0
+  local name="" rc=0 failed=0 i=0 note=""
+  local -a resync=()
   # Shared [Y/n] gate. EOF now declines like a typed "no" (the old bare
   # ui_ask treated a closed stdin as the default yes), so a run whose stdin
   # ended does not launch the dry-run children.
   ui_confirm_default_yes 'Run a dry run for the new pairs now?' || return 0
-  for name in "${P_NAMES[@]}"; do
-    rc=0
-    "${PROJECT_DIR}/bin/sciebo" check --only "$name" || rc=$?
+  for ((i = 0; i < ${#P_NAMES[@]}; i++)); do
+    name="${P_NAMES[$i]}" rc=0 note=""
+    resync=()
+    # A new bisync pair has no state yet, so a plain check would FAIL with
+    # "bisync state missing"; preview the first resync instead.
+    if [[ "${P_MODES[$i]:-}" == bisync ]] && ! bisync_initialized "$name"; then
+      resync=(--resync)
+      note=" (preview of the first --resync; apply it with: ${CLI_NAME} sync --resync --apply --only ${name})"
+    fi
+    "${PROJECT_DIR}/bin/sciebo" check ${resync[@]+"${resync[@]}"} --only "$name" || rc=$?
     if [[ "$rc" -eq 0 ]]; then
-      printf 'dry run ok: %s\n' "$name"
+      printf 'dry run ok: %s%s\n' "$name" "$note"
     else
       printf 'dry run FAILED: %s (exit %s)\n' "$name" "$rc"
       failed=1

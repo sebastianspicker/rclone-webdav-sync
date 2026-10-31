@@ -149,16 +149,25 @@ policy_trash_args() {
   return 0
 }
 
-# policy_delete_guard_args OUT - when ASK_DELETE=1 and MAX_DELETE is unlimited
-# (-1), append the --max-delete guard capped at DELETE_FILES_THRESHOLD to the
-# argv array named OUT; nothing when ASK_DELETE is off or an explicit
-# MAX_DELETE cap is set.
+# policy_delete_guard_armed - rc 0 when the ASK_DELETE guard applies: ASK_DELETE=1
+# and MAX_DELETE is unlimited (-1). An explicit MAX_DELETE cap wins.
+policy_delete_guard_armed() {
+  [[ "${ASK_DELETE:-0}" == "1" && "${MAX_DELETE:--1}" == "-1" ]]
+}
+
+# policy_delete_guard_args OUT MODE - when the guard is armed, append its
+# rclone arguments for MODE to the argv array named OUT. sync and pull get
+# --max-delete DELETE_FILES_THRESHOLD (a file count). bisync gets nothing:
+# for `rclone bisync`, --max-delete is a percentage with a built-in default
+# of 50, so passing the file-count threshold would raise (or switch off)
+# rclone's own brake; the guard keeps that default and only adds the ask-once
+# handling (policy_delete_guard_hit matches bisync's abort text).
 policy_delete_guard_args() {
   # shellcheck disable=SC2178  # nameref to an argv array
   local -n out_ref="$1"
-  local threshold="${DELETE_FILES_THRESHOLD:-100}"
-  [[ "${ASK_DELETE:-0}" == "1" ]] || return 0
-  [[ "${MAX_DELETE:--1}" == "-1" ]] || return 0
+  local mode="${2:-sync}" threshold="${DELETE_FILES_THRESHOLD:-100}"
+  policy_delete_guard_armed || return 0
+  [[ "$mode" != bisync ]] || return 0
   case "$threshold" in
     '' | *[!0-9]*) threshold=100 ;;
   esac
@@ -166,15 +175,38 @@ policy_delete_guard_args() {
   return 0
 }
 
+# policy_delete_guard_override_args OUT MODE - the arguments that lift the
+# brake for a run the user allowed (--yes, or a confirmed prompt): bisync
+# needs --force to pass its built-in percentage check; sync and pull need
+# nothing (the guard's --max-delete is simply left out).
+policy_delete_guard_override_args() {
+  # shellcheck disable=SC2178  # nameref to an argv array
+  local -n out_ref="$1"
+  [[ "${2:-}" == bisync ]] || return 0
+  policy_delete_guard_armed || return 0
+  out_ref+=(--force)
+  return 0
+}
+
+# policy_delete_guard_label MODE - the guard's limit in words, for messages.
+policy_delete_guard_label() {
+  if [[ "${1:-}" == bisync ]]; then
+    printf 'more than half of the files (rclone bisync safety limit)'
+  else
+    printf 'more than %s file(s)' "${DELETE_FILES_THRESHOLD:-100}"
+  fi
+}
+
 # policy_delete_guard_hit LOGFILE - rc 0 when LOGFILE contains rclone's
-# max-delete abort notice (wording differs across rclone versions, so all
-# known spellings match case-insensitively).
+# max-delete abort notice: the sync/copy wordings (which differ across rclone
+# versions) and bisync's "Safety abort: too many deletes", matched
+# case-insensitively.
 policy_delete_guard_hit() {
   local logfile="${1:-}"
   [[ -n "$logfile" && "$logfile" != "-" && "$logfile" != "/dev/stdout" ]] || return 1
   [[ -f "$logfile" ]] || return 1
   LC_ALL=C grep -a -E -i -q \
-    -- '(--max-delete threshold reached|deletions stopped due to|maximum delete limit)' \
+    -- '(--max-delete threshold reached|deletions stopped due to|maximum delete limit|safety abort: too many deletes)' \
     "$logfile" 2>/dev/null
 }
 

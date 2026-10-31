@@ -213,6 +213,10 @@ account_init_profile() {
   # may already point at the profile being created; it must honor --confdir.
   [[ -e "${dir}/filters/clutter.txt" ]] ||
     cp "${_SCIEBO_CONF_BASE:-${CONFIG_DIR}}/filters/clutter.txt" "${dir}/filters/clutter.txt" 2>/dev/null || true
+  # Every profile gets its own rclone remote unless one was named: sharing
+  # the project's remote would let this profile's setup or logout rewrite
+  # or delete the default account.
+  [[ -n "$remote" ]] || remote="${SETTINGS_PROJECT_RCLONE_REMOTE:-${RCLONE_REMOTE:-sciebo}}-${name}"
   if [[ ! -e "${dir}/settings.local.env" ]]; then
     {
       printf '# Profile settings for %s.\n' "$name"
@@ -226,10 +230,29 @@ account_init_profile() {
   return 0
 }
 
+# account_profile_arg OUT - after opt_begin, take the single positional
+# profile name from OPT_EXTRA into OUT. A missing name, an unknown option
+# (anything starting with "-"), or a second positional is a usage error, so
+# `account add --help` prints the usage instead of creating "--help".
+account_profile_arg() {
+  local -n _apa_out="$1"
+  local item="" count=0
+  _apa_out=""
+  while IFS= read -r item; do
+    [[ -n "$item" ]] || continue
+    [[ "$item" != -* ]] || usage_error account "unknown option: ${ printable "$item";}"
+    count=$((count + 1))
+    [[ "$count" -eq 1 ]] || usage_error account "unexpected argument: ${ printable "$item";}"
+    _apa_out="$item"
+  done <<<"${OPT_EXTRA:-}"
+  [[ -n "$_apa_out" ]] || usage_error account "a profile name is required"
+  return 0
+}
+
 account_add() {
-  local name="$1" remote="" base="" dir=""
-  shift
+  local name="" remote="" base="" dir=""
   opt_begin "remote:s base:s" account "" "$@"
+  account_profile_arg name
   remote="${OPT_remote:-}"
   base="${OPT_base:-}"
   validate_profile_name "$name"
@@ -249,19 +272,24 @@ account_add() {
   account_exists "$name" &&
     die "profile '$(printable "$name")' already exists at $(account_dir "$name")"
   dir="$(account_dir "$name")"
-  account_init_profile "$name" "$remote" "$base" || die "cannot create ${dir}"
-  log "created profile '$(printable "$name")' in ${dir}"
+  # The project settings name the default remote the new profile's own
+  # remote is derived from (<RCLONE_REMOTE>-<name>).
   if [[ -z "$remote" ]]; then
+    load_settings --no-rclone
+    remote="${SETTINGS_PROJECT_RCLONE_REMOTE:-${RCLONE_REMOTE:-sciebo}}-${name}"
+  fi
+  account_init_profile "$name" "$remote" "$base" || die "cannot create ${dir}"
+  log "created profile '$(printable "$name")' in ${dir} (rclone remote '${remote:-${RCLONE_REMOTE:-sciebo}-${name}}')"
+  if [[ -z "${OPT_remote:-}" ]]; then
     printf 'next: %s --profile %s setup --login     # configure the account\n' "$CLI_NAME" "$name"
   fi
   printf 'next: %s --profile %s folders choose    # add folders to sync\n' "$CLI_NAME" "$name"
 }
 
 account_remove() {
-  local name="$1" dir="" state_dir=""
-  shift
+  local name="" dir="" state_dir=""
   opt_begin "yes:b" account "" "$@"
-  opt_guard account
+  account_profile_arg name
   [[ "$name" != "default" ]] || die "the default profile cannot be removed"
   validate_profile_name "$name"
   account_exists "$name" || die "no such profile: $(printable "$name")"
@@ -272,16 +300,16 @@ account_remove() {
   # the same message, and a declined prompt logs "aborted, nothing changed"
   # so the command still exits 0 without removing anything.
   ui_confirm_mutation_soft account "refusing to remove '${name}' without --yes" \
-    "remove profile '${name}' (config and state)?" \
+    "remove profile '${name}' (config and state, including its local trash ${state_dir}/trash)?" \
     "aborted, nothing changed" || return 0
   rm -rf "$dir" "$state_dir" || die "cannot remove profile '${name}'"
   log "removed profile '$(printable "$name")'"
 }
 
 account_use() {
-  local name="$1"
-  shift
-  [[ $# -eq 0 ]] || usage_error account "unknown option: $1"
+  local name=""
+  opt_begin "" account "" "$@"
+  account_profile_arg name
   if [[ "$name" == "default" ]]; then
     log "the default profile is active when SCIEBO_PROFILE is empty"
     return 0
@@ -964,6 +992,16 @@ account_import_build_plan() {
     else
       IMPORT_PLAN_BLOCKED[k]="no"
     fi
+    # The desktop client's targetPath is relative to the account root, so the
+    # imported profile gets REMOTE_BASE=".". A target that already has sync
+    # entries keeps its REMOTE_BASE (changing it would repoint them); the
+    # imported pairs then resolve below it, which is said out loud.
+    if [[ "${ account_import_count_entries "$profile";}" -gt 0 ]]; then
+      warn "import: '${profile}' already has sync entries; its REMOTE_BASE is kept, so imported folders resolve below it, not at the account root (import into a new profile to avoid this)"
+    else
+      [[ -z "$settings" ]] || settings+=$'\n'
+      IMPORT_PLAN_SETTINGS[k]="${settings}REMOTE_BASE=\".\""
+    fi
     IMPORT_PLAN_APPLIED[k]="0"
     IMPORT_PLAN_STATUS[k]="planned"
     k=$((k + 1))
@@ -1514,7 +1552,7 @@ account_status() {
 }
 
 cmd_account() {
-  local sub="${1:-list}" name=""
+  local sub="${1:-list}"
   [[ $# -gt 0 ]] && shift
   # Dispatcher-level help exits here, before any dependency loads, so
   # `sciebo account --help` parses none of them.
@@ -1534,25 +1572,16 @@ cmd_account() {
       account_list
       ;;
     add)
-      [[ $# -gt 0 ]] || usage_error account "a profile name is required"
-      name="$1"
-      shift
-      account_add "$name" "$@"
+      account_add "$@"
       ;;
     import)
       account_import "$@"
       ;;
     remove)
-      [[ $# -gt 0 ]] || usage_error account "a profile name is required"
-      name="$1"
-      shift
-      account_remove "$name" "$@"
+      account_remove "$@"
       ;;
     use)
-      [[ $# -gt 0 ]] || usage_error account "a profile name is required"
-      name="$1"
-      shift
-      account_use "$name" "$@"
+      account_use "$@"
       ;;
     info)
       account_info "$@"

@@ -66,6 +66,17 @@ fi
 
 [[ -n "$VERSION" ]] || die_install "VERSION file missing"
 
+# The installed tree holds the user's config/ and state/, and sciebo only
+# reads settings files owned by the user who runs it, so an install is per
+# user. A `sudo make install` would produce a root-owned tree that no other
+# account can run; refuse it unless root itself is the intended user.
+if [[ "${EUID:-$(id -u)}" -eq 0 && -n "${SUDO_USER:-}" && "${SCIEBO_INSTALL_AS_ROOT:-0}" != 1 ]]; then
+  die_install "refusing to install under sudo: the installation is per user and would only run as root.
+  Install as your own user instead (default PREFIX=~/.local, or any PREFIX you own):
+    make install
+  To install for the root account on purpose, set SCIEBO_INSTALL_AS_ROOT=1."
+fi
+
 mkdir -p "$DEST" "${PREFIX%/}/bin" "${PREFIX%/}/share/man/man1" ||
   die_install "cannot create install directories under ${PREFIX}"
 

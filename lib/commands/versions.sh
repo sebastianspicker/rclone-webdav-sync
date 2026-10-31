@@ -125,7 +125,7 @@ versions_parse_xml() {
 # versions_version_url FILEID VERSION - print the absolute WebDAV URL of one
 # version of FILEID.
 versions_version_url() {
-  nc_dav_url "versions/${HTTP_USER}/versions/$1/$2"
+  nc_dav_url "versions/${HTTP_DAV_UID:-$HTTP_USER}/versions/$1/$2"
 }
 
 # versions_resolve SUB - fill VERSIONS_FILEID and VERSIONS_LIST_XML with the
@@ -139,7 +139,7 @@ versions_resolve() {
   [[ -n "$fileid" ]] ||
     die "no file id for '${sub}' below ${RCLONE_REMOTE}:${REMOTE_BASE}/ (not found, or not a file)"
   VERSIONS_FILEID="$fileid"
-  nc_dav_request PROPFIND "$(nc_dav_url "versions/${HTTP_USER}/versions/${fileid}")" 1 "$VERSIONS_LIST_BODY"
+  nc_dav_request PROPFIND "$(nc_dav_url "versions/${HTTP_DAV_UID:-$HTTP_USER}/versions/${fileid}")" 1 "$VERSIONS_LIST_BODY"
   VERSIONS_LIST_XML="$HTTP_BODY"
 }
 
@@ -224,7 +224,7 @@ versions_run_download() {
 # versions_run_restore VERSION URL - MOVE the version back to its file.
 versions_run_restore() {
   local version="$1" url="$2" dest=""
-  dest="$(nc_dav_url "versions/${HTTP_USER}/restore/target")"
+  dest="$(nc_dav_url "versions/${HTTP_DAV_UID:-$HTTP_USER}/restore/target")"
   nc_dav_request_allow MOVE "$url" "" "" -H "Destination: ${dest}"
   versions_check_action MOVE "$url" "$version"
   printf 'restored %s\n' "$version"

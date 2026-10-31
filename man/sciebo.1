@@ -307,11 +307,12 @@ The delete guard: with
 .BR ASK_DELETE=1
 (the default) and an unlimited
 .BR MAX_DELETE ,
-each apply passes
+each sync and pull apply passes
 .B \-\-max\-delete
-.BR DELETE_FILES_THRESHOLD .
-When rclone stops because the threshold was reached, a terminal asks once to
-continue without the cap; a non-interactive run fails the entry with a
+.BR DELETE_FILES_THRESHOLD ;
+a bisync apply keeps rclone bisync's own limit (more than half of the files).
+When rclone stops at the limit, a terminal asks once to
+continue past it; a non-interactive run fails the entry with a
 message to re-run with
 .BR \-\-yes .
 An explicit
@@ -722,8 +723,8 @@ each running with
 .B \-\-backup
 Install only: also install the daily backup agent.
 .SS "sciebo trash [subcommand] [options]"
-List or clean up the Nextcloud trashbin. The listing is read-only; IDs are
-the last path segment printed by the listing.
+List or clean up the Nextcloud trashbin. The listing is read-only; its
+last column is the item ID that restore and rm take.
 .TP
 .B list
 List trashed items (default).

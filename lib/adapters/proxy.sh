@@ -39,28 +39,40 @@ _proxy_classify() {
         _pc_err="PROXY_TYPE=${type} requires PROXY to be set"
         return 0
       fi
-      _proxy_classify_url "$1" "$2" "$proxy"
+      _proxy_classify_url "$1" "$2" "$proxy" "$type"
       ;;
     *)
       if [[ "$direct" == "1" ]]; then
         _pc_class="none"
       elif [[ -n "$proxy" ]]; then
-        _proxy_classify_url "$1" "$2" "$proxy"
+        _proxy_classify_url "$1" "$2" "$proxy" "$type"
       fi
       ;;
   esac
   return 0
 }
 
-# _proxy_classify_url CLASS_VAR URL_VAR PROXY - write the class/url pair for a
-# non-empty PROXY: an explicit http:// or https:// proxy goes through the
-# child's environment ("env"), every other scheme is passed as an explicit
-# proxy flag ("flag"), because socks support through the environment is not
-# portable. Both out-params are namerefs; the two branches of _proxy_classify
-# call this so the per-scheme rule lives once.
+# _proxy_classify_url CLASS_VAR URL_VAR PROXY [TYPE] - write the class/url
+# pair for a non-empty PROXY: an http:// or https:// proxy (scheme matched
+# case-insensitively and written lowercase) goes through the child's
+# environment ("env"), and so does a scheme-less PROXY unless TYPE is socks5
+# (curl and rclone both read a scheme-less proxy as http, and the value may
+# hold user:password). Every other scheme is passed as an explicit proxy flag
+# ("flag"), because socks support through the environment is not portable.
+# Both out-params are namerefs; the two branches of _proxy_classify call this
+# so the per-scheme rule lives once.
 _proxy_classify_url() {
   local -n _pcu_class="$1" _pcu_url="$2"
-  local proxy="$3"
+  local proxy="$3" type="${4:-system}" scheme=""
+  if [[ "$proxy" == *://* ]]; then
+    scheme="${proxy%%://*}"
+    scheme="${scheme,,}"
+    case "$scheme" in
+      http | https) proxy="${scheme}://${proxy#*://}" ;;
+    esac
+  elif [[ "$type" != socks5 ]]; then
+    proxy="http://${proxy}"
+  fi
   case "$proxy" in
     http://* | https://*)
       _pcu_class="env"

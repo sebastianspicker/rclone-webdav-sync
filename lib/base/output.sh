@@ -45,7 +45,8 @@ output_json_enabled() { [[ "$OUTPUT_JSON" == true ]]; }
 # output_json_escape_into VAR TEXT - escape TEXT into VAR without the command
 # substitution. Byte-wise (LC_ALL=C) so multi-byte UTF-8 passes through
 # unchanged: backslash becomes \\, double quote becomes \", control bytes
-# 0x01-0x1F become \u00XX, bytes 0x7F-0x9F become one space, and newlines are
+# 0x01-0x1F and DEL (0x7F) become \u00XX, bytes from 0x80 up pass through
+# untouched (they are UTF-8 lead and continuation bytes), and newlines are
 # dropped (the old awk processed the input line by line). Prints nothing; hot
 # callers use this to avoid a subshell per value.
 output_json_escape_into() {
@@ -60,11 +61,9 @@ output_json_escape_into() {
       '"') _out+="\\\"" ;;
       *)
         printf -v _code '%d' "'$_char"
-        if ((_code >= 1 && _code <= 31)); then
+        if (((_code >= 1 && _code <= 31) || _code == 127)); then
           printf -v _char '\\u%04x' "$_code"
           _out+="$_char"
-        elif ((_code >= 127 && _code <= 159)); then
-          _out+=' '
         else
           _out+="$_char"
         fi

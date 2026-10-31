@@ -3,4 +3,21 @@
 # scripts and cron entries that call scripts/nextcloudcmd keep working.
 set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-exec bash "${PROJECT_DIR}/bin/sciebo" nextcloudcmd "$@"
+# sciebo needs bash 5.3+, but cron and other minimal environments often find
+# only macOS's /bin/bash 3.2 on PATH. This part stays bash-3.2 compatible and
+# picks the first new enough bash; with none, bin/sciebo's own guard explains.
+find_bash() {
+  local c=""
+  for c in "${SCIEBO_BASH:-}" "$(command -v bash 2>/dev/null || true)" \
+    /opt/homebrew/bin/bash /usr/local/bin/bash /home/linuxbrew/.linuxbrew/bin/bash \
+    /usr/bin/bash /bin/bash; do
+    [ -n "$c" ] && [ -x "$c" ] || continue
+    if "$c" -c '((BASH_VERSINFO[0] > 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] >= 3)))' 2>/dev/null; then
+      printf '%s\n' "$c"
+      return 0
+    fi
+  done
+  printf 'bash\n'
+}
+SCIEBO_BASH_BIN="$(find_bash)"
+exec "$SCIEBO_BASH_BIN" "${PROJECT_DIR}/bin/sciebo" nextcloudcmd "$@"

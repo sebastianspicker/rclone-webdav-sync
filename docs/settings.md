@@ -439,7 +439,7 @@ intervals large).
 | --- | --- | --- |
 | `CREATE_EMPTY_SRC_DIRS` | `0` | `1` passes `--create-empty-src-dirs`. |
 | `TRACK_RENAMES` | `0` | `1` passes `--track-renames`. |
-| `MAX_DELETE` | `-1` | `--max-delete`; `-1` means unlimited, `0` blocks all deletes. |
+| `MAX_DELETE` | `-1` | `--max-delete`; `-1` means unlimited, `0` blocks all deletes. For bisync entries rclone reads the value as a percentage. |
 | `BW_LIMIT_UP` | empty | upload cap, e.g. `2M`; becomes `--bwlimit up:down`. |
 | `BW_LIMIT_DOWN` | empty | download cap, e.g. `5M`. |
 | `BW_SCHEDULE` | empty | rclone `--bwlimit` timetable, e.g. `Mon-Fri 08:00,2M Mon-Fri 18:00,off`. When set it takes precedence over `BW_LIMIT_UP`/`BW_LIMIT_DOWN`; an active `sciebo limit` marker beats both. |
@@ -523,8 +523,8 @@ the desktop client's own behavior.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `DELETE_FILES_THRESHOLD` | `100` | deletion count at which the safety brake stops a run (non-negative integer). |
-| `ASK_DELETE` | `1` | `1` arms the delete guard (`--max-delete DELETE_FILES_THRESHOLD`); `0` disables it. |
+| `DELETE_FILES_THRESHOLD` | `100` | deletion count at which the safety brake stops a `sync`/`pull` run (non-negative integer). `bisync` entries use rclone bisync's own limit (more than half of the files) instead. |
+| `ASK_DELETE` | `1` | `1` arms the delete guard (`--max-delete DELETE_FILES_THRESHOLD` for sync/pull, rclone's 50 % brake plus the prompt for bisync); `0` disables it. |
 | `MOVE_TO_TRASH` | `0` | `1` moves files deleted or overwritten by a pull/bisync apply under `LOCAL_TRASH_DIR` (or `BACKUP_DIR`) instead of deleting them (rclone `--backup-dir`). |
 | `LOCAL_TRASH_DIR` | empty (derives `<STATE_DIR>/trash`) | destination for `MOVE_TO_TRASH=1`, with the per-source `<name>` subdirectory appended. |
 <!-- src: settings.md#delete-guard-and-local-trash -->
@@ -532,11 +532,15 @@ the desktop client's own behavior.
 `MAX_DELETE` wins over the guard: an explicit `MAX_DELETE` of `0` or more is
 passed as `--max-delete` unchanged and turns `ASK_DELETE` off. With the
 default `MAX_DELETE=-1`, `ASK_DELETE=1` adds `--max-delete
-DELETE_FILES_THRESHOLD` to every entry; when rclone aborts after the
-threshold, an interactive run asks whether to re-run the entry without the
-cap, while a declined prompt or a non-interactive run fails the entry and
-tells you to re-run with `sync --yes`. `sync --yes` disables the guard (and
-the `MAX_DOWNLOAD_SIZE` skip) for the run.
+DELETE_FILES_THRESHOLD` to every sync and pull entry. For bisync,
+`--max-delete` is a percentage and rclone already stops a run that would
+delete more than 50 % of the files, so the guard passes nothing and keeps
+that brake. When rclone aborts at the limit, an interactive run asks
+whether to re-run the entry past it (bisync: with `--force`), while a
+declined prompt or a non-interactive run fails the entry and tells you to
+re-run with `sync --yes`. `sync --yes` lifts the guard (and the
+`MAX_DOWNLOAD_SIZE` skip) for the run. An explicit `MAX_DELETE` reaches
+bisync as a percentage.
 <!-- src: settings.md#delete-guard-and-local-trash -->
 
 `MOVE_TO_TRASH` sets rclone `--backup-dir` for pull and bisync applies with
@@ -562,7 +566,7 @@ set, otherwise `LOCAL_TRASH_DIR`. Empty `LOCAL_TRASH_DIR` derives
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `HTTP_TIMEOUT` | `30` | curl timeout in seconds for the direct WebDAV/OCS calls made through `lib/adapters/http.sh` and `lib/adapters/nc_api.sh` (share, notifications, activity, presence, lock, trash, versions, file, search, recent, comments, favorites, tags). |
+| `HTTP_TIMEOUT` | `30` | curl timeout in seconds for the direct WebDAV/OCS calls made through `lib/adapters/http.sh` and `lib/adapters/nc_api.sh` (share, notifications, activity, presence, lock, trash, versions, file, search, recent, comments, favorites, tags). File downloads (`download`, `versions get`, `preview`) have no total limit; they stop only when no data arrives for `HTTP_TIMEOUT` seconds. |
 | `HTTP_RETRIES` | `2` | curl retries for those calls. |
 | `HTTP_RETRY_DELAY` | `1` | seconds curl waits between retries (`--retry-delay`). |
 | `HTTP_FOLLOW_REDIRECTS` | `1` | `1` makes GET/HEAD calls follow redirects up to `HTTP_MAX_REDIRS` hops (`--location`); writes never follow, so a POST/PUT body is never silently dropped. |

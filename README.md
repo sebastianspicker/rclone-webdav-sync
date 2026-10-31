@@ -114,10 +114,12 @@ bin/sciebo help          # run straight from the checkout
 
 make install             # copies the tree to ~/.local/share/rclone-sciebo
                           # and writes a ~/.local/bin/sciebo wrapper
-make install PREFIX=/usr/local
+make install PREFIX="$HOME/opt"   # any prefix you own, as your own user
 make dist                # source tarball: dist/rclone-webdav-sync-<version>.tar.gz
 ```
 <!-- src: README.md#install -->
+
+The installation is per user: the installed tree keeps your `config/` and `state/`, and `sciebo` only reads settings files owned by the account that runs it. Install as your own user (no `sudo`) into a prefix you own; `make install` refuses to run under `sudo`. Every user who wants the tool installs their own copy.
 
 `make install` stages the complete replacement before changing an existing installation and rolls back if the replacement cannot be committed. It leaves your per-machine settings and sync state alone: it never writes `config/settings.local.env` or `state/` into the installed copy, whether this is a first install or a reinstall over an existing one. `make uninstall` mirrors that and keeps `config/` and `state/` under the installed prefix (`$PREFIX/share/rclone-sciebo`) so you can remove just the code, or copy your settings forward before deleting the rest by hand.
 <!-- src: README.md#install -->
@@ -282,7 +284,7 @@ Settings live in `config/settings.env` (tracked defaults) and `config/settings.l
 
 - `check` and `verify` never change anything; transfers and deletions happen only through `sync` and `cleanup --apply`, one run at a time behind a lock.
 - Desktop-client parity policies are safe by default: invalid names, local case-only collisions, and server-side E2EE folders are excluded from a transfer; external storages and big folders ask before the first sync.
-- A `sync` that would delete more files than `DELETE_FILES_THRESHOLD` stops and asks (or fails a non-interactive run) unless `sync --yes` is given.
+- A `sync` that would delete more files than `DELETE_FILES_THRESHOLD` (for two-way `bisync` pairs: more than half of the files) stops and asks (or fails a non-interactive run) unless `sync --yes` is given.
 - Git is not special-cased: `.git/` syncs as files, so avoid syncing a repo while git is rewriting objects, and don't run `bisync` on a repository you're actively working in.
 - Bisync conflict copies stay local by default; `conflicts --resolve` reviews and resolves them.
 - `backup forget` is a dry run unless you pass `--apply`, `backup restore` refuses non-empty targets and your sync folders unless you pass `--force`, and `logout` asks before it removes the repository password.

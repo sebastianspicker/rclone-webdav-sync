@@ -119,8 +119,8 @@ Desktop-parity policies: non-portable names are excluded by default
 renamed (CASE_CLASH_POLICY), end-to-end encrypted remote folders
 (E2EE_POLICY) and server-mounted external storages
 (EXTERNAL_STORAGE_POLICY) are checked before a run, and an apply that
-would delete more than DELETE_FILES_THRESHOLD files is stopped unless
---yes is given (ASK_DELETE).
+would delete more than DELETE_FILES_THRESHOLD files (bisync: more than
+half of the files) is stopped unless --yes is given (ASK_DELETE).
 EOF
 }
 
@@ -257,9 +257,11 @@ sync_args_collect_trash() {
   fi
 }
 
-# sync_args_add_delete_guard FLAGS - append the ASK_DELETE guard arguments to
-# the named argv array and set SYNC_DELETE_GUARD when they apply, or an
-# explicit --max-delete from MAX_DELETE.
+# sync_args_add_delete_guard FLAGS - append the ASK_DELETE guard arguments for
+# ENTRY_MODE to the named argv array and set SYNC_DELETE_GUARD when the guard
+# is armed (bisync relies on rclone's own percentage brake, so its guard adds
+# no arguments); with --yes or a confirmed override, append the arguments
+# that lift the brake instead. An explicit MAX_DELETE is passed as given.
 sync_args_add_delete_guard() {
   # shellcheck disable=SC2178  # nameref to an argv array
   local -n args_ref="$1"
@@ -268,13 +270,20 @@ sync_args_add_delete_guard() {
   SYNC_DELETE_GUARD=false
   case "$MAX_DELETE" in
     '' | *[!0-9]*)
-      if [[ "$SYNC_ASSUME_YES" != true && "$SYNC_DELETE_GUARD_OVERRIDE" != true ]]; then
-        sync_policy_args guard_args policy_delete_guard_args
-        if [[ "${#guard_args[@]}" -gt 0 ]]; then
-          args_ref+=("${guard_args[@]}")
+      if [[ "$SYNC_DELETE_GUARD_OVERRIDE" == true ]]; then
+        sync_policy_args guard_args policy_delete_guard_override_args "$ENTRY_MODE"
+      elif [[ "$SYNC_ASSUME_YES" != true ]]; then
+        sync_policy_args guard_args policy_delete_guard_args "$ENTRY_MODE"
+        if policy_delete_guard_armed; then
           SYNC_DELETE_GUARD=true
         fi
+      elif [[ "$ENTRY_MODE" == bisync ]] && policy_delete_guard_armed; then
+        # --yes on bisync: run with rclone's own brake and re-run with --force
+        # only when that brake fired (sync_delete_guard_retry), so --force
+        # never lifts bisync's other safety checks up front.
+        SYNC_DELETE_GUARD=true
       fi
+      args_ref+=(${guard_args[@]+"${guard_args[@]}"})
       ;;
     *) args_ref+=(--max-delete "$((10#$MAX_DELETE))") ;;
   esac
@@ -859,21 +868,25 @@ sync_run_rclone() {
 # sync_delete_guard_retry SPEC LOGFILE - the ASK_DELETE guard aborted the
 # run (policy_delete_guard_hit). The shared ui_confirm_tty gate asks once
 # (unified [y/yes] dialect; rc 2 - no tty or SCIEBO_NON_INTERACTIVE - refuses
-# without prompting) and, on acceptance, the entry re-runs without
-# --max-delete; a declined prompt or a non-interactive run fails the entry
-# with a message naming DELETE_FILES_THRESHOLD and --yes. Returns 0 when the
-# re-run succeeded, 1 when the entry failed without a re-run.
+# without prompting) and, on acceptance, the entry re-runs past the guard
+# (sync/pull: without --max-delete; bisync: with --force); a declined prompt
+# or a non-interactive run fails the entry with a message naming the limit
+# and --yes. Returns 0 when the re-run succeeded, 1 when the entry failed
+# without a re-run.
 sync_delete_guard_retry() {
-  local spec="$1" logfile="$2" rc=0 gate_rc=0
-  ui_confirm_tty "delete guard: this run would delete more than ${DELETE_FILES_THRESHOLD} file(s); continue anyway?" || gate_rc=$?
+  local spec="$1" logfile="$2" rc=0 gate_rc=0 limit=""
+  limit=${ policy_delete_guard_label "$ENTRY_MODE";}
+  if [[ "$SYNC_ASSUME_YES" != true ]]; then
+    ui_confirm_tty "delete guard: this run would delete ${limit}; continue anyway?" || gate_rc=$?
+  fi
   if [[ "$gate_rc" -eq 0 ]]; then
-    warn "delete guard: overridden for '${ENTRY_NAME}' (continuing without --max-delete ${DELETE_FILES_THRESHOLD})"
+    warn "delete guard: overridden for '${ENTRY_NAME}' (continuing past the limit of ${limit})"
   elif [[ "$gate_rc" -eq 1 ]]; then
-    SYNC_ENTRY_REASON="delete guard: more than ${DELETE_FILES_THRESHOLD} file(s) to delete; declined"
+    SYNC_ENTRY_REASON="delete guard: ${limit} to delete; declined"
     warn "${SYNC_ENTRY_REASON}"
     return 1
   else
-    SYNC_ENTRY_REASON="delete guard: more than ${DELETE_FILES_THRESHOLD} file(s) to delete; re-run with --yes to allow"
+    SYNC_ENTRY_REASON="delete guard: ${limit} to delete; re-run with --yes to allow"
     warn "${SYNC_ENTRY_REASON}"
     return 1
   fi

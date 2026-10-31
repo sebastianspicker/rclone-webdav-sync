@@ -6,6 +6,55 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Delete guard: two-way (`bisync`) pairs keep rclone bisync's own brake
+  again. `--max-delete` is a percentage for bisync, so passing
+  `DELETE_FILES_THRESHOLD` (100) switched the 50 % safety limit off; a run
+  that would delete more than half of the files now stops, asks once on a
+  terminal, and needs `sync --yes` otherwise.
+- `doctor` and `filters check` no longer fail on a fresh checkout by
+  validating `fleeting.txt` (the `cleanup --junk` globs) as a filter.
+- Folder wizard: every pick gets its own direction; a new `bisync` pair's
+  local folder is created; the offered dry run previews the first resync
+  instead of ending in "dry run FAILED"; pair excludes are anchored at the
+  pair root (`- /name/`), so same-named folders deeper down are kept.
+- `folders edit` validates new excludes before rewriting `folders.conf`, so
+  an invalid exclude no longer loses the pair.
+- `schedule status|uninstall --help` print the usage instead of acting, and
+  `--profile NAME schedule install` installs that profile's own agent
+  instead of replacing the default profile's.
+- `limit` accepts only rates rclone accepts (`2M`, `512k`, `1.5M`), so a
+  rate like `2MB` can no longer break every later sync.
+- `--json` output keeps UTF-8 intact (`Straße`, `€`).
+- `support` archives mask Nextcloud app passwords, `curl -u` credentials,
+  `key=value` and JSON credential fields, and URL passwords containing `@`.
+- `make install` refuses to run under `sudo`: an installation is per user.
+- `scripts/nextcloudcmd` and `scripts/sync.sh` find bash 5.3 under a
+  cron-style `PATH`.
+- Proxy passwords in a scheme-less or uppercase-scheme `PROXY` no longer
+  reach the process list.
+- `provision --apppassword-fd N` stores the password it reads.
+- `account add/remove/use` parse their options (`account add --help` no
+  longer creates a profile named `--help`); new profiles get their own rclone
+  remote, and `setup`/`logout` refuse a profile that would rewrite or delete
+  the default account's remote.
+- `account import` resolves desktop folders from the account root
+  (`REMOTE_BASE="."`); `account remove` says it also deletes the local trash.
+- `trash` listings show the item ID that `trash restore`/`rm` take.
+- `conflicts --resolve` derives the original name correctly when it
+  contains a dot, never deletes a conflict copy whose original is missing,
+  and holds the run lock while applying.
+- `share copy-link` creates a new link when `--password`, `--expire`,
+  `--permissions` or another link option is given.
+- Direct downloads (`download`, `versions get`, `preview`) are no longer cut
+  off after `HTTP_TIMEOUT`; they stop only when stalled, and
+  `download --resume` really resumes a partial file.
+- `watch` retries a change whose sync failed, was paused, or found another
+  run holding the lock; `watch --once` exits 1 in that case.
+- Direct WebDAV calls use the user id from the remote URL, which differs
+  from the login name on LDAP/SSO servers.
+
 ## [0.3.0] - 2026-10-20
 
 ### Added

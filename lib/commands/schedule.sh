@@ -72,8 +72,8 @@ schedule_backup_enabled() {
 }
 
 # schedule_agent_label [PROFILE] [KIND] - the plain base label names the
-# active profile; every configured profile gets its own "<label>.<profile>"
-# agent.
+# default profile; every other profile (the active one or a configured one)
+# gets its own "<label>.<profile>" agent.
 schedule_agent_label() {
   local base=""
   base=${ schedule_base_label "${2:-sync}";}
@@ -100,13 +100,21 @@ schedule_profile_list() {
 }
 
 # schedule_each_agent ACTION_FUNC [KIND] - run ACTION_FUNC once for the active
-# profile (empty argument) and once per configured SCHEDULE_PROFILES entry,
-# passing the agent kind as the second argument.
+# profile and once per configured SCHEDULE_PROFILES entry, passing the agent
+# kind as the second argument. The active profile is passed by name when one
+# is selected (`--profile work schedule install` renders the
+# "<label>.work" agent running `--profile work`), and as an empty argument
+# for the default profile; a configured entry equal to it is not repeated.
 # Returns 1 when any call does, 0 otherwise, so callers aggregate status.
 schedule_each_agent() {
-  local action="$1" kind="${2:-sync}" profile="" rc=0
-  "$action" "" "$kind" || rc=1
+  local action="$1" kind="${2:-sync}" profile="" rc=0 active="${SCIEBO_PROFILE:-}"
+  "$action" "$active" "$kind" || rc=1
+  # Under --profile NAME only that profile's agent is touched; the extra
+  # per-profile agents (SCHEDULE_PROFILES/--profiles) are managed from the
+  # default profile.
+  [[ -z "$active" ]] || return "$rc"
   while IFS= read -r profile; do
+    [[ "$profile" != "$active" ]] || continue
     "$action" "$profile" "$kind" || rc=1
   done < <(schedule_profile_list | LC_ALL=C sort -u)
   return "$rc"
@@ -118,10 +126,11 @@ schedule_each_agent() {
 # the profiles were supplied only through `schedule install --profiles` or
 # were later removed from SCHEDULE_PROFILES.
 schedule_each_known_agent() {
-  local action="$1" discover="$2" kind="${3:-sync}" profile="" rc=0
-  "$action" "" "$kind" || rc=1
+  local action="$1" discover="$2" kind="${3:-sync}" profile="" rc=0 active="${SCIEBO_PROFILE:-}"
+  "$action" "$active" "$kind" || rc=1
+  [[ -z "$active" ]] || return "$rc"
   while IFS= read -r profile; do
-    [[ -n "$profile" ]] || continue
+    [[ -n "$profile" && "$profile" != "$active" ]] || continue
     "$action" "$profile" "$kind" || rc=1
   done < <({
     schedule_profile_list
@@ -143,11 +152,14 @@ schedule_profile_configured() {
 
 # schedule_each_stale_agent ACTION_FUNC DISCOVERY_FUNC [KIND] - run ACTION_FUNC for
 # installed profile agents that are absent from the current configuration.
-# The active (unprofiled) agent is never stale.
+# The active profile's agent (unprofiled, or "<label>.<active>" under
+# --profile) is never stale.
 schedule_each_stale_agent() {
   local action="$1" discover="$2" kind="${3:-sync}" profile="" rc=0
+  # Under --profile NAME no other agent is ever considered stale.
+  [[ -z "${SCIEBO_PROFILE:-}" ]] || return 0
   while IFS= read -r profile; do
-    [[ -n "$profile" ]] || continue
+    [[ -n "$profile" && "$profile" != "${SCIEBO_PROFILE:-}" ]] || continue
     schedule_profile_configured "$profile" && continue
     "$action" "$profile" "$kind" || rc=1
   done < <("$discover" "$kind" | LC_ALL=C sort -u)
@@ -862,13 +874,18 @@ cmd_schedule() {
       ;;
   esac
 
+  shift
   if [[ "$command" == "install" ]]; then
-    shift
     opt_begin "at-login:b profiles:s backup:b" schedule "install " "$@"
     opt_guard schedule "install: "
     opt_into SCHEDULE_AT_LOGIN at_login 1
     opt_into SCHEDULE_PROFILES profiles "${OPT_profiles:-}"
     opt_into SCHEDULE_BACKUP backup 1
+  else
+    # status and uninstall take no options: --help prints the usage and a
+    # stray argument is a usage error, before anything is loaded or removed.
+    opt_begin "" schedule "${command} " "$@"
+    opt_guard schedule "${command}: "
   fi
 
   if [[ "$command" == "status" ]]; then

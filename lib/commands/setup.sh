@@ -742,6 +742,7 @@ cmd_setup() {
   setup_validate_option_combo "$use_login" "$rotate" "$crypt"
 
   load_settings
+  require_own_profile_remote overwrite
   ensure_state_dirs
   mkdir -p "$(dirname "$RCLONE_CONFIG")"
   setup_apply_proxy "$proxy"

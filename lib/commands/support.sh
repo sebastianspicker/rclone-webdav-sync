@@ -38,20 +38,68 @@ EOF
 
 # support_redact_url_userinfo_stream - read text on stdin and mask
 # credentials that hide inside URLs: `scheme://user:password@host` becomes
-# `scheme://REDACTED@host`. Everything else passes through, so host and path
-# detail survives in the archive.
+# `scheme://REDACTED@host`. The match runs to the last `@` before the first
+# `/` or blank, so a password that itself contains `@` is masked whole.
+# Everything else passes through, so host and path detail survives in the
+# archive.
 support_redact_url_userinfo_stream() {
-  LC_ALL=C sed -E 's#([a-zA-Z][a-zA-Z0-9+.-]*://)[^/@[:space:]]+@#\1REDACTED@#g'
+  LC_ALL=C sed -E 's#([a-zA-Z][a-zA-Z0-9+.-]*://)[^/[:space:]]+@#\1REDACTED@#g'
 }
 
 # support_redact_value_stream - read text on stdin and mask secret-shaped
 # values that the key-name pass cannot see: Authorization/Proxy-Authorization/
-# Cookie/Set-Cookie header lines, Basic/Bearer tokens, and runs of 40 or more
-# base64-ish characters that contain a digit. Header lines are replaced
-# wholesale, so whatever follows the colon never survives. Ordinary prose,
-# paths, and short values pass through unchanged.
+# Cookie/Set-Cookie header lines, Basic/Bearer tokens, curl `-u`/`--user`
+# credentials, Nextcloud app passwords (five groups of five characters),
+# the value after any pass*/secret*/token*/apikey key followed by `=` or `:`
+# (key=value, `key: value`, JSON `"key":"value"`, URL query parameters), and
+# runs of 40 or more base64-ish characters that contain a digit. Header lines
+# are replaced wholesale, so whatever follows the colon never survives.
+# Ordinary prose, paths, and short values pass through unchanged.
 support_redact_value_stream() {
   LC_ALL=C awk '
+    BEGIN {
+      g = "[A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9]"
+      app_password = g "-" g "-" g "-" g "-" g
+    }
+    # The value after a credential key: `key=v`, `key: v`, JSON `"key": "v"`,
+    # an option flag `--client-pass v` / `--proxy-user=v`, or netrc-style
+    # `password v`. A quoted value is masked up to its closing quote, so a
+    # passphrase with spaces does not leak its tail.
+    function redact_kv(s,   low, out, pre, q, rest, n) {
+      out = ""
+      while (1) {
+        low = tolower(s)
+        if (!match(low, /(pass|secret|token|api[-_]?key)[a-z0-9_-]*"?[[:space:]]*[:=][[:space:]]*|--?[a-z0-9-]*(pass|secret|token|api-?key|proxy-user)[a-z0-9-]*"?[[:space:]=]+|(^|[[:space:]])password[[:space:]]+/)) break
+        pre = substr(s, 1, RSTART + RLENGTH - 1)
+        s = substr(s, RSTART + RLENGTH)
+        out = out pre
+        q = substr(s, 1, 1)
+        if (q == "\"" || q == "\047") {
+          rest = substr(s, 2)
+          n = index(rest, q)
+          if (n > 0) {
+            out = out q "REDACTED" q
+            s = substr(rest, n + 1)
+          } else {
+            out = out q "REDACTED"
+            s = ""
+          }
+        } else if (match(s, /^[^[:space:]",;&]+/)) {
+          out = out "REDACTED"
+          s = substr(s, RLENGTH + 1)
+        }
+      }
+      return out s
+    }
+    # Scheme-less userinfo (`user:password@host`, e.g. a proxy setting).
+    function redact_userinfo(s,   out) {
+      out = ""
+      while (match(s, /[A-Za-z0-9._%+-]+:[^[:space:]@\/]+@[A-Za-z0-9.-]/) > 0) {
+        out = out substr(s, 1, RSTART - 1) "REDACTED@"
+        s = substr(s, RSTART + RLENGTH - 1)
+      }
+      return out s
+    }
     function redact_long(s,   out, rest, tok) {
       out = ""
       rest = s
@@ -75,6 +123,11 @@ support_redact_value_stream() {
       if (line ~ /^[[:space:]]*[Cc]ookie:/) { print "Cookie: REDACTED"; next }
       gsub(/[Bb]asic[[:space:]]+[A-Za-z0-9+\/=_.-]+/, "Basic REDACTED", line)
       gsub(/[Bb]earer[[:space:]]+[A-Za-z0-9+\/=_.-]+/, "Bearer REDACTED", line)
+      gsub(/(^|[[:space:]])-u[[:space:]]+[^[:space:]]+/, " -u REDACTED", line)
+      gsub(/(^|[[:space:]])--user[[:space:]=]+[^[:space:]]+/, " --user REDACTED", line)
+      gsub(app_password, "REDACTED", line)
+      line = redact_kv(line)
+      line = redact_userinfo(line)
       print redact_long(line)
     }
   '
@@ -88,8 +141,8 @@ support_redact_stream() {
 
 # support_redact_settings_stream - read a settings file on stdin and replace
 # the value of every credential-like key with REDACTED. The key test is
-# case-insensitive substring matching on password/secret/token/passwd/
-# apikey/api_key; proxy settings are redacted unless they are the non-secret
+# case-insensitive substring matching on pass (password, passwd, *_PASS)/
+# secret/token/apikey/api_key; proxy settings are redacted unless they are the non-secret
 # proxy policy (PROXY_TYPE, PROXY_DIRECT). The generic value pass then masks
 # any secret-shaped value that survives. Lines without an assignment
 # (comments) pass through.
@@ -97,7 +150,7 @@ support_redact_settings_stream() {
   LC_ALL=C awk -F'=' '
     NF >= 2 {
       key = tolower($1)
-      if (key ~ /password[0-9]*|secret|token|passwd|apikey|api_key/ ||
+      if (key ~ /pass|secret|token|apikey|api_key/ ||
           (key ~ /proxy/ && key !~ /proxy_direct|proxy_type/)) {
         print $1 "=REDACTED"
         next
@@ -108,15 +161,15 @@ support_redact_settings_stream() {
 }
 
 # support_redact_rclone_stream - read `rclone config show` output on stdin
-# and replace pass/password (and other credential-like keys such as
-# client_secret/token) values with REDACTED, preserving the `key = value`
+# and replace the value of every key containing pass/secret/token/apikey
+# (pass, password, client_secret, token, bearer_token, ...) with REDACTED, preserving the `key = value`
 # shape. The generic value pass then handles anything that slips through.
 support_redact_rclone_stream() {
   LC_ALL=C awk '
     {
       key = $0
       sub(/=.*/, "", key)
-      if (tolower(key) ~ /^[[:space:]]*(pass|passwd|password[0-9]*|secret|token|apikey|api_key|client_secret)[[:space:]]*$/) {
+      if (tolower(key) ~ /^[[:space:]]*[a-z0-9_]*(pass|secret|token|apikey|api_key)[a-z0-9_]*[[:space:]]*$/) {
         sub(/=.*/, "= REDACTED", $0)
       }
       print

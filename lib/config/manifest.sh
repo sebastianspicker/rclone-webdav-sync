@@ -372,8 +372,23 @@ manifest_remove_pair() {
   return 0
 }
 
+# manifest_check_pair_rules EXCLUDES... - die unless every exclude is a safe
+# relative path (no leading "/", no "..", no "|"). Callers that rewrite the
+# manifest run it before changing anything.
+manifest_check_pair_rules() {
+  local rule
+  for rule in "$@"; do
+    rule=${ strip_trailing_slashes "$rule";}
+    if [[ -z "$rule" ]] || ! safe_remote_path "$rule"; then
+      die "invalid exclude '${ printable "$rule";}': must be relative and without '..'"
+    fi
+  done
+  return 0
+}
+
 # manifest_write_pair_filter NAME SUB EXCLUDES... - write
-# FILTER_DIR/pair-NAME.txt with one "- SUB/" rule per exclusion. Fails when
+# FILTER_DIR/pair-NAME.txt with one "- /EXCLUDE/" rule per exclusion,
+# anchored at the pair root so a same-named folder deeper down is kept. Fails when
 # an existing file has different content (manual intervention required).
 # Sets MANIFEST_PAIR_FILTER to the file name.
 manifest_write_pair_filter() {
@@ -381,19 +396,16 @@ manifest_write_pair_filter() {
   shift 2
   local file content rule
   local -a rules=()
+  manifest_check_pair_rules "$@"
   for rule in "$@"; do
-    rule=${ strip_trailing_slashes "$rule";}
-    if [[ -z "$rule" ]] || ! safe_remote_path "$rule"; then
-      die "invalid exclude '${ printable "$rule";}': must be relative and without '..'"
-    fi
-    rules[${#rules[@]}]="$rule"
+    rules[${#rules[@]}]=${ strip_trailing_slashes "$rule";}
   done
   mkdir -p "$FILTER_DIR"
   file="${FILTER_DIR}/pair-${name}.txt"
   content="# Pair filter for '${sub}' created by the folder wizard."
   content="${content}"$'\n'"# rclone --filter-from rules; see config/filters/README.md."
   for rule in "${rules[@]}"; do
-    content="${content}"$'\n'"- ${rule}/"
+    content="${content}"$'\n'"- /${rule}/"
   done
   # shellcheck disable=SC2034  # read by the folder command modules
   MANIFEST_PAIR_FILTER="pair-${name}.txt"
