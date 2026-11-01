@@ -19,6 +19,9 @@ external assets, so you can preview it locally with any static server:
 python3 -m http.server -d docs 8000   # http://localhost:8000
 ```
 
-It's served from this repository directly: GitHub Pages is configured under
-*Settings → Pages* to deploy from the `main` branch's `/docs` folder, so a
-push to `main` that changes this directory updates the live site.
+The prepared `Pages` workflow publishes this tracked directory only after a
+manual dispatch on `main`; there is no site build step. Before adopting it,
+set *Settings → Pages → Source* to **GitHub Actions**. The existing remote
+setting was still branch publishing (`main`, `/docs`) at the 2026-11-01 review;
+that setting must be changed before the next push to prevent automatic site
+updates. Merely adding the workflow does not disable branch publishing.

@@ -8,6 +8,22 @@
 
 rclone-webdav-sync is an unofficial command-line client for sciebo (Hochschulcloud.NRW) and other Nextcloud servers, written in Bash. It keeps local folders and git repositories in sync with a Nextcloud server: it talks to the server over WebDAV, the file-access protocol Nextcloud exposes, and uses [rclone](https://rclone.org/webdav/) to do the actual file transfers.
 
+<details>
+<summary>Status and limitations</summary>
+
+rclone-webdav-sync is an independent experimental project for adapting rclone and Nextcloud
+workflows to a command-line environment. Developed independently alongside my main
+professional work. The scripts and configuration are a starting point for review and testing
+in your own storage setup. Some features, including restic backups, still need live-account
+validation; individual commands have narrower documented test coverage.
+
+**Disclaimer.** Synchronization can propagate deletions and is not a substitute for
+independent backups. Preview operations, test with disposable files and verify recovery before
+using important folders. You are responsible for credentials, sync direction, retained backup
+keys and data recovery.
+
+</details>
+
 It works with any Nextcloud server. Its default target is [sciebo](https://hochschulcloud.nrw/), the Nextcloud-based cloud storage service for universities in North Rhine-Westphalia, Germany. The command this tool installs is `sciebo`, named after that service; the name belongs to the sciebo service, not to this project.
 <!-- src: README.md -->
 
@@ -19,6 +35,19 @@ It works with any Nextcloud server. Its default target is [sciebo](https://hochs
 - Runs as a plain command-line tool with no background service. `sciebo watch` (live sync as files change) and `sciebo schedule install` (periodic runs via the OS's own scheduler) add an always-on path, but only if you opt in.
 - Keeps encrypted, versioned backups of local folders in your sciebo account with `sciebo backup` (restic), separate from the mirrored folders; see [Backups (restic)](#backups-restic).
 <!-- src: README.md -->
+
+```mermaid
+flowchart LR
+    Folders[Selected local folders] --> Preview[Preview with sciebo check]
+    Preview --> Decision[Review direction and deletions]
+    Decision --> Sync[Apply sciebo sync]
+    Sync <--> Cloud[Nextcloud folders via rclone]
+    Folders --> Backup[Optional restic snapshots]
+    Backup --> History[Separate encrypted backup history]
+```
+
+The direction of each sync pair controls which side can change. The backup
+repository stays separate from the mirrored folders.
 
 ## Backups (restic)
 

@@ -4,7 +4,7 @@ This is the complete command reference for rclone-webdav-sync, an
 unofficial command-line client for sciebo (Hochschulcloud.NRW) and other
 Nextcloud servers: every command, every option, every exit code, every
 place a command asks before doing something destructive, and a runnable
-example for each. It is generated from and kept in sync with
+example for each. It is maintained against and drift-checked alongside
 [`lib/cli/sciebo.spec`](../lib/cli/sciebo.spec), which generates the
 command list `lib/cli/registry.sh` exposes as `SCIEBO_COMMANDS`; `sciebo
 help <command>` or `<command> --help` prints the same usage text this
@@ -43,19 +43,6 @@ sciebo run.
 - [Direction semantics](#direction-semantics)
 - [Limitations](#limitations)
 - [Glossary](#glossary)
-
-<!--
-Editor's note (grouping): README.md's own "Commands" table groups `open`
-under "Mounts" and groups `retry`/`conflicts` under a section it calls
-"Server features"; this reference groups `open` under "Preflight and
-discovery" and `retry`/`conflicts` under "Server data" instead, following
-this document's own body structure, since this document is the
-authoritative reference and README's table is a simplified preview. See
-verify-commands.md for the full note. This table of contents also lists
-`announcements`, `preview`, `download`, and `update`, which the previous
-version of this table omitted even though each already had its own
-section.
--->
 
 ## How to read this reference
 

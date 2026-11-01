@@ -42,3 +42,15 @@ __pycache__/
 
 # Internal test suite (not published)
 /tests/
+
+# Private task and integration planning records (public known issues stay tracked)
+/.codex/
+/THINGS_TO_DO_LEDGER.md
+/ALPHA_AUDIT_LEDGER.md
+/ALPHA_AUDIT_REPORT.md
+/ALPHA_IMPLEMENTATION_LEDGER.md
+/ALPHA_PR_DESCRIPTION.md
+/RESTIC_INTEGRATION_LEDGER.md
+/RESTIC_INTEGRATION_PLAN.md
+/CODEX.md
+/GEMINI.md

@@ -69,6 +69,23 @@ make lint       # shellcheck + shfmt, the completions generator --check,
 ```
 <!-- src: CONTRIBUTING.md#before-you-open-a-pull-request -->
 
+## CI and publication
+
+General lint and packaging CI runs automatically for Dependabot-authored pull
+requests and can be started manually for other changes. Security checks remain
+automatic. Weekly Dependabot updates cover the GitHub Actions dependencies.
+
+Releases require a manual `Release` dispatch on `main` with an existing version
+tag. The workflow verifies that the tag is in main's history, checks out that
+commit, checks `VERSION`, lints it, and packages that same version. It does not
+create a tag. The static demo has a separate manual `Pages` workflow on `main`.
+The repository's Pages source must be set to **GitHub Actions**, not branch
+publishing, before using this policy; the legacy branch setting can otherwise
+publish automatically when main changes.
+
+Private audit, integration-plan and agent records stay ignored. The public
+known-issues document describes current product limitations.
+
 ## Screenshots
 
 The README and the [demo page](docs/index.html) show real CLI output rendered

@@ -1,8 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -15,6 +13,7 @@ concurrency:
 
 jobs:
   lint-and-test:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]')
     runs-on: macos-latest
     timeout-minutes: 20
     env:
@@ -22,6 +21,8 @@ jobs:
       HOMEBREW_NO_INSTALL_CLEANUP: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install tools
         run: brew install bash shellcheck shfmt rclone
@@ -48,12 +49,15 @@ jobs:
           test -f "dist/rclone-webdav-sync-$(cat VERSION).tar.gz"
 
   lint-and-test-linux:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]')
     # Bash 5.3 on Linux: proves the CLI does not depend on macOS-only bash
-    # behavior. The portable integration suite has its own job below.
+    # behavior. The private integration suite is a separate local check.
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install Bash 5.3
         run: |
