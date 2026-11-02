@@ -68,10 +68,13 @@ backupset_parse_line() {
 # backupset_each FUNC [ARG...] - walk every valid entry in order, parsing it
 # into BACKUP_ENTRY_* and calling FUNC with ARG.... A non-zero return from
 # FUNC stops the walk and is returned. Invalid lines are reported to stderr as
-# file:line: message and skipped. Runs in the caller's shell.
+# file:line: message and skipped; how many is left in BACKUPSET_INVALID.
+# Runs in the caller's shell.
+BACKUPSET_INVALID=0
 backupset_each() {
   local fn="$1" raw="" line="" lineno=0
   shift
+  BACKUPSET_INVALID=0
   [[ -f "$BACKUPS_FILE" ]] || return 0
   while IFS= read -r raw <&3 || [[ -n "$raw" ]]; do
     lineno=$((lineno + 1))
@@ -79,6 +82,7 @@ backupset_each() {
     [[ -n "$line" && "$line" != "#"* ]] || continue
     if ! backupset_parse_line "$line"; then
       printf '%s:%d: %s\n' "$BACKUPS_FILE" "$lineno" "$BACKUP_ENTRY_ERROR" >&2
+      BACKUPSET_INVALID=$((BACKUPSET_INVALID + 1))
       continue
     fi
     "$fn" "$@" || return $?

@@ -62,7 +62,8 @@ load_mount_table() {
 }
 is_mounted() {
   load_mount_table
-  [[ "$MNT_TABLE" == *" on $1 ("* ]]
+  # macOS prints "X on PATH (nfs, ...)", Linux "X on PATH type nfs (...)".
+  [[ "$MNT_TABLE" == *" on $1 ("* || "$MNT_TABLE" == *" on $1 type "* ]]
 }
 looks_like_privilege_error() {
   local LC_ALL=C
@@ -106,7 +107,9 @@ find_mount_pid() {
   # line, exactly like `awk '{ print $1; exit }'`.
   ps_out="$(ps -axo pid=,command= 2>/dev/null)" || true
   while IFS= read -r line; do
-    [[ "$line" == *nfsmount* && "$line" == *"$1"* ]] || continue
+    # The mount point is a whole argv word (build_mount_argv puts --volname
+    # right after it), so /m/docs never matches the rclone of /m/docs2.
+    [[ "$line" == *nfsmount* && "$line" == *" $1 --volname "* ]] || continue
     # Trim the leading column padding, then keep the leading digit run.
     pid="${line#"${line%%[![:space:]]*}"}"
     pid="${pid%%[!0-9]*}"
@@ -313,7 +316,7 @@ mount_stop_recorded_pid() {
   [[ -n "$pid" && "$pid" != "-" ]] || return 0
   pid_alive "$pid" || return 0
   command_line="$(ps -p "$pid" -o command= 2>/dev/null || true)"
-  if [[ "$command_line" != *nfsmount* || "$command_line" != *"$T_MNT"* ]]; then
+  if [[ "$command_line" != *nfsmount* || "$command_line" != *" ${T_MNT} --volname "* ]]; then
     warn "not killing pid ${pid}: it is not the rclone nfsmount for ${T_MNT}"
     return 0
   fi

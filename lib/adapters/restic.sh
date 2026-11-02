@@ -114,8 +114,9 @@ restic_repository() {
 
 # restic_password - print the repository password: from the Keychain item
 # "restic" in Keychain mode, else the first line of BACKUP_PASSWORD_FILE.
-# rc 1 with empty output when none is stored; dies when the file exists but is
-# unsafe (not a regular file, a symlink, not owned by us, or looser than 600).
+# rc 1 with empty output when none is stored, rc 2 when key storage failed;
+# dies when the file exists but is unsafe (not a regular file, a symlink, not
+# owned by us, or looser than 600).
 restic_password() {
   local file="${BACKUP_PASSWORD_FILE:-}" mode="" line=""
   if keychain_enabled; then
@@ -242,6 +243,7 @@ restic_cmd() {
       export "$key=${child_env[$key]}"
     done
     if [[ ${#env_args[@]} -gt 0 ]]; then
+      # shortcut: a hyphenated remote name briefly exposes its obscured password in env's argv; upgrade to a config-file handoff if that matters.
       exec env "${env_args[@]}" "$bin" "${args[@]}" "$@"
     fi
     exec "$bin" "${args[@]}" "$@"

@@ -130,9 +130,9 @@ policy_checksum_args() {
 }
 
 # policy_trash_args OUT MODE - with MOVE_TO_TRASH=1 on a pull/bisync append
-# the --backup-dir pair for BACKUP_DIR (when set) or LOCAL_TRASH_DIR to the
-# argv array named OUT; nothing otherwise. The caller appends the per-entry
-# subdirectory.
+# the --backup-dir (bisync: --backup-dir1) pair for BACKUP_DIR (when set) or
+# LOCAL_TRASH_DIR to the argv array named OUT; nothing otherwise. The caller
+# appends the per-entry subdirectory.
 policy_trash_args() {
   # shellcheck disable=SC2178  # nameref to an argv array
   local -n out_ref="$1"
@@ -145,7 +145,13 @@ policy_trash_args() {
   dir="${BACKUP_DIR:-}"
   [[ -n "$dir" ]] || dir="${LOCAL_TRASH_DIR:-}"
   [[ -n "$dir" ]] || return 0
-  out_ref+=(--backup-dir "$dir")
+  # bisync aborts on the generic --backup-dir when Path2 is another remote;
+  # --backup-dir1 covers the local side (Path1) only.
+  if [[ "$mode" == bisync ]]; then
+    out_ref+=(--backup-dir1 "$dir")
+  else
+    out_ref+=(--backup-dir "$dir")
+  fi
   return 0
 }
 
@@ -188,26 +194,35 @@ policy_delete_guard_override_args() {
   return 0
 }
 
-# policy_delete_guard_label MODE - the guard's limit in words, for messages.
+# policy_delete_guard_label MODE [APPLY] - what the guard did, in words, for
+# messages. On an apply (APPLY=true) rclone's --max-delete deletes up to the
+# threshold before it stops, so the sync/pull wording says those files are
+# already gone; a dry run deleted nothing.
 policy_delete_guard_label() {
   if [[ "${1:-}" == bisync ]]; then
-    printf 'more than half of the files (rclone bisync safety limit)'
+    printf 'this run would delete more than half of the files (rclone bisync safety limit)'
+  elif [[ "${2:-true}" != true ]]; then
+    printf 'this dry run would delete more than %s file(s) (DELETE_FILES_THRESHOLD)' "${DELETE_FILES_THRESHOLD:-100}"
   else
-    printf 'more than %s file(s)' "${DELETE_FILES_THRESHOLD:-100}"
+    printf 'stopped after %s deletion(s) (DELETE_FILES_THRESHOLD); more files are still to delete' "${DELETE_FILES_THRESHOLD:-100}"
   fi
 }
 
-# policy_delete_guard_hit LOGFILE - rc 0 when LOGFILE contains rclone's
-# max-delete abort notice: the sync/copy wordings (which differ across rclone
-# versions) and bisync's "Safety abort: too many deletes", matched
-# case-insensitively.
+# policy_delete_guard_hit LOGFILE [OFFSET] - rc 0 when LOGFILE, from byte
+# OFFSET on (default 0: a shared --log-file holds earlier entries' runs),
+# contains rclone's max-delete abort notice: the sync/copy wordings (which
+# differ across rclone versions) and bisync's "Safety abort: too many
+# deletes", matched case-insensitively.
 policy_delete_guard_hit() {
-  local logfile="${1:-}"
+  local logfile="${1:-}" offset="${2:-0}"
   [[ -n "$logfile" && "$logfile" != "-" && "$logfile" != "/dev/stdout" ]] || return 1
   [[ -f "$logfile" ]] || return 1
+  case "$offset" in '' | *[!0-9]*) offset=0 ;; esac
+  # Process substitution, not a pipe: grep -q exits at the first match, and
+  # under pipefail tail's SIGPIPE would turn that hit into a failure.
   LC_ALL=C grep -a -E -i -q \
     -- '(--max-delete threshold reached|deletions stopped due to|maximum delete limit|safety abort: too many deletes)' \
-    "$logfile" 2>/dev/null
+    < <(tail -c "+$((offset + 1))" "$logfile" 2>/dev/null)
 }
 
 # policy_chunk_size RAW - print RAW clamped to MIN_CHUNK_SIZE and

@@ -63,15 +63,6 @@ Options:
 EOF
 }
 
-# trash_id_from_href HREF - the percent-decoded last path segment of a
-# listing href (the item id): the shell twin of http.sh's awk
-# xml_href_segment (strip the trailing slashes, take the segment, then
-# decode), so trash_parse_xml can read the raw d:href through the shared
-# xml_records walker instead of its own <d:response> loop.
-trash_id_from_href() {
-  href_last_segment "${1:-}"
-}
-
 # trash_parse_xml XML - print one TAB-separated record per <d:response>
 # through the shared xml_records walker: name, location, delete timestamp
 # (numeric, empty when absent), size, and the last href segment
@@ -95,7 +86,7 @@ trash_parse_xml() {
     location=${ printable "$location";}
     deleted=${ printable "$deleted";}
     size=${ printable "$size";}
-    id=${ trash_id_from_href "$href";}
+    id=${ href_last_segment "$href";}
     printf '%s\t%s\t%s\t%s\t%s\n' \
       "$orig_name" "$location" "$deleted" "$size" "$id"
   done < <(xml_records "$1" 'd:response' \
@@ -105,13 +96,13 @@ trash_parse_xml() {
     'd:getcontentlength' 'd:href')
 }
 
-# trash_valid_id ID - true when ID is one non-empty path segment without
-# "/", "..", or control bytes; safe to append to a trashbin URL.
+# trash_valid_id ID - true when ID is one non-empty path segment, not "."
+# or "..", without "/" or control bytes; safe to append to a trashbin URL.
 trash_valid_id() {
   local s="$1"
   [[ -n "$s" ]] || return 1
   case "$s" in
-    */* | *..*) return 1 ;;
+    */* | . | ..) return 1 ;;
   esac
   [[ "$s" != *[[:cntrl:]]* ]]
 }

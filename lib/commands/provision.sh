@@ -271,6 +271,7 @@ cmd_provision() {
   # loads before acquire_lock (so the EXIT trap can release it).
 
   [[ -n "${OPT_userid:-}" ]] || usage_error provision "--userid is required"
+  remote_require_user "${OPT_userid}"
   provision_read_password pass
   [[ -n "${OPT_serverurl:-}" ]] || usage_error provision "--serverurl is required"
   provision_validate_vfs

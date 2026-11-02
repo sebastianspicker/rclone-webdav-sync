@@ -54,6 +54,76 @@ uses [Semantic Versioning](https://semver.org/).
   run holding the lock; `watch --once` exits 1 in that case.
 - Direct WebDAV calls use the user id from the remote URL, which differs
   from the login name on LDAP/SSO servers.
+- Delete guard, honest wording: rclone's `--max-delete` stops a sync/pull
+  run only after `DELETE_FILES_THRESHOLD` files are already deleted. The
+  docs, prompts and messages now say so, and a new empty-folder guard
+  refuses to mirror an empty local folder over a non-empty remote (`pull`:
+  an empty remote over a non-empty local folder), for example an unmounted
+  disk; `--yes` overrides it and a dry run warns.
+- `edit` and `hydrate` no longer replace a newer local file whose edits are
+  not synced yet (`rclone --update`).
+- `favorites`, `tags`, `comments`, `file info|activity` and
+  `share copy-internal` resolve SUB below `REMOTE_BASE` like every other
+  command, instead of at the account root.
+- The run lock compares process start times in the C locale, so a German
+  terminal and a scheduled run no longer take over each other's lock.
+- The failure blacklist counts a path once per run, ignores rclone's
+  "Attempt N/M failed" summaries, and a successful run resets paths that
+  are still below `BLACKLIST_MAX_FAILS`.
+- `conflicts --resolve keep-newest|keep-oldest|keep-local` lets only one
+  copy replace an original; other copies and equal-mtime ties are kept
+  (keep-both).
+- `backup run` reports invalid `backups.conf` lines as failures, writes the
+  "last run" marker only after a working run, and notifies when the quota
+  gate skips a run. `backup init` shows the repository password whenever
+  it did not come from `--password-stdin`, and stops when key storage
+  cannot be read instead of treating that as "no password stored".
+- `watch` runs its sync and check children non-interactively, does not
+  retry forever because of an unrelated invalid manifest line, and skips the
+  remote poll while a sync holds the lock.
+- Exclude rules built from folder names (folder wizard, case clashes) are
+  escaped as literal names, and a case-clash folder is excluded with its
+  contents. Pair filter files written by older versions for names with
+  `[ ] { } * ? \` differ from the new form; delete such a file before
+  editing that pair again.
+- Direct HTTP calls retry only read-only requests (GET, HEAD, PROPFIND,
+  REPORT, OPTIONS), so a slow share creation no longer creates two links.
+- `share --permissions` combines letters (`rr` is read, not update).
+- `setup --rotate` refuses a browser signed in as another user;
+  `setup --no-keychain` removes the old keychain app password before it
+  validates, so the new password is the one tested and used.
+- The browser sign-in (`setup --login`) honors `PROXY`/`PROXY_TYPE`, has
+  connect and total timeouts, and refuses credentials that contain control
+  characters; `setup` always re-probes the server's capabilities.
+- `umount` matches the mount point exactly (it no longer stops the rclone
+  of `/m/docs2` for `/m/docs`), and mounts are detected on Linux too.
+- `--log-file` keeps the plan, conflict and status reports working.
+- Names containing `..` inside a segment (`Report..final.pdf`) are accepted;
+  only `..` path segments are refused.
+- bisync with `MOVE_TO_TRASH=1` uses `--backup-dir1`, which rclone requires
+  for a local trash against a WebDAV remote.
+- `account remove` deletes the profile's app password from the keychain
+  (never its restic password) and prints how to remove its rclone remote.
+  New profiles get the remote `<RCLONE_REMOTE>_<name>`.
+- Smaller fixes: `account avatar` keeps an existing file when the download
+  fails; `--opt=` passes an empty value instead of eating the next argument;
+  JSON string escapes (`\\`, `\uXXXX`) decode correctly; XML entities are
+  decoded once; sizes round up to the next unit (`1.0MiB`, not `1024KiB`);
+  `pause --for 0` is refused; very long durations are rejected instead of
+  overflowing; backup settings (`BACKUP_*_EVERY`, `BACKUP_KEEP_WITHIN`,
+  `BACKUP_CHECK_READ_DATA_SUBSET`) are validated at load; `cmd_lock` refuses
+  a lock-record name collision; `cleanup --state` keeps the bisync state of
+  pairs whose manifest line is only invalid; `update` prints valid advice
+  and clean `--json`; on Linux, `open` is never used as a fallback opener.
+
+### Removed
+
+- The `make` targets that only wrapped a `sciebo` command (`make sync`,
+  `make status`, …) and `make clean-dist`; run `bin/sciebo <command>`.
+  `DIST_DIR` is no longer read from the environment.
+- Dead helpers and the unused generated `SCIEBO_COMMAND_TIER` table;
+  `check-drift` now fails `make lint` on functions without a production
+  caller.
 
 ## [0.3.0] - 2026-10-20
 

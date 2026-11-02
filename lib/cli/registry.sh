@@ -70,66 +70,6 @@ declare -gA SCIEBO_COMMAND_MODULE=(
   [update]=update
 )
 
-# shellcheck disable=SC2034  # part of the generated registry; not read by the runtime dispatch today, kept for tooling that needs the core/extra split without re-deriving it from the spec
-declare -gA SCIEBO_COMMAND_TIER=(
-  [setup]=core
-  [doctor]=core
-  [discover]=core
-  [list]=core
-  [check]=core
-  [sync]=core
-  [verify]=core
-  [status]=core
-  [pause]=core
-  [resume]=core
-  [folders]=core
-  [mount]=core
-  [umount]=core
-  [mounts]=core
-  [cleanup]=core
-  [schedule]=core
-  [trash]=core
-  [versions]=core
-  [share]=core
-  [notifications]=extra
-  [activity]=extra
-  [presence]=extra
-  [lock]=core
-  [unlock]=core
-  [locks]=core
-  [quota]=core
-  [open]=core
-  [conflicts]=core
-  [retry]=core
-  [account]=core
-  [logout]=core
-  [config]=core
-  [support]=core
-  [nextcloudcmd]=core
-  [watch]=core
-  [limit]=core
-  [unlimited]=core
-  [network]=core
-  [filters]=core
-  [file]=extra
-  [search]=extra
-  [recent]=extra
-  [comments]=extra
-  [favorites]=extra
-  [tags]=extra
-  [server]=extra
-  [hydrate]=core
-  [provision]=core
-  [logs]=core
-  [edit]=extra
-  [ignored]=core
-  [announcements]=extra
-  [preview]=extra
-  [backup]=extra
-  [download]=core
-  [update]=core
-)
-
 _SCIEBO_GLOBAL_SPECS=(
   '--profile|SCIEBO_PROFILE|value|0'
   '--trust|TLS_INSECURE|flag|0'

@@ -21,6 +21,8 @@ duration_seconds() {
   suffix="${value#"$number"}"
   [[ -n "$number" ]] || return 1
   [[ "$number" != *[!0-9]* ]] || return 1
+  # 12 digits times 86400 still fits in 64 bits; more would overflow to a negative value.
+  ((${#number} <= 12)) || return 1
   case "$suffix" in
     '') ;;
     s | S) multiplier=1 ;;

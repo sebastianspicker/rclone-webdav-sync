@@ -53,10 +53,6 @@ _runstate_file() {
   return 0
 }
 
-# runstate_file NAME - print NAME's record path. rc 1 and no output when
-# the name sanitizes to nothing or RUNSTATE_DIR is not set.
-runstate_file() { _runstate_file "" "${1:-}"; }
-
 # _runstate_write NS NAME MODE STATUS RC LOG CONFLICTS DETAIL - atomically
 # replace NAME's record in namespace NS (mode 600), creating its directory
 # first. LOG is stored as "-" when empty and DETAIL is flattened with
@@ -159,10 +155,6 @@ _runstate_history_file() {
   return 0
 }
 
-# runstate_history_file NAME - print NAME's history log path. rc 1 and no
-# output when the name sanitizes to nothing or HISTORY_DIR is not set.
-runstate_history_file() { _runstate_history_file "" "${1:-}"; }
-
 # _runstate_history_append NS NAME EPOCH STATUS DETAIL - append one
 # TAB-separated history record for NAME in namespace NS, creating its
 # directory lazily, and trim the log to the newest HISTORY_MAX_ENTRIES lines. STATUS and DETAIL are flattened to a
@@ -213,10 +205,6 @@ _runstate_history_append() {
   fi
   return 0
 }
-
-# runstate_history_append NAME EPOCH STATUS DETAIL - _runstate_history_append
-# in the current layout (NS="").
-runstate_history_append() { _runstate_history_append "" "$@"; }
 
 # runstate_format_epoch_into VAR EPOCH - store epoch_to_stamp_or_raw's
 # output in VAR without a command substitution; the history walk formats one

@@ -209,12 +209,6 @@ file_require_sub() {
     usage_error file "${sub} requires a remote path argument (SUB)"
 }
 
-# file_reject_option SUB NAME - usage_error when --NAME was given for SUB; the
-# wrapper keeps file's call sites named while opt_reject owns the check.
-file_reject_option() {
-  opt_reject file "$1" "$2"
-}
-
 # file_print_mode TEXT_FN JSON_FN ARGS... - print through the text or JSON
 # printer matching the current --json flag.
 file_print_mode() {
@@ -248,7 +242,7 @@ cmd_file() {
   case "$sub" in
     info)
       file_require_sub info
-      file_reject_option info limit
+      opt_reject file info limit
       require_safe_remote_path "$FILE_ARG"
       http_load_context
       nc_file_info "$FILE_ARG"
@@ -273,7 +267,7 @@ cmd_file() {
       ;;
     shares)
       file_require_sub shares
-      file_reject_option shares limit
+      opt_reject file shares limit
       require_safe_remote_path "$FILE_ARG"
       if [[ -n "${OPT_json_SET:-}" ]]; then
         "${PROJECT_DIR}/bin/sciebo" share list --json -- "$FILE_ARG" || rc=$?

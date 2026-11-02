@@ -405,7 +405,7 @@ manifest_write_pair_filter() {
   content="# Pair filter for '${sub}' created by the folder wizard."
   content="${content}"$'\n'"# rclone --filter-from rules; see config/filters/README.md."
   for rule in "${rules[@]}"; do
-    content="${content}"$'\n'"- /${rule}/"
+    content="${content}"$'\n'"- ${ rclone_literal_pattern "$rule";}/"
   done
   # shellcheck disable=SC2034  # read by the folder command modules
   MANIFEST_PAIR_FILTER="pair-${name}.txt"

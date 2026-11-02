@@ -77,7 +77,7 @@ lock_state_file() {
 
 # lock_url SUB - print the WebDAV URL of SUB below the remote base.
 lock_url() {
-  nc_path_url "${REMOTE_BASE}/${1}"
+  nc_sub_url "$1"
 }
 
 # lock_token_control_free TOKEN - rc 0 when TOKEN has no control byte, rc 1
@@ -256,6 +256,11 @@ cmd_lock() {
   http_load_context
   file="$(lock_state_file "$sub")" ||
     die "cannot derive a lock record name for '${ printable "$sub";}'"
+  # Records are named by sanitize_name, so docs/x and docs_x share one file;
+  # never overwrite another path's token.
+  if lock_record_parse "$file" && [[ "$LOCK_RECORD_PATH" != "$sub" ]]; then
+    die "lock record '${file}' already holds the lock of '${ printable "$LOCK_RECORD_PATH";}'; run '${CLI_NAME} unlock ${LOCK_RECORD_PATH}' first"
+  fi
   url="$(lock_url "$sub")"
   nc_dav_request_allow LOCK "$url" "" "" -H 'X-User-Lock: 1' --data-binary ""
   case "$HTTP_CODE" in

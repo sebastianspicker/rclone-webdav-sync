@@ -475,7 +475,7 @@ remote_is_nextcloud() {
 # remote_nextcloud_base [URL] - print scheme://host[:port] derived from URL
 # (the configured remote's url when omitted); rc 1 without an http(s)
 # scheme or the /remote.php/dav/files/ path. The single base derivation:
-# http_remote_info (lib/adapters/http.sh) and capabilities_base_url both delegate
+# http_remote_info (lib/adapters/http.sh) and the capabilities probe both delegate
 # here, and http.sh already depends on rclone.sh's config helpers, so this
 # file is the load-order-safe owner of the logic.
 remote_nextcloud_base() {
@@ -550,6 +550,17 @@ rclone_config_patch_value() {
   }
   temp_discard "$tmp"
   return 0
+}
+
+# remote_require_user USER - die unless USER is a usable rclone/WebDAV user
+# name (no whitespace or control characters). The one check every setup path
+# runs: .env, --login (server-supplied loginName) and provision --userid.
+remote_require_user() {
+  case "$1" in
+    *[[:space:]]* | *[[:cntrl:]]*)
+      die "sciebo ID '$(printable "$1")' must not contain whitespace or control characters"
+      ;;
+  esac
 }
 
 # remote_write_nextcloud URL USER PASS_CONFIG - create or update the

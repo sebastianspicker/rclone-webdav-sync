@@ -31,7 +31,7 @@ It works with any Nextcloud server. Its default target is [sciebo](https://hochs
 
 - Mirrors each folder you choose in one direction: one-way upload (`sync`), one-way download (`pull`), or two-way sync (`bisync`, which reconciles both sides and needs a one-time initialization). `check` shows the plan first as a dry run, a preview that changes nothing.
 - Adds the Nextcloud desktop client's other features as plain commands: a folder-picker wizard, shares, notifications, activity, on-demand mounts, file locks, trash, file versions, quota, and multi-account profiles.
-- Follows the desktop client's safe defaults: invalid names, case clashes, and end-to-end encrypted (E2EE) folders are excluded by default, and a run that would delete a lot of files stops and asks first (the delete guard).
+- Follows the desktop client's safe defaults: invalid names, case clashes, and end-to-end encrypted (E2EE) folders are excluded by default, a run that deletes a lot of files is stopped (the delete guard; a `sync`/`pull` run stops only after deleting `DELETE_FILES_THRESHOLD` files), and an empty folder is never mirrored over a full one without `--yes`.
 - Runs as a plain command-line tool with no background service. `sciebo watch` (live sync as files change) and `sciebo schedule install` (periodic runs via the OS's own scheduler) add an always-on path, but only if you opt in.
 - Keeps encrypted, versioned backups of local folders in your sciebo account with `sciebo backup` (restic), separate from the mirrored folders; see [Backups (restic)](#backups-restic).
 <!-- src: README.md -->
@@ -188,7 +188,7 @@ Coming from the Nextcloud desktop client? `bin/sciebo account import --dry-run` 
 **2. Multiple accounts?** Account profiles keep their own sync lists, filters, state, and keychain service:
 
 ```sh
-bin/sciebo account add work --remote sciebo-work --base backup
+bin/sciebo account add work --remote sciebo_work --base backup
 bin/sciebo --profile work setup --login
 bin/sciebo --profile work folders choose
 ```
@@ -288,7 +288,7 @@ This tool is a CLI, not a GUI: there is no tray icon, and nothing adds a sync-st
 
 ## Commands
 
-Run `bin/sciebo` from the project root, or put it on your `PATH` after `make install`. The commands below are grouped by what they're for, as a quick-scan preview; the full option tables, exit codes, and examples are in [docs/commands.md](docs/commands.md), which uses the same groups. Several commands also have a `make` target (`make help` lists them), but the CLI is the complete interface.
+Run `bin/sciebo` from the project root, or put it on your `PATH` after `make install`. The commands below are grouped by what they're for, as a quick-scan preview; the full option tables, exit codes, and examples are in [docs/commands.md](docs/commands.md), which uses the same groups. `make help` lists the maintenance targets (lint, install, dist); the CLI is the complete interface.
 
 | Group | Commands |
 | --- | --- |
@@ -313,7 +313,7 @@ Settings live in `config/settings.env` (tracked defaults) and `config/settings.l
 
 - `check` and `verify` never change anything; transfers and deletions happen only through `sync` and `cleanup --apply`, one run at a time behind a lock.
 - Desktop-client parity policies are safe by default: invalid names, local case-only collisions, and server-side E2EE folders are excluded from a transfer; external storages and big folders ask before the first sync.
-- A `sync` that would delete more files than `DELETE_FILES_THRESHOLD` (for two-way `bisync` pairs: more than half of the files) stops and asks (or fails a non-interactive run) unless `sync --yes` is given.
+- A `sync` or `pull` apply stops after `DELETE_FILES_THRESHOLD` deletions (those files are already deleted; for two-way `bisync` pairs the run stops before deleting more than half of the files) and asks (or fails a non-interactive run) unless `sync --yes` is given. An apply that would mirror an empty local folder over a non-empty remote (`pull`: an empty remote over a non-empty local folder) is refused without `--yes`.
 - Git is not special-cased: `.git/` syncs as files, so avoid syncing a repo while git is rewriting objects, and don't run `bisync` on a repository you're actively working in.
 - Bisync conflict copies stay local by default; `conflicts --resolve` reviews and resolves them.
 - `backup forget` is a dry run unless you pass `--apply`, `backup restore` refuses non-empty targets and your sync folders unless you pass `--force`, and `logout` asks before it removes the repository password.

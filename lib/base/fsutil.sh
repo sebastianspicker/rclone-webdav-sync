@@ -142,7 +142,7 @@ safe_remote_path() {
   local s="$1"
   [[ -n "$s" ]] || return 1
   case "$s" in
-    [[:space:]]* | *[[:space:]] | /* | *..* | *"|"*) return 1 ;;
+    [[:space:]]* | *[[:space:]] | /* | .. | ../* | */.. | */../* | *"|"*) return 1 ;;
   esac
   [[ "$s" != *[[:cntrl:]]* ]]
 }

@@ -19,6 +19,8 @@
 #                           absent or starts with "-" DEFAULT is used
 #                           instead of consuming it. OPT_<name>_SET=1
 #                           whenever the flag appears.
+# --name=VALUE always carries VALUE, even when empty, and never consumes the
+# next argument; for s/S, a separate empty argument (--name "") is a value too.
 # Names use dashes on the command line and underscores in the globals.
 #
 # opt_parse SPEC COMMAND LABEL "$@"
@@ -83,11 +85,12 @@ _opt_store() {
 opt_parse() {
   local spec="$1" command="$2" label="$3"
   shift 3
-  local token name value kind="" default="" key keyvar=""
+  local token name value kind="" default="" key keyvar="" has_eq
   OPT_HELP=0
   OPT_EXTRA=""
   while [[ $# -gt 0 ]]; do
     token="$1"
+    has_eq=0
     shift
     case "$token" in
       -h | --help)
@@ -103,6 +106,7 @@ opt_parse() {
         return 0
         ;;
       --*=*)
+        has_eq=1
         name="${token#--}"
         value="${name#*=}"
         name="${name%%=*}"
@@ -127,7 +131,8 @@ opt_parse() {
         [[ -z "$value" ]] || usage_error "$command" "${label}--${name} does not take a value"
         ;;
       o)
-        if [[ -z "$value" ]]; then
+        # --name=VALUE carries its value even when empty; it never consumes the next argument.
+        if ((! has_eq)); then
           if [[ $# -gt 0 && -n "${1:-}" && "$1" != -* ]]; then
             value="$1"
             shift
@@ -137,8 +142,8 @@ opt_parse() {
         fi
         ;;
       *)
-        if [[ -z "$value" ]]; then
-          [[ $# -gt 0 && -n "${1:-}" ]] || usage_error "$command" "${label}--${name} requires a value"
+        if ((! has_eq)); then
+          [[ $# -gt 0 ]] || usage_error "$command" "${label}--${name} requires a value"
           value="$1"
           shift
         fi

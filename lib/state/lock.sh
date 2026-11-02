@@ -37,7 +37,9 @@ _lock_start() {
 # -ww keeps the full command line and start time even when the terminal
 # width would otherwise truncate them (launchd logs are narrow).
 _lock_command() { ps -ww -p "$1" -o command= 2>/dev/null || true; }
-_lock_proc_start() { ps -ww -p "$1" -o lstart= 2>/dev/null || true; }
+# LC_ALL=C: ps formats lstart with the locale's %c, so runs in different
+# locales would see a live owner's start time differ and take its lock.
+_lock_proc_start() { LC_ALL=C ps -ww -p "$1" -o lstart= 2>/dev/null || true; }
 _lock_write_pid() {
   printf '%s\n' "$$" >"$1/pid"
   _lock_proc_start "$$" >"$1/start"
@@ -89,6 +91,15 @@ _lock_pid_alive() {
   started="$(_lock_start "$lock")"
   [[ -n "$started" ]] || return 0
   pid_alive "$pid" "$started"
+}
+
+# lock_busy [NAME] - true when a live process holds the lock NAME (default
+# `sync`). Read-only: never takes, moves or clears the lock.
+lock_busy() {
+  local lock="${LOCK_DIR:-}/${1:-sync}.lock" pid=""
+  [[ -n "${LOCK_DIR:-}" && -d "$lock" ]] || return 1
+  pid="$(_lock_pid "$lock")"
+  [[ -n "$pid" ]] && _lock_pid_alive "$pid" "$lock"
 }
 
 # lock_held NAME - true when this process holds the lock NAME.

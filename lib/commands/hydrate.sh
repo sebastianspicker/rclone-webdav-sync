@@ -24,7 +24,8 @@ The destination is the local directory of the first manifest entry whose
 remote_subdir equals SUB or is a parent of SUB, with the remaining
 relative path appended; without a match it is FOLDERS_LOCAL_ROOT/SUB.
 With --dest DIR the contents of SUB are copied into DIR instead (the
-matching manifest entry's filter still applies).
+matching manifest entry's filter still applies). Local files newer than
+the server copy are kept (rclone --update).
 
 Options:
   --dest DIR  copy into DIR instead of the resolved destination
@@ -60,6 +61,8 @@ cmd_hydrate() {
     die "remote path not found: ${REMOTE_PREFIX}/${sub}"
   fi
   hydrate_build_args "$sub" "$dest" "$apply"
+  # Keep newer local files whose edits are not synced yet.
+  HYDRATE_ARGS+=(--update)
   progress_append_args HYDRATE_ARGS "$HYDRATE_QUIET"
   if output_json_enabled; then
     # The lock may initialize the state layout, which logs to stdout; keep

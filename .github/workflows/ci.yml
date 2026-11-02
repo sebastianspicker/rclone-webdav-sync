@@ -89,7 +89,9 @@ jobs:
           sudo install -m 755 /tmp/shfmt /usr/local/bin/shfmt
           shfmt --version
           # Ubuntu's packaged rclone is older than RCLONE_MIN_VERSION (1.69).
-          curl -fsSL https://rclone.org/install.sh | sudo bash
+          # Homebrew (set up and on PATH from the Bash step) ships a current,
+          # checksum-verified rclone; no piped install script.
+          brew install rclone
           rclone version
 
       - name: Version consistency

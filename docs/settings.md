@@ -523,9 +523,9 @@ the desktop client's own behavior.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `DELETE_FILES_THRESHOLD` | `100` | deletion count at which the safety brake stops a `sync`/`pull` run (non-negative integer). `bisync` entries use rclone bisync's own limit (more than half of the files) instead. |
+| `DELETE_FILES_THRESHOLD` | `100` | deletion count after which the safety brake stops a `sync`/`pull` run; these files are already deleted when it stops (non-negative integer). `bisync` entries use rclone bisync's own limit (more than half of the files) instead. |
 | `ASK_DELETE` | `1` | `1` arms the delete guard (`--max-delete DELETE_FILES_THRESHOLD` for sync/pull, rclone's 50 % brake plus the prompt for bisync); `0` disables it. |
-| `MOVE_TO_TRASH` | `0` | `1` moves files deleted or overwritten by a pull/bisync apply under `LOCAL_TRASH_DIR` (or `BACKUP_DIR`) instead of deleting them (rclone `--backup-dir`). |
+| `MOVE_TO_TRASH` | `0` | `1` moves files deleted or overwritten by a pull/bisync apply under `LOCAL_TRASH_DIR` (or `BACKUP_DIR`) instead of deleting them (rclone `--backup-dir`; bisync `--backup-dir1`, the local side only). |
 | `LOCAL_TRASH_DIR` | empty (derives `<STATE_DIR>/trash`) | destination for `MOVE_TO_TRASH=1`, with the per-source `<name>` subdirectory appended. |
 <!-- src: settings.md#delete-guard-and-local-trash -->
 
@@ -535,7 +535,12 @@ default `MAX_DELETE=-1`, `ASK_DELETE=1` adds `--max-delete
 DELETE_FILES_THRESHOLD` to every sync and pull entry. For bisync,
 `--max-delete` is a percentage and rclone already stops a run that would
 delete more than 50 % of the files, so the guard passes nothing and keeps
-that brake. When rclone aborts at the limit, an interactive run asks
+that brake. `--max-delete` does not check first: rclone deletes up to
+`DELETE_FILES_THRESHOLD` files, then aborts. Independently of the
+threshold, a sync apply from an empty local folder over a non-empty
+remote, and a pull apply from an existing empty remote over a non-empty
+local folder, fail the entry before rclone runs (a dry run only warns).
+When rclone aborts at the limit, an interactive run asks
 whether to re-run the entry past it (bisync: with `--force`), while a
 declined prompt or a non-interactive run fails the entry and tells you to
 re-run with `sync --yes`. `sync --yes` lifts the guard (and the
@@ -543,7 +548,8 @@ re-run with `sync --yes`. `sync --yes` lifts the guard (and the
 bisync as a percentage.
 <!-- src: settings.md#delete-guard-and-local-trash -->
 
-`MOVE_TO_TRASH` sets rclone `--backup-dir` for pull and bisync applies with
+`MOVE_TO_TRASH` sets rclone `--backup-dir` for pull applies (bisync:
+`--backup-dir1`, which covers the local side only) with
 the per-source subdirectory appended. `BACKUP_DIR` takes precedence when
 set: on pull it keeps its usual `<BACKUP_DIR>/<name>` behavior even with
 `MOVE_TO_TRASH=0`, and on bisync `MOVE_TO_TRASH=1` uses `BACKUP_DIR` when
@@ -556,7 +562,7 @@ set, otherwise `LOCAL_TRASH_DIR`. Empty `LOCAL_TRASH_DIR` derives
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `BLACKLIST_ENABLED` | `1` | `1` tracks paths that error during sync/pull/bisync; `0` disables tracking entirely. |
-| `BLACKLIST_MAX_FAILS` | `3` | a path erroring this many times is added to the retry blacklist and excluded from later runs until `sciebo retry` clears it. |
+| `BLACKLIST_MAX_FAILS` | `3` | a path that fails in this many runs (a successful run resets the count) is added to the retry blacklist and excluded from later runs until `sciebo retry` clears it. |
 | `BLACKLIST_MODE` | `count` | `count` keeps the three-strikes behavior; `backoff` excludes a path only until its recorded retry time. |
 | `BLACKLIST_TIME_MIN` | `25` | `backoff`: first retry delay in seconds. |
 | `BLACKLIST_TIME_MAX` | `86400` | `backoff`: cap for the doubling delay, in seconds. |
@@ -567,7 +573,7 @@ set, otherwise `LOCAL_TRASH_DIR`. Empty `LOCAL_TRASH_DIR` derives
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `HTTP_TIMEOUT` | `30` | curl timeout in seconds for the direct WebDAV/OCS calls made through `lib/adapters/http.sh` and `lib/adapters/nc_api.sh` (share, notifications, activity, presence, lock, trash, versions, file, search, recent, comments, favorites, tags). File downloads (`download`, `versions get`, `preview`) have no total limit; they stop only when no data arrives for `HTTP_TIMEOUT` seconds. |
-| `HTTP_RETRIES` | `2` | curl retries for those calls. |
+| `HTTP_RETRIES` | `2` | curl retries for those calls; only read-only requests (GET, HEAD, PROPFIND, REPORT, OPTIONS) are retried. |
 | `HTTP_RETRY_DELAY` | `1` | seconds curl waits between retries (`--retry-delay`). |
 | `HTTP_FOLLOW_REDIRECTS` | `1` | `1` makes GET/HEAD calls follow redirects up to `HTTP_MAX_REDIRS` hops (`--location`); writes never follow, so a POST/PUT body is never silently dropped. |
 | `HTTP_MAX_REDIRS` | `5` | maximum redirect hops for GET/HEAD when `HTTP_FOLLOW_REDIRECTS=1` (`--max-redirs`). |
@@ -705,7 +711,7 @@ through `rclone serve restic`. restic is a separate install, 0.17 or newer
 | `BACKUP_TAGS` | `sciebo` | comma separated restic `--tag` list for every snapshot (a `source=<name>` tag is always added). |
 | `BACKUP_HOST` | empty | the `--host` restic records and `forget`/`snapshots --only` filter on; empty uses the short hostname. Set it when the machine's hostname changes with the network (macOS), otherwise one machine's snapshots split into several host groups. No spaces or leading `-`. |
 | `BACKUP_KEEP_LAST`, `BACKUP_KEEP_HOURLY`, `BACKUP_KEEP_DAILY`, `BACKUP_KEEP_WEEKLY`, `BACKUP_KEEP_MONTHLY`, `BACKUP_KEEP_YEARLY` | `0`, `0`, `7`, `4`, `6`, `0` | retention policy for `backup forget`: how many snapshots to keep per period (`0` = unused). |
-| `BACKUP_KEEP_WITHIN` | empty | also keep every snapshot newer than this duration (`--keep-within`, e.g. `14d`). At least one `BACKUP_KEEP_*` value must be set or `forget` refuses. |
+| `BACKUP_KEEP_WITHIN` | empty | also keep every snapshot newer than this duration (`--keep-within`, restic duration such as `1y2m3d4h` or `14d`; checked at load). At least one `BACKUP_KEEP_*` value must be set or `forget` refuses. |
 | `BACKUP_PRUNE` | `1` | `backup forget --apply` and the maintenance pass also prune unreferenced data. |
 | `BACKUP_MAINTENANCE` | `1` | `backup run` performs due forget/prune and check afterwards. |
 | `BACKUP_FORGET_EVERY` | `30d` | how often maintenance runs forget (`<N>[smhd]`); empty or `0` disables. |

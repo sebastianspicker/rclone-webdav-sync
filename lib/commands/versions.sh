@@ -84,26 +84,6 @@ versions_parse_action() {
   require_safe_remote_path "$VERSIONS_SUB"
 }
 
-# versions_parse_fileid XML - print the numeric file id of the first
-# <oc:fileid> value; empty when the property is absent or not numeric.
-# xml_get comes from lib/adapters/http.sh, which the guard above loads when this
-# module is sourced on its own (nc_parse_fileid is the nc_api copy).
-versions_parse_fileid() {
-  local fileid=""
-  fileid="$(xml_get "$1" oc:fileid)"
-  is_uint "$fileid" || fileid=""
-  printf '%s' "$fileid"
-}
-
-# versions_id_from_href HREF - the percent-decoded last path segment of a
-# listing href (the version label): the shell twin of http.sh's awk
-# xml_href_segment (strip the trailing slashes, take the segment, then
-# decode), so versions_parse_xml can read the raw d:href through the shared
-# xml_records walker instead of its own <d:response> loop.
-versions_id_from_href() {
-  href_last_segment "${1:-}"
-}
-
 # versions_parse_xml XML - print one TAB-separated record per <d:response>
 # through the shared xml_records walker: version (last href segment,
 # percent-decoded), last modified, and size. Tolerates missing properties,
@@ -114,7 +94,7 @@ versions_parse_xml() {
   while IFS= read -r line; do
     record_split "$line" href modified size
     is_uint "$size" || size=""
-    version=${ versions_id_from_href "$href";}
+    version=${ href_last_segment "$href";}
     modified=${ printable "$modified";}
     size=${ printable "$size";}
     printf '%s\t%s\t%s\n' "$version" "$modified" "$size"
@@ -126,21 +106,6 @@ versions_parse_xml() {
 # version of FILEID.
 versions_version_url() {
   nc_dav_url "versions/${HTTP_DAV_UID:-$HTTP_USER}/versions/$1/$2"
-}
-
-# versions_resolve SUB - fill VERSIONS_FILEID and VERSIONS_LIST_XML with the
-# shared PROPFIND pair: the file id of SUB (Depth 0) and its version listing
-# (Depth 1). Dies when SUB has no numeric file id.
-versions_resolve() {
-  local sub="$1" url="" fileid=""
-  url="$(nc_path_url "${REMOTE_BASE}/${sub}")"
-  nc_dav_request PROPFIND "$url" 0 "$NC_FILEID_BODY"
-  fileid="$(versions_parse_fileid "$HTTP_BODY")"
-  [[ -n "$fileid" ]] ||
-    die "no file id for '${sub}' below ${RCLONE_REMOTE}:${REMOTE_BASE}/ (not found, or not a file)"
-  VERSIONS_FILEID="$fileid"
-  nc_dav_request PROPFIND "$(nc_dav_url "versions/${HTTP_DAV_UID:-$HTTP_USER}/versions/${fileid}")" 1 "$VERSIONS_LIST_BODY"
-  VERSIONS_LIST_XML="$HTTP_BODY"
 }
 
 # versions_confirm ACTION VERSION - 0 when the action may proceed. --yes
@@ -245,7 +210,10 @@ cmd_versions() {
     restore | delete) versions_confirm "$VERSIONS_ACTION" "$VERSIONS_VERSION" || return 0 ;;
   esac
   http_load_context
-  versions_resolve "$VERSIONS_SUB"
+  VERSIONS_FILEID=${ nc_fileid_allow "$VERSIONS_SUB";} ||
+    die "no file id for '${VERSIONS_SUB}' below ${RCLONE_REMOTE}:${REMOTE_BASE}/ (not found, or not a file)"
+  nc_dav_request PROPFIND "$(nc_dav_url "versions/${HTTP_DAV_UID:-$HTTP_USER}/versions/${VERSIONS_FILEID}")" 1 "$VERSIONS_LIST_BODY"
+  VERSIONS_LIST_XML="$HTTP_BODY"
   if [[ -z "$VERSIONS_ACTION" ]]; then
     versions_run_list
     return 0

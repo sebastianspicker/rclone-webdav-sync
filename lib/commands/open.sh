@@ -82,7 +82,7 @@ open_web_url() {
 open_web_fileid() {
   local sub="$1" url="" body="" fileid=""
   [[ -n "$sub" ]] || return 1
-  url="$(nc_path_url "${REMOTE_BASE}/${sub}")"
+  url="$(nc_sub_url "$sub")"
   nc_dav_request_allow PROPFIND "$url" 0 "$NC_FILE_INFO_BODY"
   http_ok_code_2xx "$HTTP_CODE" || return 1
   body="$HTTP_BODY"

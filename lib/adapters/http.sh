@@ -573,8 +573,16 @@ _http_run_curl() {
   if [[ "${HTTP_TRANSFER:-0}" == 1 ]]; then
     time_limit=(--speed-limit 1 --speed-time "${HTTP_TIMEOUT:-30}")
   fi
+  # Retry only read-only requests: --retry-all-errors would replay a POST/PUT/
+  # DELETE/MOVE whose first attempt may already have taken effect.
+  local -a retry=()
+  case "$method" in
+    GET | HEAD | PROPFIND | REPORT | OPTIONS)
+      retry=(--retry "${HTTP_RETRIES:-2}" --retry-delay "${HTTP_RETRY_DELAY:-1}" --retry-all-errors --retry-connrefused)
+      ;;
+  esac
   curl -sS "${time_limit[@]}" --connect-timeout "${HTTP_CONNECT_TIMEOUT:-15}" \
-    --retry "${HTTP_RETRIES:-2}" --retry-delay "${HTTP_RETRY_DELAY:-1}" --retry-all-errors --retry-connrefused \
+    ${retry[@]+"${retry[@]}"} \
     ${follow[@]+"${follow[@]}"} \
     ${tls_flag:+"$tls_flag"} ${http_ver_flag:+"$http_ver_flag"} ${SCIEBO_DEBUG:+-v} \
     ${client_args[@]+"${client_args[@]}"} \

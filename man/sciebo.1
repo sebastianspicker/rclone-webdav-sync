@@ -122,8 +122,8 @@ Base URL for
 .BR \-\-login .
 .TP
 .B \-\-rotate
-Fetch a fresh app password for the already-configured remote; cannot be
-combined with
+Fetch a fresh app password for the already-configured remote; refused when
+the browser is signed in as a different user; cannot be combined with
 .B \-\-login
 or
 .BR \-\-url .
@@ -147,7 +147,8 @@ or
 .TP
 .B \-\-no\-keychain
 Store the obscured password in the rclone config for this run instead of the
-macOS Keychain.
+macOS Keychain, and remove the old Keychain app-password items once the
+remote validates.
 .SS "sciebo doctor [\-\-offline] [\-\-json]"
 Run preflight checks and print PASS/WARN/FAIL lines plus a summary. Exits 1
 if any check fails. The policy checks cover the active desktop-parity
@@ -310,7 +311,14 @@ The delete guard: with
 each sync and pull apply passes
 .B \-\-max\-delete
 .BR DELETE_FILES_THRESHOLD ;
-a bisync apply keeps rclone bisync's own limit (more than half of the files).
+rclone deletes up to that many files before it stops, so the guard
+stops a run after that many deletions rather than before them.
+A bisync apply keeps rclone bisync's own limit (more than half of the files).
+A sync apply from an empty local folder over a non-empty remote, and a pull
+apply from an existing empty remote over a non-empty local folder, fail the
+entry before rclone runs unless
+.B \-\-yes
+is given.
 When rclone stops at the limit, a terminal asks once to
 continue past it; a non-interactive run fails the entry with a
 message to re-run with
@@ -1291,7 +1299,11 @@ a terminal run asks once before merging into an existing profile; a
 non-interactive run refuses (exit 2).
 .TP
 .BI "remove " "NAME [\-\-yes]"
-Delete a profile's config and state.
+Delete a profile's config and state, and its app password from the
+keychain. Its restic password and its rclone remote are kept; the command
+prints a note and a
+.B rclone config delete
+hint.
 .TP
 .BI "use " NAME
 Show how to activate a profile.
@@ -1606,7 +1618,8 @@ wins, and the local copy lives at that entry's local path. There is no
 fallback, and
 .I SUB
 must name a file, not a directory. The run lock is held for the whole
-operation.
+operation. A local copy newer than the server is kept and edited instead
+of being replaced.
 .TP
 .BI \-\-editor " CMD"
 Editor command, possibly with arguments; the file path is appended last.
@@ -1910,7 +1923,9 @@ With
 .B \-\-dest
 the contents of
 .I SUB
-are copied into the given directory instead.
+are copied into the given directory instead. Local files newer than the
+server copy are kept (rclone
+.BR \-\-update ).
 .TP
 .BI \-\-dest " DIR"
 Copy the contents of

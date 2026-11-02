@@ -68,6 +68,7 @@ backup_filter_translate() {
       errors=$((errors + 1))
       continue
     fi
+    # shortcut: the trailing "/" is dropped, so a file with the same name as an excluded folder is excluded too; upgrade once a restic dir-only form is verified.
     while [[ "$pat" == */ ]]; do pat="${pat%/}"; done
     case "$pat" in
       '!'* | '#'*)

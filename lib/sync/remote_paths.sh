@@ -120,17 +120,6 @@ _policy_remote_wizard() {
   return 0
 }
 
-# _policy_remote_wizard_e2ee POLICY SUB SCOPE SINK - E2EE wording wrapper.
-_policy_remote_wizard_e2ee() {
-  _policy_remote_wizard e2ee "$1" "$2" "$3" "$4"
-}
-
-# _policy_remote_wizard_external POLICY SUB SCOPE SINK - external wording
-# wrapper.
-_policy_remote_wizard_external() {
-  _policy_remote_wizard external "$1" "$2" "$3" "$4"
-}
-
 # policy_remote_paths_apply POLICY PROBE KIND OUT_EXCLUDES_NAME CHECKED_VAR
 #
 # The one shared E2EE / server-mounted external-storage gate behind the sync
@@ -258,8 +247,8 @@ _policy_remote_run_wizard() {
   POLICY_REMOTE_LAST_SCOPE="$scope"
   _policy_remote_set_checked "$checked_name" "$POLICY_REMOTE_COUNT"
   case "$kind" in
-    e2ee) _policy_remote_wizard_e2ee "$policy" "$root" "$scope" "$sink" ;;
-    *) _policy_remote_wizard_external "$policy" "$root" "$scope" "$sink" ;;
+    e2ee) _policy_remote_wizard e2ee "$policy" "$root" "$scope" "$sink" ;;
+    *) _policy_remote_wizard external "$policy" "$root" "$scope" "$sink" ;;
   esac
   return $?
 }

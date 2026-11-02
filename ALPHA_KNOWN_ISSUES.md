@@ -15,13 +15,17 @@ before your first sync.
 - **A download-only (`pull`) folder makes the local folder an exact copy of
   the server.** Files that exist only on your computer are deleted on the
   first sync, and nothing asks first while fewer than 100 files are
-  affected.
+  affected. An empty server folder is never mirrored over a non-empty local
+  folder without `sciebo sync --yes`.
   - Point a `pull` folder at an empty or new local folder.
   - Or set `MOVE_TO_TRASH=1` with `sciebo config edit`; deleted files are
     then moved to a local trash instead of being removed.
 - **Large deletions are stopped on purpose.**
-  - An upload or download folder stops when more than 100 files would be
-    deleted.
+  - An upload or download folder stops after 100 files have been deleted.
+    Those 100 files are already deleted (on the server they usually go to
+    the trash bin).
+  - An upload folder that is empty on your computer is not mirrored over a
+    non-empty server folder (for example an unmounted disk).
   - A two-way folder stops when more than half of its files would be
     deleted on either side.
   - On a terminal you are asked once. In scheduled runs, the folder is

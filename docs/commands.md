@@ -105,7 +105,7 @@ will ask about, and everything it will not.
 
 | Operation | Confirmation |
 | --- | --- |
-| `sync` / `check` | `check` never changes anything; `sync` applies without an extra prompt, except that the safety brake on deletions (the delete guard) stops a run that would delete more than `DELETE_FILES_THRESHOLD` files (`--yes` disables the guard; on a terminal the guard asks once to continue). |
+| `sync` / `check` | `check` never changes anything; `sync` applies without an extra prompt, except that the safety brake on deletions (the delete guard) stops a sync/pull run after `DELETE_FILES_THRESHOLD` deletions (those files are already deleted) and refuses to mirror an empty folder over a full one (`--yes` disables the guard; on a terminal the guard asks once to continue). |
 | `cleanup --apply` | no prompt; without `--apply` it is a dry run. |
 | `conflicts --resolve MODE --apply` | one interactive prompt for the whole plan; a non-interactive run needs `--yes`. Without `--apply` it is a dry run that prints the planned actions and changes nothing. |
 | `hydrate SUB` | writes the remote path into the local destination (creating directories) and takes the run lock; it never deletes. No prompt; `--dry-run` reports the plan and `--quiet`/`--json` change only the output. |
@@ -150,8 +150,8 @@ from `CHUNK_SIZE`.
 | --- | --- |
 | `--login` | authenticate with the browser sign-in flow (Nextcloud's Login Flow v2: browser + poll) and receive a fresh app password. |
 | `--url URL` | base URL for `--login`; without it the URL is prompted (or taken from `SCIEBO_URL`). |
-| `--rotate` | run the browser sign-in flow against the already-configured remote's base URL and replace only its app password, keeping url and user. Cannot be combined with `--login`, `--url`, or `--crypt`. |
-| `--no-keychain` | for this run, store the obscured password in the rclone config instead of the system's password manager. |
+| `--rotate` | run the browser sign-in flow against the already-configured remote's base URL and replace only its app password, keeping url and user. Refused when the browser is signed in as a different user than the configured one. Cannot be combined with `--login`, `--url`, or `--crypt`. |
+| `--no-keychain` | for this run, store the obscured password in the rclone config instead of the system's password manager. Once the remote validates, the old app-password items (`#plain` and the legacy one) are removed from the password manager so they cannot override the new password; the `#restic` item is kept. |
 | `--proxy URL` | use URL as the proxy for this setup run only: `PROXY_TYPE` is forced to `system` and `HTTP_PROXY`/`HTTPS_PROXY` are exported so the direct-curl sign-in flow honors it. An `http://`/`https://` URL reaches rclone and curl through the child environment; a `socks5://` (or other scheme) URL goes through rclone's `--http-proxy` / curl's `-x`. Settings files are never written; the command prints how to set `PROXY` for later runs. |
 | `--crypt` | create the crypt remote named by `CRYPT_REMOTE` (default `<RCLONE_REMOTE>-crypt`) wrapping the configured WebDAV remote, with fresh randomly generated passwords. Validated with `rclone lsd`; prints what to set to sync through it. Cannot be combined with `--login`, `--rotate`, or `--url`. |
 | `-h`, `--help` | usage. |
@@ -206,9 +206,9 @@ becomes `rclone-sciebo/<name>` when the default service is left unchanged.
 | Subcommand | Behavior |
 | --- | --- |
 | `list` (default) | table of `PROFILE`, `REMOTE`, `BASE`, `SOURCES`, `KEYCHAIN SERVICE`; named profiles also show `ready` or `no state yet`. |
-| `add NAME [--remote R] [--base B]` | create `config/profiles/NAME` with an empty sync list, an empty `folders.conf`, an empty `roots.conf`, a copied `filters/clutter.txt`, a generated `settings.local.env`, and `state/profiles/NAME`. With `--remote`/`--base` those values are written; without `--remote` the profile gets its own rclone remote `<RCLONE_REMOTE>-NAME` (e.g. `sciebo-work`), then run `setup --login` under the profile. A profile that inherits the default profile's remote (one created by an older version, without `RCLONE_REMOTE` in its settings) is refused by `setup` and `logout`, which would otherwise rewrite or delete the default account's remote; set `RCLONE_REMOTE` in the profile's `settings.local.env` as the message says. |
+| `add NAME [--remote R] [--base B]` | create `config/profiles/NAME` with an empty sync list, an empty `folders.conf`, an empty `roots.conf`, a copied `filters/clutter.txt`, a generated `settings.local.env`, and `state/profiles/NAME`. With `--remote`/`--base` those values are written; without `--remote` the profile gets its own rclone remote `<RCLONE_REMOTE>_NAME` (e.g. `sciebo_work`), then run `setup --login` under the profile. A profile that inherits the default profile's remote (one created by an older version, without `RCLONE_REMOTE` in its settings) is refused by `setup` and `logout`, which would otherwise rewrite or delete the default account's remote; set `RCLONE_REMOTE` in the profile's `settings.local.env` as the message says. |
 | `import [options]` | import accounts and folder pairs from the Nextcloud desktop client's `nextcloud.cfg` (see below). |
-| `remove NAME [--yes]` | delete the profile's config directory and state directory. Prompts on a terminal; without a TTY (or with `--non-interactive`) `--yes` is required, otherwise exit 2. |
+| `remove NAME [--yes]` | delete the profile's config directory and state directory, and its app password from the keychain (the `#plain` slot and the legacy item, unless another profile uses the same keychain service and remote). Its restic password is kept on purpose (a note names it), and its rclone remote stays in `rclone.conf` (a `rclone config delete REMOTE` hint is printed). Prompts on a terminal; without a TTY (or with `--non-interactive`) `--yes` is required, otherwise exit 2. |
 | `use NAME` | print how to activate the profile: `export SCIEBO_PROFILE=NAME` or `sciebo --profile NAME ...`. |
 | `info [--json]` | show the server-side account: id, display name, email, server base, quota (best effort), and cached server version. |
 | `avatar [--output FILE] [--size N]` | download the account avatar (the image never reaches stdout) and print the path; default `./avatar-<user>.png`, size `AVATAR_SIZE` or 128. |
@@ -265,7 +265,7 @@ Examples:
 
 ```sh
 sciebo account list
-sciebo account add work --remote sciebo-work --base backup
+sciebo account add work --remote sciebo_work --base backup
 sciebo --profile work setup --login
 sciebo account info --json
 sciebo account avatar --size 256
@@ -821,10 +821,15 @@ Behavior highlights:
   [docs/settings.md](settings.md)). A `bisync` entry keeps rclone
   bisync's own brake instead, which stops a run that would delete more
   than half of the files on either side (for bisync, `--max-delete` is a
-  percentage, so the file-count threshold is not passed). When rclone
+  percentage, so the file-count threshold is not passed). rclone deletes
+  up to `DELETE_FILES_THRESHOLD` files before it stops (the guard stops
+  after that many deletions; it does not check first). When rclone
   stops at the limit, a terminal asks once to continue past it; a
-  non-interactive run fails the entry with `delete guard: … to delete;
-  re-run with --yes to allow`. `--yes` lifts the guard for the run
+  non-interactive run fails the entry with `delete guard: stopped after
+  … deletion(s) …; re-run with --yes to allow`. Before the run, a `sync`
+  apply from an empty local folder over a non-empty remote, and a `pull`
+  apply from an existing empty remote over a non-empty local folder, fail
+  the entry (`refusing to mirror an empty folder`); `check` only warns. `--yes` lifts the guard for the run
   (bisync: a run stopped by the brake is re-run with `--force`), and an
   explicit `MAX_DELETE >= 0` overrides it.
   <!-- src: commands.md#sync; the literal default (100) is documented in docs/settings.md, cross-referenced here, not restated as this file's own claim -->
@@ -975,7 +980,9 @@ local path. Unlike `hydrate` there is no `FOLDERS_LOCAL_ROOT` fallback —
 directory; a missing remote path exits 1.
 
 The run lock is held for the whole operation. The file is downloaded with
-`rclone copyto` before the editor opens. The editor is `--editor CMD`
+`rclone copyto --update` before the editor opens, so a local copy newer
+than the server (edits not synced yet) is kept and edited instead; `edit`
+then prints `edit: local copy is newer than the server; editing the local copy`. The editor is `--editor CMD`
 when given, else `$EDITOR`, else `$VISUAL`; `CMD` may carry arguments
 (split on spaces, the file path is appended last). Without any editor the
 platform opener (`open` on macOS, `xdg-open` on Linux) is used and the
@@ -1058,7 +1065,8 @@ sciebo pause [--for DURATION]
 
 Skip sync and check runs until `sciebo resume`. Without `--for` the pause
 is indefinite. `DURATION` is a number with an optional `s`, `m`, `h`, or
-`d` suffix (`90m`, `24h`, `1d`); a bare number means minutes. An expired
+`d` suffix (`90m`, `24h`, `1d`); a bare number means minutes, and it must be
+greater than 0. An expired
 marker is removed automatically on the next check. Prints `paused until
 <stamp>` or `paused (indefinite)`.
 
@@ -1194,7 +1202,8 @@ remaining relative path appended; without a match it is
 `FOLDERS_LOCAL_ROOT/SUB`. With `--dest DIR` the contents of `SUB` are
 copied into `DIR` instead (the matching sync-list entry's filter still
 applies). Hydrate takes the run lock and creates missing destination
-directories; it never deletes.
+directories; it never deletes, and it keeps local files that are newer
+than the server copy (`rclone copy --update`), so unsynced edits survive.
 
 | Option | Effect |
 | --- | --- |
@@ -1227,7 +1236,7 @@ elsewhere.
 | --- | --- |
 | `--logs` | report/delete `*.log` files older than `LOG_RETENTION_DAYS` (or `LOG_EXPIRE_HOURS` when set) and rotate `*.log` files larger than `LOG_MAX_BYTES` to `<file>.1` (age candidates are not rotated). |
 | `--uploads` | report/delete stale Nextcloud chunk uploads under `/remote.php/dav/uploads/<user>/` older than `CHUNK_CLEANUP_MIN_AGE`, then remove emptied transfer directories. |
-| `--state` | report/remove orphaned state older than `STATE_CLEANUP_MIN_AGE`: bisync workdirs no valid sync-list entry uses, leftover lock directories of every named lock (`*.lock.stale.*` and `*.lock.release.*`, so `sync` and `backup` alike), atomic-write `*.tmp.XXXXXX` staging files under `config/` and `state/`, and mount records whose mount and process are gone. |
+| `--state` | report/remove orphaned state older than `STATE_CLEANUP_MIN_AGE`: bisync workdirs no sync-list line names (an invalid line still keeps its workdir; a line without a remote subdir skips this step), leftover lock directories of every named lock (`*.lock.stale.*` and `*.lock.release.*`, so `sync` and `backup` alike), atomic-write `*.tmp.XXXXXX` staging files under `config/` and `state/`, and mount records whose mount and process are gone. |
 | `--junk` | report/delete files matching a glob in `FILTER_DIR/fleeting.txt` under every valid sync-list source directory, older than `JUNK_CLEANUP_MIN_AGE`. Dry runs show at most five examples. |
 | `--cache` | report/delete files under `MOUNT_CACHE_DIR` older than `STATE_CLEANUP_MIN_AGE`. Dry runs show at most five examples. It also runs `restic cache --cleanup` (removes restic cache directories of repositories not used for 30 days) when restic is installed and a repository password is stored; without `--apply` it only prints `would run: restic cache --cleanup`, and it is skipped silently otherwise. A failing restic marks the cleanup as errored (exit 1). |
 | `--support` | keep the newest support archives under `STATE_DIR` and report/delete the older ones; `--keep N` sets how many to keep (default 5). |
@@ -1404,7 +1413,9 @@ Sources are lines of `name|local[|filter]` in `config/backups.conf` (see
 [settings](settings.md#backupsconf)). The filter is a file in the filters
 directory in rclone syntax; only exclude rules are supported, and they are
 translated to restic patterns when the backup runs. A rule restic cannot
-express is an error with its line number. `backup` is an extra-tier command:
+express is an error with its line number. A `- dir/` rule becomes the restic
+pattern `dir`, so a file with the same name as an excluded folder is excluded
+too. `backup` is an extra-tier command:
 tested against a local stand-in, not yet against a live sciebo.
 
 `init` generates the repository password (32 random bytes, base64), prints
@@ -1415,8 +1426,8 @@ a copy somewhere else: without the password the backups cannot be read.
 
 | Subcommand | Behavior |
 | --- | --- |
-| `init` | creates the repository with `restic init`, stores the generated password, and prints it once. Refuses when the repository path overlaps a sync pair, and when a repository already exists and its password is stored (`--existing` verifies that one instead). A stored password without a repository behind it is reused, not replaced. |
-| `run` | backs up every source in `backups.conf` (or one with `--only`), one `restic backup` at a time, then runs the maintenance that is due. Writes a run record per source (`status` shows them), a log `backup-<name>-<YYYYmmdd-HHMMSS>.log` per source, and `backup-maintenance-<YYYYmmdd-HHMMSS>.log` for the maintenance pass. Honours `sciebo limit`. Failures send a desktop notification; successes only with `NOTIFY_SUCCESS=1`. |
+| `init` | creates the repository with `restic init`, stores the generated password, and prints it once (also when a stored password is reused; not with `--password-stdin`). Dies without writing anything when key storage cannot be read. Refuses when the repository path overlaps a sync pair, and when a repository already exists and its password is stored (`--existing` verifies that one instead). A stored password without a repository behind it is reused, not replaced. |
+| `run` | backs up every source in `backups.conf` (or one with `--only`), one `restic backup` at a time, then runs the maintenance that is due. Writes a run record per source (`status` shows them), a log `backup-<name>-<YYYYmmdd-HHMMSS>.log` per source, and `backup-maintenance-<YYYYmmdd-HHMMSS>.log` for the maintenance pass. Honours `sciebo limit`. Failures send a desktop notification; successes only with `NOTIFY_SUCCESS=1`. An invalid line in `backups.conf` counts as a failed source (exit 1), and a quota skip sends a notification. The "last run" marker is written only when at least one source succeeded. |
 | `list` | prints the configured sources (name, local path, filter); `--show-filters` adds the translated exclude patterns and any filter errors. Needs neither restic nor the network. |
 | `add LOCAL` | appends a source to `backups.conf`; the folder must exist and the filter must translate. The name defaults to the folder's name. |
 | `remove NAME` | removes a source from `backups.conf`; its snapshots stay in the repository. |
@@ -1906,6 +1917,11 @@ that same run.
 | `keep-newest` | keep the newer of the two files. |
 | `keep-oldest` | keep the older of the two files. |
 | `keep-both` | rename the copy to `<name> (local copy)<ext>` (adds `-2`, `-3`, ... when taken). |
+
+Equal mtimes under `keep-newest`/`keep-oldest` plan `keep-both`. When an
+original has several copies, only one replaces it (the first for
+`keep-local`, the newest or oldest otherwise); the others are planned as
+`keep-both`.
 
 Planned actions print as `<source> <path> -> <action> <target>`; an
 applied run ends with `resolved N conflict copy(ies)`, a dry run with `N

@@ -30,15 +30,14 @@ platform_os() {
   return 0
 }
 
-# platform_opener - the platform file/URL opener, or nothing when neither
-# `open` (macOS) nor `xdg-open` (Linux) is available.
+# platform_opener - the platform file/URL opener, or nothing (rc 0, callers
+# test for empty output) when `open` (macOS) or `xdg-open` (elsewhere) is
+# missing. No `open` fallback off macOS: on Debian that is openvt.
 platform_opener() {
   if [[ "$PLATFORM_OS" == "macos" ]] && have open; then
     printf 'open'
-  elif have xdg-open; then
+  elif [[ "$PLATFORM_OS" != "macos" ]] && have xdg-open; then
     printf 'xdg-open'
-  elif have open; then
-    printf 'open'
   fi
   return 0
 }
@@ -49,7 +48,7 @@ platform_open() {
   local path="$1" label="${2:-$1}" opener=""
   opener="$(platform_opener)"
   [[ -n "$opener" ]] ||
-    die "cannot open ${label}: neither 'open' (macOS) nor 'xdg-open' (Linux) was found"
+    die "cannot open ${label}: neither 'open' (macOS) nor 'xdg-open' (Linux; install xdg-utils) was found"
   "$opener" -- "$path" || die "cannot open ${label}: ${opener} failed"
   return 0
 }

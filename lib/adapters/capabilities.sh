@@ -124,12 +124,6 @@ _capabilities_derive_chunk_size() {
 # chunk labels, and the bigfolder label feature checks).
 capabilities_size_label() { format_size_bytes "${1:-}" rclone; }
 
-# capabilities_base_url - print scheme://host[:port] of the configured
-# remote; rc 1 when the rclone config or its url is unusable.
-capabilities_base_url() {
-  remote_nextcloud_base
-}
-
 # _capabilities_assign_facts - read "KEY=value" lines on stdin and set the
 # matching CAP_* globals (VERSION and CHUNK_MAX_SIZE are sanitized). Unknown
 # keys are ignored. Runs in the caller's shell, not a pipeline subshell, so
@@ -380,7 +374,7 @@ capabilities_probe() {
   fi
   [[ -n "${CAPABILITIES_CACHE:-}" && -n "${CAPABILITIES_JSON:-}" ]] || return 1
   type remote_secret_plain >/dev/null 2>&1 || return 1
-  base="$(capabilities_base_url)" || return 1
+  base="$(remote_nextcloud_base)" || return 1
   response="$(capabilities_fetch_raw "$base")" || return 1
   [[ -n "$response" ]] || return 1
   capabilities_parse_json "$response"

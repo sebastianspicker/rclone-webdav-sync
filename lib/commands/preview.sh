@@ -74,7 +74,7 @@ cmd_preview() {
   require_safe_remote_path "$sub"
   size="$(preview_resolve_size)"
   http_load_context
-  fileid="$(nc_fileid "${REMOTE_BASE}/${sub}")"
+  fileid="$(nc_fileid "$sub")"
   url="$(preview_url "$fileid" "$size")"
   target="${OPT_output:-${DEFAULT_PREVIEW_FILE:-./preview}}"
   if [[ "$target" == "-" ]]; then

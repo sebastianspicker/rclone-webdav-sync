@@ -5,13 +5,30 @@
 # _AWK_HTML_LIB the shared XML awk prelude below composes with.
 
 # json_string_field BODY KEY - print the first `"KEY": "VALUE"` string value
-# from a compact JSON document (one awk pass over BODY). The JSON string
-# escapes `\/` and `\"` are decoded; every other backslash sequence is left
+# from a compact JSON document (one awk pass over BODY). All JSON string
+# escapes are decoded (\\ \"\/ \b \f \n \r \t and \uXXXX, with surrogate
+# pairs, to UTF-8 bytes; \u0000 is dropped); an unknown escape is left
 # untouched. Prints nothing and returns 1 when KEY is absent or its value is
 # not a properly quoted string.
 json_string_field() {
   printf '%s\n' "${1:-}" | LC_ALL=C awk -v key="${2:-}" '
     BEGIN { want = "\"" key "\"" }
+    function jhex(h,    k, p, v) {
+      if (length(h) != 4) return -1
+      v = 0
+      for (k = 1; k <= 4; k++) {
+        p = index("0123456789abcdef", tolower(substr(h, k, 1)))
+        if (p == 0) return -1
+        v = v * 16 + p - 1
+      }
+      return v
+    }
+    function utf8(cp) {
+      if (cp < 128) return sprintf("%c", cp)
+      if (cp < 2048) return sprintf("%c%c", 192 + int(cp / 64), 128 + cp % 64)
+      if (cp < 65536) return sprintf("%c%c%c", 224 + int(cp / 4096), 128 + int(cp / 64) % 64, 128 + cp % 64)
+      return sprintf("%c%c%c%c", 240 + int(cp / 262144), 128 + int(cp / 4096) % 64, 128 + int(cp / 64) % 64, 128 + cp % 64)
+    }
     {
       pos = index($0, want)
       if (pos == 0) next
@@ -25,12 +42,22 @@ json_string_field() {
         c = substr(rest, i, 1)
         if (c == "\\" && i < n) {
           d = substr(rest, i + 1, 1)
-          if (d == "\"" || d == "/") {
-            out = out d
-            i++
-            continue
-          }
-          out = out c
+          i++
+          if (d == "n") out = out "\n"
+          else if (d == "t") out = out "\t"
+          else if (d == "r") out = out "\r"
+          else if (d == "b") out = out sprintf("%c", 8)
+          else if (d == "f") out = out sprintf("%c", 12)
+          else if (d == "\"" || d == "/" || d == "\\") out = out d
+          else if (d == "u" && (cp = jhex(substr(rest, i + 1, 4))) >= 0) {
+            i += 4
+            # a high surrogate followed by \uDC00-\uDFFF is one astral codepoint
+            if (cp >= 55296 && cp < 56320 && substr(rest, i + 1, 2) == "\\u" && (lo = jhex(substr(rest, i + 3, 4))) >= 56320 && lo < 57344) {
+              cp = 65536 + (cp - 55296) * 1024 + (lo - 56320)
+              i += 6
+            } else if (cp >= 55296 && cp < 57344) cp = 65533
+            if (cp > 0) out = out utf8(cp)
+          } else out = out c d
           continue
         }
         if (c == "\"") {
@@ -147,14 +174,24 @@ function xml_decode_numeric(s,    out, i, n, j, c, hexf, d, code) {
   }
   return out
 }
-function xml_decode(s) {
-  gsub(/&lt;/, "<", s)
-  gsub(/&gt;/, ">", s)
-  gsub(/&quot;/, "\"", s)
-  gsub(/&apos;/, sprintf("%c", 39), s)
-  gsub(/&amp;/, "\\&", s)
-  if (index(s, "&#") > 0) s = xml_decode_numeric(s)
-  return s
+# xml_decode(s) - one left-to-right pass, so a decoded "&" is never decoded
+# again: &amp;lt; -> &lt; and &amp;#65; -> &#65;.
+function xml_decode(s,    out, i, j, ent, dec) {
+  out = ""
+  while ((i = index(s, "&")) > 0) {
+    out = out substr(s, 1, i - 1)
+    s = substr(s, i)
+    if (substr(s, 1, 4) == "&lt;") { out = out "<"; s = substr(s, 5) }
+    else if (substr(s, 1, 4) == "&gt;") { out = out ">"; s = substr(s, 5) }
+    else if (substr(s, 1, 5) == "&amp;") { out = out "&"; s = substr(s, 6) }
+    else if (substr(s, 1, 6) == "&quot;") { out = out "\""; s = substr(s, 7) }
+    else if (substr(s, 1, 6) == "&apos;") { out = out sprintf("%c", 39); s = substr(s, 7) }
+    else if (substr(s, 1, 2) == "&#" && (j = index(s, ";")) > 0 && (dec = xml_decode_numeric(ent = substr(s, 1, j))) != ent) {
+      out = out dec
+      s = substr(s, j + 1)
+    } else { out = out "&"; s = substr(s, 2) }
+  }
+  return out s
 }
 # xml_strip_ctrl(s) - drop C0/DEL, encoded/stray C1 bytes (0x80-0x9F), and
 # invalid UTF-8 while keeping valid multi-byte sequences, so a server value

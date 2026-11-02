@@ -118,9 +118,12 @@ Desktop-parity policies: non-portable names are excluded by default
 (INVALID_NAME_POLICY), local case-only name clashes are excluded or
 renamed (CASE_CLASH_POLICY), end-to-end encrypted remote folders
 (E2EE_POLICY) and server-mounted external storages
-(EXTERNAL_STORAGE_POLICY) are checked before a run, and an apply that
-would delete more than DELETE_FILES_THRESHOLD files (bisync: more than
-half of the files) is stopped unless --yes is given (ASK_DELETE).
+(EXTERNAL_STORAGE_POLICY) are checked before a run. The delete guard
+(ASK_DELETE) stops a sync/pull apply after DELETE_FILES_THRESHOLD
+deletions (those files are already deleted) and a bisync apply that
+would delete more than half of the files; a sync apply from an empty
+local folder over a non-empty remote (pull: an empty remote over a
+non-empty local folder) is refused. --yes lifts both.
 EOF
 }
 
@@ -160,6 +163,45 @@ sync_prepare_local() {
   }
 }
 
+# sync_empty_side_guard SPEC - refuse to mirror an empty side over a full one
+# (an unmounted disk, a wiped folder): --max-delete only stops rclone after
+# DELETE_FILES_THRESHOLD deletions. sync: empty local folder, non-empty (or
+# unlistable) remote; a missing remote counts as empty. pull: existing but
+# empty remote, non-empty local folder. A dry run only warns, --yes skips
+# it, and bisync keeps rclone's own brake. Returns 0=proceed, 1=failed.
+sync_empty_side_guard() {
+  local spec="$1" local_entry="" listing="" rc=0
+  [[ "$ENTRY_MODE" == sync || "$ENTRY_MODE" == pull ]] || return 0
+  [[ "$SYNC_APPLY" == false || "$SYNC_ASSUME_YES" != true ]] || return 0
+  [[ -d "$ENTRY_LOCAL" ]] || return 0
+  local_entry=${ find "$ENTRY_LOCAL" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null;}
+  if [[ "$ENTRY_MODE" == sync ]]; then
+    [[ -z "$local_entry" ]] || return 0
+  else
+    [[ -n "$local_entry" ]] || return 0
+  fi
+  # rclone exits 3 for a missing directory.
+  listing=${ rclone_cmd lsf --max-depth 1 "${spec}/" 2>/dev/null;} || rc=$?
+  if [[ "$ENTRY_MODE" == sync ]]; then
+    [[ "$rc" -eq 3 || ("$rc" -eq 0 && -z "$listing") ]] && return 0
+    if [[ "$rc" -eq 0 ]]; then
+      SYNC_ENTRY_REASON="local folder is empty but the remote is not; refusing to mirror an empty folder (re-run with --yes if intended)"
+    else
+      SYNC_ENTRY_REASON="local folder is empty and the remote cannot be listed (exit ${rc}); refusing to mirror an empty folder (re-run with --yes if intended)"
+    fi
+  else
+    [[ "$rc" -eq 0 && -z "$listing" ]] || return 0
+    SYNC_ENTRY_REASON="remote folder is empty but the local folder is not; refusing to mirror an empty folder (re-run with --yes if intended)"
+  fi
+  if [[ "$SYNC_APPLY" == false ]]; then
+    warn "empty-folder guard (${ENTRY_NAME}): ${SYNC_ENTRY_REASON%%; refusing*}; an apply would be refused without --yes"
+    SYNC_ENTRY_REASON=""
+    return 0
+  fi
+  sync_entry_status FAIL "$SYNC_ENTRY_REASON"
+  return 1
+}
+
 # sync_prepare_bisync - bisync-only guards and remote dir creation.
 # Returns 0=proceed, 1=failed, 2=skipped (dry run, remote dir missing).
 # The mkdir only runs when the (memoized per spec) existence probe says the
@@ -186,22 +228,6 @@ sync_prepare_bisync() {
   fi
 }
 
-# sync_policy_args OUT CMD [ARG...] - load lib/sync/policy.sh on first use and run
-# the policy helper CMD with the argv array name OUT as its first argument:
-# the helper appends its rclone arguments (if any) through that nameref
-# out-param, so no subshell runs and no newline output is re-parsed. Callers
-# can append OUT's contents to an argv array without word splitting.
-sync_policy_args() {
-  local out="${1:-}" cmd="${2:-}"
-  [[ -n "$out" && -n "$cmd" ]] || return 0
-  shift 2
-  # Load lib/sync/policy.sh on first use: cmd_sync requires it too, but unit and
-  # feature probes source this module directly and drive sync_build_args
-  # without dispatching. Idempotent (one type lookup once loaded).
-  "$cmd" "$out" "$@"
-  return 0
-}
-
 # sync_args_add_filters FLAGS - append the filter stack to the named argv
 # array in order: server filter, clutter/entry filters, conflict and hidden
 # excludes, blacklist excludes (one warning when any applied), then the
@@ -225,7 +251,7 @@ sync_args_add_filters() {
   if [[ "${SKIP_HIDDEN:-0}" -ne 1 ]] && manifest_pair_hidden "$ENTRY_NAME"; then
     args_ref+=(--exclude ".*")
   fi
-  sync_policy_args args_ref policy_name_exclude_args
+  policy_name_exclude_args args_ref
   if [[ "${#SYNC_POLICY_EXCLUDES[@]}" -gt 0 ]]; then
     i=0
     while [[ "$i" -lt "${#SYNC_POLICY_EXCLUDES[@]}" ]]; do
@@ -233,8 +259,8 @@ sync_args_add_filters() {
       i=$((i + 1))
     done
   fi
-  sync_policy_args args_ref policy_checksum_args "$ENTRY_MODE"
-  sync_policy_args args_ref policy_symlink_args
+  policy_checksum_args args_ref "$ENTRY_MODE"
+  policy_symlink_args args_ref
 }
 
 # sync_args_collect_trash TRASH - fill the named argv array with the trash
@@ -251,7 +277,7 @@ sync_args_collect_trash() {
   if [[ "$ENTRY_MODE" == pull && -n "${BACKUP_DIR:-}" ]]; then
     return 0
   fi
-  sync_policy_args trash_ref policy_trash_args "$ENTRY_MODE"
+  policy_trash_args trash_ref "$ENTRY_MODE"
   if [[ "${#trash_ref[@]}" -eq 2 ]]; then
     trash_ref=("${trash_ref[0]}" "${trash_ref[1]%/}/${ENTRY_NAME}")
   fi
@@ -271,9 +297,9 @@ sync_args_add_delete_guard() {
   case "$MAX_DELETE" in
     '' | *[!0-9]*)
       if [[ "$SYNC_DELETE_GUARD_OVERRIDE" == true ]]; then
-        sync_policy_args guard_args policy_delete_guard_override_args "$ENTRY_MODE"
+        policy_delete_guard_override_args guard_args "$ENTRY_MODE"
       elif [[ "$SYNC_ASSUME_YES" != true ]]; then
-        sync_policy_args guard_args policy_delete_guard_args "$ENTRY_MODE"
+        policy_delete_guard_args guard_args "$ENTRY_MODE"
         if policy_delete_guard_armed; then
           SYNC_DELETE_GUARD=true
         fi
@@ -588,6 +614,16 @@ sync_case_clash_scan() {
   return 0
 }
 
+# _case_clash_local_exclude DIR SECOND - exclude the local loser SECOND
+# below DIR; a directory needs "/**", since an anchored name alone would
+# still let rclone sync its contents.
+_case_clash_local_exclude() {
+  local pattern=""
+  pattern=${ blacklist_exclude_pattern "$2";}
+  [[ ! -d "${1%/}/${2}" ]] || pattern="${pattern}/**"
+  SYNC_POLICY_EXCLUDES[${#SYNC_POLICY_EXCLUDES[@]}]="$pattern"
+}
+
 # _case_clash_rename PREFIX COUNT DIR SECOND FIRST_LABEL SECOND_LABEL - the
 # CASE_CLASH_POLICY=rename arm: rename the loser (SECOND) below DIR on an
 # apply, fall back to excluding it when the rename fails, or only warn
@@ -601,7 +637,7 @@ _case_clash_rename() {
       newrel_label=${ printable "$newrel";}
       sync_case_clash_warn "$prefix" "$count" "renamed '${second_label}' to '${newrel_label}' (keeping '${first_label}')"
     else
-      SYNC_POLICY_EXCLUDES[${#SYNC_POLICY_EXCLUDES[@]}]=${ blacklist_exclude_pattern "$second";}
+      _case_clash_local_exclude "$dir" "$second"
       warn "${prefix}: cannot rename '${second_label}'; excluding it instead"
     fi
   else
@@ -620,7 +656,7 @@ sync_case_clash_local_pair() {
   second_label=${ printable "$second";}
   case "$policy" in
     exclude)
-      SYNC_POLICY_EXCLUDES[${#SYNC_POLICY_EXCLUDES[@]}]=${ blacklist_exclude_pattern "$second";}
+      _case_clash_local_exclude "$dir" "$second"
       sync_case_clash_warn "$prefix" "$count" "excluding '${second_label}' (keeping '${first_label}')"
       ;;
     rename) _case_clash_rename "$prefix" "$count" "$dir" "$second" "$first_label" "$second_label" ;;
@@ -875,18 +911,18 @@ sync_run_rclone() {
 # without a re-run.
 sync_delete_guard_retry() {
   local spec="$1" logfile="$2" rc=0 gate_rc=0 limit=""
-  limit=${ policy_delete_guard_label "$ENTRY_MODE";}
+  limit=${ policy_delete_guard_label "$ENTRY_MODE" "$SYNC_APPLY";}
   if [[ "$SYNC_ASSUME_YES" != true ]]; then
-    ui_confirm_tty "delete guard: this run would delete ${limit}; continue anyway?" || gate_rc=$?
+    ui_confirm_tty "delete guard: ${limit}; continue anyway?" || gate_rc=$?
   fi
   if [[ "$gate_rc" -eq 0 ]]; then
-    warn "delete guard: overridden for '${ENTRY_NAME}' (continuing past the limit of ${limit})"
+    warn "delete guard: overridden for '${ENTRY_NAME}' (${limit})"
   elif [[ "$gate_rc" -eq 1 ]]; then
-    SYNC_ENTRY_REASON="delete guard: ${limit} to delete; declined"
+    SYNC_ENTRY_REASON="delete guard: ${limit}; declined"
     warn "${SYNC_ENTRY_REASON}"
     return 1
   else
-    SYNC_ENTRY_REASON="delete guard: ${limit} to delete; re-run with --yes to allow"
+    SYNC_ENTRY_REASON="delete guard: ${limit}; re-run with --yes to allow"
     warn "${SYNC_ENTRY_REASON}"
     return 1
   fi
@@ -925,9 +961,9 @@ sync_sample_collect() {
 }
 
 # sync_report_plan LOGFILE - print one "plan:" line after a successful dry
-# run: how many copies, deletes, and other skipped actions rclone logged,
-# with up to three example paths. Best effort: a missing log or parsing
-# trouble prints nothing and never fails the run.
+# run: how many copies, deletes, and other skipped actions rclone logged
+# from SYNC_LOG_OFFSET on, with up to three example paths. Best effort: a
+# missing log or parsing trouble prints nothing and never fails the run.
 sync_report_plan() {
   local logfile="$1" kind="" path="" line="" copy=0 delete=0 other=0
   local -A seen=()
@@ -946,7 +982,7 @@ sync_report_plan() {
     [[ "${#seen[@]}" -lt 3 ]] || continue
     sync_sample_collect seen samples "$path" || continue
   done < <(
-    LC_ALL=C awk '
+    tail -c "+$((SYNC_LOG_OFFSET + 1))" "$logfile" 2>/dev/null | LC_ALL=C awk '
       {
         gsub(/\033\[[0-9;]*[A-Za-z]/, "")
         if ($0 !~ /Skipped .* as --dry-run is set/) next
@@ -958,7 +994,7 @@ sync_report_plan() {
         else if ($0 ~ /Skipped delete/) kind = "delete"
         print kind "\t" path
       }
-    ' "$logfile" 2>/dev/null
+    ' 2>/dev/null
   )
   if [[ "$copy" -eq 0 && "$delete" -eq 0 && "$other" -eq 0 ]]; then
     printf 'plan: no changes\n'
@@ -972,7 +1008,7 @@ sync_report_plan() {
 }
 
 # sync_report_conflicts LOGFILE - count bisync conflict renames in LOGFILE
-# (Path1/Path2 copy), add them to SYNC_CONFLICTS, and print one "conflicts:"
+# from SYNC_LOG_OFFSET on (Path1/Path2 copy), add them to SYNC_CONFLICTS, and print one "conflicts:"
 # line with up to three example paths. Conflicts are printed even under
 # --quiet because they need attention. Best effort, never fails the run.
 sync_report_conflicts() {
@@ -990,7 +1026,7 @@ sync_report_conflicts() {
     [[ -n "$path" && "$path" != "$line" ]] || continue
     [[ "${#seen[@]}" -lt 3 ]] || continue
     sync_sample_collect seen samples "$path" || continue
-  done < <(LC_ALL=C awk '{ gsub(/\033\[[0-9;]*[A-Za-z]/, ""); print }' "$logfile" 2>/dev/null)
+  done < <(tail -c "+$((SYNC_LOG_OFFSET + 1))" "$logfile" 2>/dev/null | LC_ALL=C awk '{ gsub(/\033\[[0-9;]*[A-Za-z]/, ""); print }' 2>/dev/null)
   SYNC_CONFLICTS=$((SYNC_CONFLICTS + found))
   SYNC_ENTRY_CONFLICTS=$((SYNC_ENTRY_CONFLICTS + found))
   [[ "$found" -gt 0 ]] || return 0
@@ -1000,8 +1036,10 @@ sync_report_conflicts() {
 
 # sync_record_errors LOGFILE - best-effort blacklist recording for the entry
 # currently parsed into ENTRY_*: parse rclone's plain `ERROR : <path>:
-# <message>` log lines and record every path. Any parse or write problem is
-# ignored; a failure here never changes the entry's status.
+# <message>` log lines and record every path once per run (rclone's
+# high-level retries log the same path once per attempt), skipping rclone's
+# run-level summaries. Any parse or write problem is ignored; a failure here
+# never changes the entry's status.
 sync_record_errors() {
   local logfile="$1" path="" path_label="" message="" record_line="" from=$((SYNC_LOG_OFFSET + 1))
   [[ "${BLACKLIST_ENABLED:-1}" == "1" ]] || return 0
@@ -1017,9 +1055,12 @@ sync_record_errors() {
         offset = index($0, "ERROR : ")
         if (offset == 0) next
         rest = substr($0, offset + 8)
+        if (rest ~ /^(Attempt [0-9]+\/[0-9]+ failed|Bisync |Safety abort)/) next
         split_at = index(rest, ": ")
         if (split_at == 0) next
-        printf "%s\t%s\n", substr(rest, 1, split_at - 1), substr(rest, split_at + 2)
+        path = substr(rest, 1, split_at - 1)
+        if (seen[path]++) next
+        printf "%s\t%s\n", path, substr(rest, split_at + 2)
       }
     ' 2>/dev/null |
     while IFS= read -r record_line; do
@@ -1077,6 +1118,7 @@ sync_run_preflight() {
   sync_guard_run sync_disk_guard "$ENTRY_LOCAL" || return $?
   sync_guard_run sync_download_guard "$spec" || return $?
   sync_guard_run sync_prepare_local || return $?
+  sync_guard_run sync_empty_side_guard "$spec" || return $?
   if [[ "$ENTRY_MODE" == bisync ]]; then
     sync_guard_run sync_prepare_bisync "$spec" || return $?
   fi
@@ -1087,11 +1129,12 @@ sync_run_preflight() {
 # sync_finish_entry SPEC LOGFILE RC - post-run handling: on failure record the
 # blacklist errors or retry around the ASK_DELETE guard, then print the status
 # row, report bisync conflicts, record runstate, and print the plan for a dry
-# run. Returns 0=ok, 1=failed.
+# run. Returns 0=ok, 1=failed. The reports and rows use SYNC_LOG_FILE (the
+# --log-file override when given), read from SYNC_LOG_OFFSET on.
 sync_finish_entry() {
   local spec="$1" logfile="$2" rc="$3"
   if [[ "$rc" -ne 0 ]]; then
-    if [[ "$SYNC_DELETE_GUARD" == true ]] && policy_delete_guard_hit "$SYNC_LOG_FILE"; then
+    if [[ "$SYNC_DELETE_GUARD" == true ]] && policy_delete_guard_hit "$SYNC_LOG_FILE" "$SYNC_LOG_OFFSET"; then
       # The guard aborted the run; its log carries no per-file errors, so the
       # blacklist is only fed from a retry attempt (inside the helper).
       rc=0
@@ -1103,18 +1146,20 @@ sync_finish_entry() {
   if [[ "$rc" -eq 0 ]]; then
     sync_entry_status OK
   else
-    sync_entry_status FAIL "${SYNC_ENTRY_REASON:-rclone ${ENTRY_MODE} failed (exit ${rc})}" "$logfile"
+    sync_entry_status FAIL "${SYNC_ENTRY_REASON:-rclone ${ENTRY_MODE} failed (exit ${rc})}" "$SYNC_LOG_FILE"
   fi
   if [[ "$ENTRY_MODE" == bisync ]]; then
-    sync_report_conflicts "$logfile"
+    sync_report_conflicts "$SYNC_LOG_FILE"
   fi
   if [[ "$rc" -ne 0 ]]; then
-    sync_runstate_record failed "$rc" "$logfile" "${SYNC_ENTRY_REASON:-rclone ${ENTRY_MODE} failed (exit ${rc})}"
+    sync_runstate_record failed "$rc" "$SYNC_LOG_FILE" "${SYNC_ENTRY_REASON:-rclone ${ENTRY_MODE} failed (exit ${rc})}"
     return 1
   fi
-  sync_runstate_record ok 0 "$logfile" ""
+  sync_runstate_record ok 0 "$SYNC_LOG_FILE" ""
+  # Paths still below the threshold were attempted and passed this time.
+  [[ "$SYNC_APPLY" == false ]] || blacklist_clear_below "$ENTRY_NAME"
   if [[ "$SYNC_APPLY" == false && "$SYNC_QUIET" == false ]]; then
-    sync_report_plan "$logfile"
+    sync_report_plan "$SYNC_LOG_FILE"
   fi
   return 0
 }
@@ -1158,6 +1203,10 @@ sync_warn_duplicate() {
 sync_run_one_line() {
   local line="$1" only="${2:-}" rc=0
   if ! manifest_parse_line "$line"; then
+    # An invalid line for another entry must not fail a --only run.
+    if [[ -n "$only" && "$ENTRY_NAME" != "$only" ]]; then
+      return 0
+    fi
     SYNC_TOTAL=$((SYNC_TOTAL + 1))
     SYNC_FAILED=$((SYNC_FAILED + 1))
     sync_note_failure "${ENTRY_NAME:-<invalid>}"

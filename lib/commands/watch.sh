@@ -256,10 +256,11 @@ watch_run_sync() {
     return 1
   fi
   watch_note "watch: ${name} changed, syncing"
+  # No stdin and no prompts: a child's question would block watch unseen.
   if [[ "$WATCH_RUN_QUIET" == true ]]; then
-    "${PROJECT_DIR}/bin/sciebo" sync --apply --quiet --only "$name" >/dev/null 2>&1 || rc=$?
+    SCIEBO_NON_INTERACTIVE=1 "${PROJECT_DIR}/bin/sciebo" sync --apply --quiet --only "$name" </dev/null >/dev/null 2>&1 || rc=$?
   else
-    "${PROJECT_DIR}/bin/sciebo" sync --apply --quiet --only "$name" || rc=$?
+    SCIEBO_NON_INTERACTIVE=1 "${PROJECT_DIR}/bin/sciebo" sync --apply --quiet --only "$name" </dev/null || rc=$?
   fi
   [[ "$rc" -eq 0 ]] || warn "watch: sync for '${name}' failed (exit ${rc}); will retry"
   watch_last_run_set "$name"
@@ -286,13 +287,15 @@ watch_notify() {
 # "Skipped ... as --dry-run is set" plan lines mean there is work to do. A
 # non-zero exit status is a real check failure (a missing source, a failed
 # transfer guard), not a difference, and is reported as such. No transfers
-# happen here.
+# happen here. While a live sync holds the run lock the poll is skipped: the
+# check would only die on the lock.
 watch_remote_poll() {
   local probe="${WATCH_DIR}/remote-poll.marker" rc=0 changed=0 hit=""
+  ! lock_busy sync || return 0
   mkdir -p "$WATCH_DIR" 2>/dev/null || true
   : >"$probe" 2>/dev/null || true
   WATCH_CHECK_PID=""
-  "${PROJECT_DIR}/bin/sciebo" check --quiet >/dev/null 2>&1 &
+  SCIEBO_NON_INTERACTIVE=1 "${PROJECT_DIR}/bin/sciebo" check --quiet </dev/null >/dev/null 2>&1 &
   WATCH_CHECK_PID=$!
   wait "$WATCH_CHECK_PID" || rc=$?
   WATCH_CHECK_PID=""
@@ -349,7 +352,7 @@ watch_pid_claim() {
   local started=""
   watch_pid_guard
   mkdir -p "$WATCH_DIR" 2>/dev/null || die "watch: cannot create ${WATCH_DIR}"
-  started="$(ps -ww -p "$$" -o lstart= 2>/dev/null | tr -s ' ')"
+  started="$(_lock_proc_start "$$" | tr -s ' ')"
   # Atomic write: a concurrent watcher must never read a truncated record
   # and take over a live watcher's claim.
   printf '%s\n%s\n' "$$" "$started" | atomic_write "$WATCH_PID_PATH" 600 ||

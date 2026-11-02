@@ -69,7 +69,9 @@ _sciebo_consume_globals() {
     if [[ "$has_value" -eq 1 ]]; then
       value="${arg#*=}"
     fi
-    entry="${_SCIEBO_GLOBAL_BY_FLAG[$flag]:-}"
+    # An empty argument (`--remote ""`) is no flag; an empty subscript is a bash error.
+    entry=""
+    [[ -z "$flag" ]] || entry="${_SCIEBO_GLOBAL_BY_FLAG[$flag]:-}"
     if [[ -z "$entry" ]]; then
       _out[${#_out[@]}]="$arg"
       shift

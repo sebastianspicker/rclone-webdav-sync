@@ -184,7 +184,7 @@ update_run_check() {
 update_run_pull() {
   local repo="$1" before="" after=""
   before="$(update_head "$repo")" || before=""
-  if ! git -C "$repo" pull --ff-only; then
+  if ! git -C "$repo" pull --ff-only --quiet; then
     die "git pull --ff-only failed in ${repo}; commit or discard local changes and retry"
   fi
   after="$(update_head "$repo")" || after=""
@@ -202,7 +202,7 @@ update_run_pull() {
   else
     printf 'updated %s -> %s\n' "$(update_short "$before")" "$(update_short "$after")"
   fi
-  printf "run 'make install' to install, then 'make lint test' to verify\n"
+  printf "run 'make install' to install, then 'make lint' to verify\n"
   return 0
 }
 
@@ -211,7 +211,6 @@ cmd_update() {
   opt_begin "check:b json:b" update "" "$@"
   opt_guard update
   opt_json_mode
-  load_settings --no-rclone
   have git || die "git is required to update ${CLI_NAME} but was not found in PATH"
   repo="${PROJECT_DIR:-}"
   [[ -n "$repo" ]] || die "cannot determine the project directory"

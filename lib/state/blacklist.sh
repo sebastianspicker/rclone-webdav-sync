@@ -303,6 +303,44 @@ blacklist_clear() {
   return 0
 }
 
+# _blacklist_clear_below_each COUNT PATH ERROR NEXT - keep one record that
+# has reached the threshold; drop the rest (caller locals `threshold`, `out`,
+# `dropped`).
+_blacklist_clear_below_each() {
+  local count="$1" record_path="$2" record_error="$3" record_next="$4"
+  [[ -n "$record_path" ]] || return 0
+  _blacklist_norm_count_into count "$count"
+  if [[ "$((10#$count))" -lt "$threshold" ]]; then
+    dropped=1
+    return 0
+  fi
+  if [[ -n "$record_next" ]]; then
+    out="${out}${count}"$'\t'"${record_path}"$'\t'"${record_error}"$'\t'"${record_next}"$'\n'
+  else
+    out="${out}${count}"$'\t'"${record_path}"$'\t'"${record_error}"$'\n'
+  fi
+  return 0
+}
+
+# blacklist_clear_below NAME - after a successful run of NAME, drop its
+# records below BLACKLIST_MAX_FAILS: those paths were attempted and passed.
+# Records at or above it stay, because those paths were excluded and the
+# success says nothing about them. Best effort, always rc 0.
+blacklist_clear_below() {
+  local file="" threshold="" out="" dropped=0
+  file=${ blacklist_file "${1:-}";} || return 0
+  [[ -f "$file" ]] || return 0
+  threshold=${ _blacklist_threshold;}
+  blacklist_each_record _blacklist_clear_below_each "$file"
+  [[ "$dropped" -eq 1 ]] || return 0
+  if [[ -z "$out" ]]; then
+    rm -f "$file" 2>/dev/null || true
+  else
+    printf '%s' "$out" | _blacklist_write "$file" || true
+  fi
+  return 0
+}
+
 # blacklist_count NAME - number of tracked paths for NAME (0 when none).
 blacklist_count() {
   local file="" count=0
@@ -318,22 +356,10 @@ blacklist_count() {
   return 0
 }
 
-# blacklist_exclude_pattern PATH - print the rclone --exclude pattern for the
-# exact PATH. A leading slash anchors the pattern at the transfer root; every
-# rclone glob metacharacter (\, *, ?, [, ], {, }) is backslash-escaped so the
-# path stays literal. An unescaped "]" or "}" makes rclone abort before it
-# starts, so the escape set must stay complete.
+# blacklist_exclude_pattern PATH - print the anchored, escaped rclone
+# --exclude pattern for the exact PATH (base text.sh's rclone_literal_pattern).
 blacklist_exclude_pattern() {
-  local path="${1:-}" out="" ch="" i=0
-  while [[ "$i" -lt "${#path}" ]]; do
-    ch="${path:$i:1}"
-    case "$ch" in
-      "\\" | '*' | '?' | '[' | ']' | '{' | '}') out="${out}\\${ch}" ;;
-      *) out="${out}${ch}" ;;
-    esac
-    i=$((i + 1))
-  done
-  printf '/%s\n' "$out"
+  rclone_literal_pattern "${1:-}"
 }
 
 # _blacklist_excluded_each COUNT PATH ERROR NEXT - print PATH's exclude

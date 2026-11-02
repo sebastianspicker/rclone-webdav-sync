@@ -236,20 +236,31 @@ cleanup_age_minutes() {
   printf '%s' "$((seconds / 60))"
 }
 
-# cleanup_state_each_entry - print one valid entry's sanitized name.
-cleanup_state_each_entry() {
-  printf '%s\n' "$ENTRY_NAME"
-}
-
-# cleanup_state_used_names - bisync workdir names of every valid manifest
-# entry, one per line (any mode).
+# cleanup_state_used_names - bisync workdir names of every manifest line,
+# one per line (any mode). Invalid lines count too, so a typo or a missing
+# filter file does not cost the pair its bisync state. rc 1 when a line
+# yields no name, since its workdir cannot be told apart then.
 cleanup_state_used_names() {
-  manifest_each cleanup_state_each_entry
+  local line="" name="" rc=0
+  while IFS= read -r line; do
+    if ! manifest_parse_line "$line"; then
+      sanitize_name_into name "$ENTRY_REMOTE"
+      if [[ -z "$name" ]]; then
+        rc=1
+        continue
+      fi
+    fi
+    printf '%s\n' "$ENTRY_NAME"
+  done < <(manifest_lines)
+  return "$rc"
 }
 
 cleanup_do_state_bisync() {
   local min_age="$1" used="" dir name
-  used="$(cleanup_state_used_names)"
+  used="$(cleanup_state_used_names)" || {
+    warn "a manifest line names no remote subdir; skipping the bisync workdir cleanup until it is fixed"
+    return 0
+  }
   while IFS= read -r dir; do
     [[ -n "$dir" ]] || continue
     name="${dir##*/}"

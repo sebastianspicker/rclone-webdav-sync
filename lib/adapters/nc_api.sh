@@ -109,6 +109,12 @@ nc_path_url() {
   printf '%s/%s' "$HTTP_FILES_ROOT" "$enc"
 }
 
+# nc_sub_url SUB - the DAV URL of SUB below REMOTE_BASE, the folder the
+# file commands take their SUB arguments relative to.
+nc_sub_url() {
+  nc_path_url "${REMOTE_BASE:+${REMOTE_BASE}/}$1"
+}
+
 # nc_dav_url PATH - the absolute DAV URL of PATH below the DAV root. Used by
 # the endpoints that do not live under the files root (comments, systemtags,
 # trashbin, versions). PATH is inserted verbatim, so callers with a variable
@@ -162,7 +168,7 @@ nc_parse_fileid() {
 # has no id (missing or not a Nextcloud server). rc 1 when unresolved.
 nc_fileid_allow() {
   local sub="$1" fileid=""
-  nc_dav_request PROPFIND "$(nc_path_url "$sub")" 0 "$NC_FILEID_BODY"
+  nc_dav_request PROPFIND "$(nc_sub_url "$sub")" 0 "$NC_FILEID_BODY"
   fileid="$(nc_parse_fileid "$HTTP_BODY")"
   [[ -n "$fileid" ]] || return 1
   case "$fileid" in *[!0-9]*) return 1 ;; esac
@@ -181,7 +187,7 @@ nc_fileid() {
 # nc_file_info SUB - PROPFIND SUB (Depth 0) and fill the NC_FILE_* globals.
 nc_file_info() {
   local body="" fields=""
-  nc_dav_request PROPFIND "$(nc_path_url "$1")" 0 "$NC_FILE_INFO_BODY"
+  nc_dav_request PROPFIND "$(nc_sub_url "$1")" 0 "$NC_FILE_INFO_BODY"
   body="$HTTP_BODY"
   fields="$(xml_fields "$body" 'oc:fileid' 'oc:size|d:getcontentlength' \
     'd:getlastmodified' 'd:getetag' 'd:owner-id' 'oc:permissions' \
@@ -214,9 +220,10 @@ nc_avatar_url() {
   printf '%s/avatar/%s/%s' "$HTTP_BASE" "$(http_urlencode "${HTTP_DAV_UID:-$HTTP_USER}")" "${1:-128}"
 }
 
-# nc_avatar_download FILE [SIZE] - download the avatar; dies on failure.
+# nc_avatar_download FILE [SIZE] - download the avatar; dies on failure. A
+# failed download leaves an existing FILE untouched; a symlink is refused.
 nc_avatar_download() {
-  http_download "$(nc_avatar_url "${2:-128}")" "$1"
+  http_fetch_to_file "$(nc_avatar_url "${2:-128}")" "$1" ""
 }
 
 # nc_activity_for_file FILEID [LIMIT] - activity entries for one file id;
@@ -259,7 +266,7 @@ nc_favorite_set() {
 <d:propertyupdate xmlns:d=\"DAV:\" xmlns:oc=\"http://owncloud.org/ns\">
   <d:set><d:prop><oc:favorite>${value}</oc:favorite></d:prop></d:set>
 </d:propertyupdate>"
-  nc_dav_request PROPPATCH "$(nc_path_url "$sub")" 0 "$body"
+  nc_dav_request PROPPATCH "$(nc_sub_url "$sub")" 0 "$body"
 }
 
 # nc_favorites_list - REPORT the favorites collection; HTTP_BODY holds the
@@ -299,7 +306,7 @@ nc_tag_assign() {
 <d:propertyupdate xmlns:d=\"DAV:\" xmlns:oc=\"http://owncloud.org/ns\">
   <d:set><d:prop><oc:tags>${tagids}</oc:tags></d:prop></d:set>
 </d:propertyupdate>"
-  nc_dav_request PROPPATCH "$(nc_path_url "$sub")" 0 "$body"
+  nc_dav_request PROPPATCH "$(nc_sub_url "$sub")" 0 "$body"
 }
 
 # nc_search TERM [LIMIT] - unified search over the files provider; the OCS
@@ -546,7 +553,7 @@ _nc_policy_e2ee_recurse() {
   local enc_prop='nc:is-encrypted'
   while IFS= read -r child; do
     [[ -n "$child" ]] || continue
-    child_url=${ nc_path_url "${REMOTE_BASE}/${child}";}
+    child_url=${ nc_sub_url "$child";}
     nc_policy_propfind "$child_url" "$NC_POLICY_PROPFIND_BODY" \
       "$enc_prop" || continue
     [[ "${NC_POLICY_HAS_PROP[$enc_prop]:-0}" -eq 1 ]] || continue
@@ -576,7 +583,7 @@ _nc_policy_probe() {
   # Literal property names in locals: shfmt rejects a colon inside a
   # subscript literal, and the names stay readable at the use sites.
   local enc_prop='nc:is-encrypted' perm_prop='oc:permissions'
-  url="$(nc_path_url "${REMOTE_BASE}/${sub}")"
+  url="$(nc_sub_url "$sub")"
   nc_policy_propfind "$url" "$NC_POLICY_PROPFIND_BODY" \
     "$enc_prop" "$perm_prop" || return 1
   sub_rel="${sub%/}"

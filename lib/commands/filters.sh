@@ -81,10 +81,10 @@ filters_generate_filter() {
 }
 
 # filters_server_url - print the sync-exclude.lst URL. HTTP_BASE comes from
-# http_remote_info; a usable capabilities_base_url wins.
+# http_remote_info; a usable remote_nextcloud_base wins.
 filters_server_url() {
   local base="${HTTP_BASE:-}" cap=""
-  if type capabilities_base_url >/dev/null 2>&1 && cap="$(capabilities_base_url 2>/dev/null)"; then
+  if type remote_nextcloud_base >/dev/null 2>&1 && cap="$(remote_nextcloud_base 2>/dev/null)"; then
     base="$cap"
   fi
   [[ -n "$base" ]] || base="$HTTP_BASE"

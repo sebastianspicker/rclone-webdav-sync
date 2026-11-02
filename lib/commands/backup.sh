@@ -26,7 +26,6 @@ _backup_ok=0
 _backup_warn=0
 _backup_failed=0
 _backup_skipped=0
-_backup_reached_restic=0
 _backup_failed_names=""
 _backup_maint_forget="not run"
 _backup_maint_check="not run"
@@ -287,7 +286,6 @@ _backup_run_state_init() {
   _backup_warn=0
   _backup_failed=0
   _backup_skipped=0
-  _backup_reached_restic=0
   _backup_failed_names=""
   _backup_maint_forget="not run"
   _backup_maint_check="not run"
@@ -426,7 +424,6 @@ _backup_run_entry() {
   fi
   backup_build_args_into args "$name" "$local_path" "$exclude_file"
   logfile="${LOG_DIR}/backup-${name}-${_backup_timestamp}.log"
-  _backup_reached_restic=1
   backup_child "$logfile" "${args[@]}" || rc=$?
   [[ -z "$exclude_file" ]] || temp_discard "$exclude_file"
   status=${ restic_rc_status "$rc";}
@@ -569,12 +566,15 @@ backup_run() {
   backup_quota_gate || gate=$?
   if [[ "$gate" -eq 2 ]]; then
     backup_say "skipped: quota"
+    notify_send "sciebo backup skipped" "quota at or above ${QUOTA_WARN_PERCENT}%"
     _backup_skipped="$count"
     [[ -z "$only" ]] || _backup_skipped=1
     [[ "$_backup_json" -eq 0 ]] || backup_run_json
     return 2
   fi
-  if [[ "$count" -eq 0 ]]; then
+  # Invalid lines (seen by the backupset_count walk) must still reach the run
+  # below so they are reported as failures.
+  if [[ "$count" -eq 0 && "$BACKUPSET_INVALID" -eq 0 ]]; then
     backup_say "No backup sources configured (add one with 'sciebo backup add LOCAL')"
     [[ "$_backup_json" -eq 0 ]] || backup_run_json
     return 0
@@ -587,7 +587,13 @@ backup_run() {
   trap 'backup_on_signal INT' INT
   trap 'backup_on_signal TERM' TERM
   backupset_each _backup_run_entry "$only"
-  if [[ "$_backup_reached_restic" -eq 1 && "$_backup_dry_run" -eq 0 ]]; then
+  if [[ -z "$only" && "$BACKUPSET_INVALID" -gt 0 ]]; then
+    _backup_total=$((_backup_total + BACKUPSET_INVALID))
+    _backup_failed=$((_backup_failed + BACKUPSET_INVALID))
+    _backup_failed_names+="invalid line in ${BACKUPS_FILE##*/} (${BACKUPSET_INVALID})"$'\n'
+  fi
+  # The marker feeds "last run" in doctor and info, so only a working run counts.
+  if [[ "$((_backup_ok + _backup_warn))" -gt 0 && "$_backup_dry_run" -eq 0 ]]; then
     backupstate_mark run || true
   fi
   if [[ "${BACKUP_MAINTENANCE:-0}" != "1" ]]; then
@@ -638,7 +644,7 @@ backup_password_where() {
 
 # backup_init - `backup init [--existing] [--password-stdin]`.
 backup_init() {
-  local existing=0 from_stdin=0 password="" previous="" generated=0 reuse_stored=0 overlaps="" rc=0 repo="" err_text=""
+  local existing=0 from_stdin=0 password="" previous="" reuse_stored=0 overlaps="" rc=0 repo="" err_text=""
   opt_begin "existing:b password-stdin:b" backup "init: " "$@"
   opt_guard backup "init: "
   opt_into existing existing 1
@@ -650,7 +656,10 @@ backup_init() {
     overlaps="${overlaps//$'\n'/, }"
     die "BACKUP_REMOTE_PATH '${BACKUP_REMOTE_PATH}' overlaps the remote folder of sync pair(s): ${overlaps}; the repository must stay outside every pair"
   fi
-  previous=${ restic_password;} || previous=""
+  previous=${ restic_password;} || rc=$?
+  # rc 2 means the lookup failed, not that nothing is stored: going on could
+  # overwrite (and on failure delete) the real repository password.
+  [[ "$rc" -ne 2 ]] || die "cannot read the stored repository password (key storage error); fix key storage and retry"
   if [[ -n "$previous" && ! ("$existing" -eq 1 && "$from_stdin" -eq 1) ]]; then
     rc=0
     restic_capture backup-probe cat config || rc=$?
@@ -690,7 +699,6 @@ backup_init() {
     printf 'Using the already stored repository password for the new repository.\n'
   else
     password=${ restic_password_generate;}
-    generated=1
   fi
   [[ "$reuse_stored" -eq 1 ]] || restic_password_store "$password"
   if [[ "$existing" -eq 1 ]]; then
@@ -718,7 +726,7 @@ backup_init() {
   backup_capture_discard
   printf 'Initialized restic repository %s.\n' "$repo"
   printf 'Password stored in %s.\n' "${ backup_password_where;}"
-  if [[ "$generated" -eq 1 ]]; then
+  if [[ "$from_stdin" -eq 0 ]]; then
     printf '\nRepository password (shown only this once):\n\n  %s\n\n' "$password"
     printf '%s\n' "WARNING: this password is the only way to read your backups. Store it" \
       "outside this machine (a password manager or on paper); if this machine is" \

@@ -201,7 +201,7 @@ _settings_paths_overlap() {
 # including the rule that the restic repository path and the sync tree
 # REMOTE_BASE never overlap.
 _validate_backup_settings() {
-  local norm=""
+  local norm="" key=""
   _validate_keys_uint \
     BACKUP_KEEP_LAST BACKUP_KEEP_HOURLY BACKUP_KEEP_DAILY \
     BACKUP_KEEP_WEEKLY BACKUP_KEEP_MONTHLY BACKUP_KEEP_YEARLY
@@ -215,6 +215,18 @@ _validate_backup_settings() {
   _validate_keys_nonempty RESTIC_MIN_VERSION BACKUP_LAUNCHD_LABEL
   validate_setting_one_of BACKUP_QUOTA_POLICY warn skip
   validate_setting_one_of BACKUP_COMPRESSION auto off max
+  # Empty cadence or keep-within is meaningful (off); a typo must fail here,
+  # not at every due forget/check.
+  for key in BACKUP_FORGET_EVERY BACKUP_CHECK_EVERY; do
+    [[ -z "${!key}" ]] || duration_seconds "${!key}" >/dev/null ||
+      die "setting '${key}' in ${SETTINGS_FILE} must be a duration like 30d (got '${!key}')"
+  done
+  # restic duration grammar: 1y2m3d4h (years, months, days, hours, in order).
+  [[ -z "${BACKUP_KEEP_WITHIN:-}" || "$BACKUP_KEEP_WITHIN" =~ ^([0-9]+y)?([0-9]+m)?([0-9]+d)?([0-9]+h)?$ ]] ||
+    die "setting 'BACKUP_KEEP_WITHIN' in ${SETTINGS_FILE} must be a restic duration like 1y2m3d4h (got '${BACKUP_KEEP_WITHIN}')"
+  # Same shapes as backup_check_subset (lib/commands/backup.sh): config cannot call it.
+  [[ "$BACKUP_CHECK_READ_DATA_SUBSET" =~ ^[0-9]+(\.[0-9]+)?%$ || "$BACKUP_CHECK_READ_DATA_SUBSET" =~ ^[1-9][0-9]*/[1-9][0-9]*$ || "$BACKUP_CHECK_READ_DATA_SUBSET" =~ ^[0-9]+[KMGTkmgt]?$ ]] ||
+    die "setting 'BACKUP_CHECK_READ_DATA_SUBSET' in ${SETTINGS_FILE} must be N%, N/M, or a size like 2G (got '${BACKUP_CHECK_READ_DATA_SUBSET}')"
   case "${BACKUP_HOST:-}" in
     -* | *[[:space:][:cntrl:]]*)
       die "BACKUP_HOST '${ printable "$BACKUP_HOST";}' must be a plain host name (no spaces, control bytes, or leading '-')"
@@ -224,7 +236,7 @@ _validate_backup_settings() {
   BACKUP_REMOTE_PATH="${BACKUP_REMOTE_PATH%/}"
   [[ -n "$BACKUP_REMOTE_PATH" ]] || die "BACKUP_REMOTE_PATH must not be empty (see ${SETTINGS_FILE})"
   case "$BACKUP_REMOTE_PATH" in
-    /* | *..*)
+    /* | .. | ../* | */.. | */../*)
       die "BACKUP_REMOTE_PATH '${BACKUP_REMOTE_PATH}' must be a relative path without '..'"
       ;;
     *"|"* | *[[:cntrl:]]*)
@@ -299,7 +311,7 @@ validate_settings() {
   REMOTE_BASE="${REMOTE_BASE%/}"
   [[ -n "$REMOTE_BASE" ]] || die "REMOTE_BASE must not be empty (see ${SETTINGS_FILE})"
   case "$REMOTE_BASE" in
-    /* | *..*)
+    /* | .. | ../* | */.. | */../*)
       die "REMOTE_BASE '${REMOTE_BASE}' must be a relative path without '..'"
       ;;
     *"|"* | *[[:cntrl:]]*)
@@ -415,7 +427,7 @@ profile_remote_inherited() {
 require_own_profile_remote() {
   profile_remote_inherited || return 0
   die "profile '${SCIEBO_PROFILE}' has no RCLONE_REMOTE of its own and would ${1} the default profile's rclone remote '${RCLONE_REMOTE}'.
-  Give it its own remote: add RCLONE_REMOTE=${SETTINGS_PROJECT_RCLONE_REMOTE}-${SCIEBO_PROFILE} to ${SETTINGS_PROFILE_LOCAL_FILE:-its settings.local.env}
+  Give it its own remote: add RCLONE_REMOTE=${SETTINGS_PROJECT_RCLONE_REMOTE}_${SCIEBO_PROFILE} to ${SETTINGS_PROFILE_LOCAL_FILE:-its settings.local.env}
   (or RCLONE_REMOTE=${RCLONE_REMOTE} there to share the default account on purpose)."
 }
 

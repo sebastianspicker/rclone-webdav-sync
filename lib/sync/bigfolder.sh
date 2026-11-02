@@ -55,6 +55,8 @@ _bigfolder_child_sizes() {
         for (i = 1; i <= n; i++) printf "%s\t%d\n", order[i], total[order[i]]
       }
     '
+  # rclone's status, not awk's: a failed listing must not read as "no folders".
+  return "${PIPESTATUS[0]}"
 }
 
 # _bigfolder_label BYTES - human label for a byte count, in capabilities.sh's
@@ -77,6 +79,8 @@ _bigfolder_filter_covers() {
     rule="${rule#/}"
     first="${rule%%/*}"
     [[ "$first" == "$child" ]] && return 0
+    # Wizard rules escape glob metacharacters (rclone_literal_pattern).
+    [[ "/$first" == "${ rclone_literal_pattern "$child";}" ]] && return 0
   done <"$file"
   return 1
 }
@@ -111,10 +115,11 @@ _bigfolder_covered() {
 # bigfolder_scan NAME REMOTE_SUBDIR - scan the immediate remote subfolders of
 # <RCLONE_REMOTE>:<REMOTE_BASE>/<REMOTE_SUBDIR> and print SUB<TAB>BYTES<TAB>LABEL
 # for the unconfigured ones above BIG_FOLDER_SIZE. Scans at most
-# BIGFOLDER_MAX_SCAN subfolders and always returns 0.
+# BIGFOLDER_MAX_SCAN subfolders. rc 1 (nothing printed) when the remote
+# listing failed, rc 0 otherwise.
 bigfolder_scan() {
   local name="$1" sub="${2:-}" threshold="" spec="" child=""
-  local bytes="" label="" scanned=0 filter=""
+  local bytes="" label="" scanned=0 filter="" sizes=""
   sub=${ strip_trailing_slashes "$sub";}
   [[ -n "${BIG_FOLDER_SIZE:-}" ]] || return 0
   threshold=${ size_suffix_bytes "$BIG_FOLDER_SIZE";} || return 0
@@ -122,6 +127,7 @@ bigfolder_scan() {
   rclone_available || return 0
   spec=${ remote_spec "$sub";}
   filter=${ _bigfolder_pair_filter "$name";}
+  sizes=${ _bigfolder_child_sizes "$spec";} || return 1
   # One recursive listing feeds both the child order (directory rows, in
   # rclone's listing order) and the per-child byte totals (file rows), so the
   # old second `rclone lsf --dirs-only --max-depth 1` call is gone.
@@ -136,7 +142,7 @@ bigfolder_scan() {
     [[ "$bytes" -gt "$threshold" ]] || continue
     label=${ _bigfolder_label "$bytes";}
     printf '%s\t%s\t%s\n' "$child" "$bytes" "$label"
-  done < <(_bigfolder_child_sizes "$spec")
+  done <<<"$sizes"
   return 0
 }
 
@@ -197,8 +203,8 @@ bigfolder_notify() {
   fi
   ttl=${ duration_seconds "${BIGFOLDER_SCAN_TTL:-1h}" seconds 2>/dev/null;} || ttl=0
   if ! rows="$(_bigfolder_scan_cache "$name" "$ttl")"; then
-    rows="$(bigfolder_scan "$name" "$sub")"
-    _bigfolder_scan_cache_write "$name" "$rows"
+    # A failed listing is not cached, so the next run scans again.
+    rows="$(bigfolder_scan "$name" "$sub")" && _bigfolder_scan_cache_write "$name" "$rows"
   fi
   while IFS=$'\t' read -r child bytes label; do
     [[ -n "$child" ]] || continue

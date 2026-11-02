@@ -17,6 +17,9 @@ Three kinds of files live here:
 - `pair-<name>.txt` — excludes written by `sciebo folders` for one pair, for
   example to skip `node_modules/`. Referenced from `config/folders.conf`.
 
+For `sciebo backup`, a `- dir/` rule is translated to the restic pattern
+`dir`, so a file with the same name as an excluded folder is excluded too.
+
 To see which rules a run would actually apply:
 
 ```sh

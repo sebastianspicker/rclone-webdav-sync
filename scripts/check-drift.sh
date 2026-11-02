@@ -57,8 +57,8 @@
 #     effort - a coincidental prefix match is possible, so this never fails
 #     hard).
 #
-# Set DRIFT_STRICT=1 to turn the "planned command" and "spec vs --help"
-# warnings into hard failures, which is what a release/CI check wants once
+# Set DRIFT_STRICT=1 to turn the "planned command", "spec vs --help", and
+# dead/test-only helper warnings into hard failures, which is what a release/CI check wants once
 # every SCIEBO_COMMANDS entry is implemented and the spec is complete.
 
 set -uo pipefail
@@ -552,10 +552,12 @@ dead_helpers="$(
 while IFS=$'\t' read -r helper_file helper_name helper_tier; do
   [ -n "${helper_name:-}" ] || continue
   if [ "$helper_tier" = "test" ]; then
-    warn "helper '${helper_name}' in ${helper_file} is referenced only from tests/ (no production caller)"
+    msg="helper '${helper_name}' in ${helper_file} is referenced only from tests/ (no production caller)"
   else
-    warn "function '${helper_name}' in ${helper_file} is referenced nowhere"
+    msg="function '${helper_name}' in ${helper_file} is referenced nowhere"
   fi
+  # Warn-only dead-helper reports went unread; strict mode (make lint) fails.
+  if [ "$STRICT" = "1" ]; then hard "$msg"; else warn "$msg"; fi
 done <<<"$dead_helpers"
 
 # --- module-private global prefix vs the naming rule (warning) -------------

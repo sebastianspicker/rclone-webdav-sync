@@ -4,7 +4,7 @@ SCIEBO := bin/sciebo
 VERSION := $(shell cat VERSION 2>/dev/null)
 PREFIX ?= $(HOME)/.local
 DIST_NAME := rclone-webdav-sync-$(VERSION)
-DIST_DIR ?= dist
+DIST_DIR := dist
 
 # shellcheck follows every source into lib/ (-x).
 SC_PROD = $(SCIEBO) .githooks/pre-commit completions/sciebo.bash scripts/*.sh lib/*.sh lib/*/*.sh
@@ -15,87 +15,10 @@ CODE_ITEMS := bin lib scripts launchd completions docs man \
 	VERSION README.md LICENSE .env.example
 .DEFAULT_GOAL := help
 
-.PHONY: help setup doctor discover list check sync verify status pause resume bisync-resync \
-	folders folders-list mount umount mount-status \
-	cleanup-logs cleanup-logs-apply cleanup-uploads cleanup-uploads-apply trash \
-	backup backup-check backup-forget \
-	check-bash lint hooks gen screenshots schedule-install schedule-uninstall schedule-status \
-	version install uninstall update dist clean-dist
+.PHONY: help check-bash lint hooks gen screenshots version install uninstall dist
 
 help: ## show this help
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage:\n  make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
-
-setup: ## create/update the sciebo rclone remote
-	$(SCIEBO) setup
-
-doctor: ## preflight checks (for --offline run: bin/sciebo doctor --offline)
-	$(SCIEBO) doctor
-
-discover: ## scan roots.conf and write config/sources.generated.conf
-	$(SCIEBO) discover --write
-
-list: ## list configured sources
-	$(SCIEBO) list
-
-folders: ## choose remote folders to sync (folder wizard)
-	$(SCIEBO) folders choose
-
-folders-list: ## list configured pairs including wizard entries
-	$(SCIEBO) folders list
-
-check: ## dry-run all sources (no changes)
-	$(SCIEBO) check
-
-sync: ## apply sync/pull/bisync for all sources
-	$(SCIEBO) sync
-
-verify: ## check that sources match their destinations (rclone check)
-	$(SCIEBO) verify
-
-status: ## last run per source and the pause state
-	$(SCIEBO) status
-
-pause: ## skip sync/check runs until `make resume`
-	$(SCIEBO) pause
-
-resume: ## clear the pause marker
-	$(SCIEBO) resume
-
-bisync-resync: ## first-time bisync initialization (can copy/delete both ways)
-	$(SCIEBO) sync --resync --apply
-
-mount: ## mount the remote base on demand via nfsmount
-	$(SCIEBO) mount
-
-umount: ## unmount all recorded rclone mounts
-	$(SCIEBO) umount --all
-
-mount-status: ## show recorded rclone mounts
-	$(SCIEBO) mounts
-
-cleanup-logs: ## dry-run of old-log cleanup
-	$(SCIEBO) cleanup --logs
-
-cleanup-logs-apply: ## delete logs older than LOG_RETENTION_DAYS
-	$(SCIEBO) cleanup --logs --apply
-
-cleanup-uploads: ## dry-run of stale Nextcloud chunk-upload cleanup
-	$(SCIEBO) cleanup --uploads
-
-cleanup-uploads-apply: ## delete stale chunk uploads
-	$(SCIEBO) cleanup --uploads --apply
-
-trash: ## list the Nextcloud trashbin (read-only)
-	$(SCIEBO) trash
-
-backup: ## back up every source in config/backups.conf (restic)
-	$(SCIEBO) backup run
-
-backup-check: ## verify the restic repository (read-data subset)
-	$(SCIEBO) backup check
-
-backup-forget: ## dry run of the backup retention policy (no changes)
-	$(SCIEBO) backup forget
 
 check-bash: ## fail fast unless the selected bash is 5.3+
 	@$(BASH) -c 'if ((BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 503)); then \
@@ -148,15 +71,6 @@ gen: ## regenerate the CLI registry and shell completions from lib/cli/sciebo.sp
 screenshots: ## regenerate README/demo screenshots (needs rclone + python3)
 	tools/screenshots.py
 
-schedule-install: ## install the launchd agent
-	$(SCIEBO) schedule install
-
-schedule-uninstall: ## remove the launchd agent
-	$(SCIEBO) schedule uninstall
-
-schedule-status: ## show launchd agent status
-	$(SCIEBO) schedule status
-
 version: ## print the project version
 	@printf '%s %s\n' sciebo "$(VERSION)"
 
@@ -165,14 +79,6 @@ install: check-bash ## install the tree under PREFIX (default ~/.local); never t
 
 uninstall: check-bash ## remove the installed code/assets, wrapper, and man page under PREFIX (keeps config/ and state/)
 	@$(BASH) scripts/install.sh uninstall "$(PREFIX)" "$(VERSION)" $(CODE_ITEMS)
-
-update: ## git pull --ff-only (in a worktree), then lint
-	@if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then \
-	  git pull --ff-only; \
-	else \
-	  echo "not a git worktree; skipping pull" >&2; \
-	fi
-	$(MAKE) lint
 
 dist: ## build a source tarball ($(DIST_DIR)/$(DIST_NAME).tar.gz) from the files git would publish
 	@test -n "$(VERSION)" || { echo "VERSION file missing" >&2; exit 1; }
@@ -193,6 +99,3 @@ dist: ## build a source tarball ($(DIST_DIR)/$(DIST_NAME).tar.gz) from the files
 	@tar -czf "$(DIST_DIR)/$(DIST_NAME).tar.gz" -C "$(DIST_DIR)" "$(DIST_NAME)"
 	@rm -rf "$(DIST_DIR)/$(DIST_NAME)"
 	@printf 'wrote %s/%s.tar.gz\n' "$(DIST_DIR)" "$(DIST_NAME)"
-
-clean-dist: ## remove $(DIST_DIR)/
-	rm -rf "$(DIST_DIR)"

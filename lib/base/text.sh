@@ -81,9 +81,8 @@ printable() {
 # with substr, so a 1MB line stays linear instead of the old O(n^2)
 # `out = out c`. Under a UTF-8 locale, regex and split reject the invalid
 # bytes this function exists to remove (BWK awk: "multibyte conversion
-# failure"), so ctrl_strip falls back to a regex-free byte scan. Compose as
-# `LC_ALL=C awk "${_AWK_CTRL_LIB}"'<program>'`; sanitize_stream and the HTTP scrubbers
-# pass LC_ALL=C for the fast path.
+# failure"), so every caller must run it under LC_ALL=C (check-layers rule 6).
+# Compose as `LC_ALL=C awk "${_AWK_CTRL_LIB}"'<program>'`.
 _AWK_CTRL_LIB='
 function ctrl_build(    i) {
   if (ctrl_ready) return
@@ -108,80 +107,14 @@ function ctrl_build(    i) {
   # Byte-range regexes are kept as strings (dynamic regexes) rather than
   # /.../ literals: gawk compiles literals when it parses the program and, in
   # a UTF-8 locale, rejects these byte ranges ("Invalid collation character")
-  # before ctrl_in_c_locale can route around them. They are only used in C.
+  # before any LC_ALL=C run can reach them. They are only used in C.
   ctrl_re_c0_keep = "[\001-\010\013-\037\177]"
   ctrl_re_c0_all = "[\001-\037\177]"
   ctrl_re_c1 = "\302[\200-\237]"
   ctrl_re_high = "[\200-\377]"
 }
-# ctrl_in_c_locale() - true when awk runs with byte semantics, so the
-# regex/split fast path is safe. POSIX awk derives its locale from LC_ALL,
-# else LC_CTYPE, else LANG; an unset locale is the C locale.
-function ctrl_in_c_locale(    l) {
-  l = ENVIRON["LC_ALL"]
-  if (l == "") l = ENVIRON["LC_CTYPE"]
-  if (l == "") l = ENVIRON["LANG"]
-  return (l == "" || l == "C" || l == "POSIX")
-}
-# ctrl_strip_bytes(s, keep_tab_lf) - the locale-agnostic fallback: byte-wise
-# substr/index only (no regex or split), for the XML parsers that run under
-# the caller locale on small field values.
-function ctrl_strip_bytes(s, keep_tab_lf,    i, n, c, start, out, need, j, b2, ok) {
-  ctrl_build()
-  out = ""
-  n = length(s)
-  start = 1
-  i = 1
-  while (i <= n) {
-    c = substr(s, i, 1)
-    if (index(ctrl_c0, c) > 0) {
-      if (keep_tab_lf == 1 && (c == "\t" || c == "\n")) {
-        i++
-        continue
-      }
-    } else if (index(ctrl_cont, c) > 0 || index(ctrl_bad_high, c) > 0) {
-      # drop below
-    } else {
-      need = 0
-      if (index(ctrl_lead2, c) > 0) need = 1
-      else if (index(ctrl_lead3, c) > 0) need = 2
-      else if (index(ctrl_lead4, c) > 0) need = 3
-      if (need > 0) {
-        ok = (i + need <= n)
-        for (j = 1; ok && j <= need; j++) {
-          if (index(ctrl_cont, substr(s, i + j, 1)) == 0) ok = 0
-        }
-        if (ok) {
-          b2 = substr(s, i + 1, 1)
-          if (c == ctrl_lead_c2 && index(ctrl_cont_80_9f, b2) > 0) ok = 0
-          else if (c == ctrl_lead_e0 && index(ctrl_cont_a0_bf, b2) == 0) ok = 0
-          else if (c == ctrl_lead_ed && index(ctrl_cont_80_9f, b2) == 0) ok = 0
-          else if (c == ctrl_lead_f0 && index(ctrl_cont_90_bf, b2) == 0) ok = 0
-          else if (c == ctrl_lead_f4 && index(ctrl_cont_80_8f, b2) == 0) ok = 0
-        }
-        if (ok) {
-          i += 1 + need
-          continue
-        }
-        if (i > start) out = out substr(s, start, i - start)
-        i++
-        while (i <= n && index(ctrl_cont, substr(s, i, 1)) > 0) i++
-        start = i
-        continue
-      }
-      i++
-      continue
-    }
-    if (i > start) out = out substr(s, start, i - start)
-    i++
-    start = i
-  }
-  if (n >= start) out = out substr(s, start, n - start + 1)
-  return out
-}
 function ctrl_strip(s, keep_tab_lf,    i, n, a, c, start, out, need, j, b2, ok) {
   ctrl_build()
-  if (!ctrl_in_c_locale()) return ctrl_strip_bytes(s, keep_tab_lf)
   if (keep_tab_lf == 1) gsub(ctrl_re_c0_keep, "", s)
   else gsub(ctrl_re_c0_all, "", s)
   gsub(ctrl_re_c1, "", s)
@@ -309,6 +242,11 @@ format_size_bytes() {
     whole=$((whole + 1))
     tenths=0
   fi
+  # Rounding up to 1024 carries into the next unit (1048575 -> 1.0MiB).
+  if ((whole >= 1024 && unit < 4)); then
+    whole=1
+    unit=$((unit + 1))
+  fi
   if ((whole >= 10)); then
     printf '%d%s' "$whole" "${units[unit]}"
   else
@@ -319,7 +257,7 @@ format_size_bytes() {
 
 # strip_control_bytes TEXT - the pure-bash twin of the awk ctrl_strip(s, 0):
 # remove C0/DEL control bytes, encoded C1 (the two-byte C2 80..C2 9F forms for
-# U+0080..U+009F) and stray C1 bytes (0x80-0x9F), while preserving valid UTF-8
+# U+0080..U+009F) and stray continuation bytes (0x80-0xBF), while preserving valid UTF-8
 # multi-byte sequences. The same corrected UTF-8 rules apply:
 #   - C0/C1 0xC0-0xC1 are invalid leads (overlong two-byte forms),
 #   - a three-byte E0 requires the second byte A0..BF,
@@ -328,8 +266,8 @@ format_size_bytes() {
 #   - F4 requires the second byte 80..8F,
 #   - a malformed sequence is dropped with its continuation run, so ED A0 80
 #     and F4 90 80 80 disappear whole.
-# A lone 0xA0-0xBF or 0xF5-0xFF byte is not a control and stays, exactly as
-# before (only the 0x80-0x9F range is a terminal control under Latin-1).
+# A lone 0x80-0xBF byte is dropped like the awk ctrl_strip does, so output
+# never carries invalid UTF-8.
 # Byte-wise and forkless via LC_ALL=C and single-byte substring expansion.
 # Used by percent_decode so a decoded %0A/%0D cannot split a record and a
 # decoded %9B cannot inject a terminal control, without corrupting multi-byte
@@ -379,7 +317,7 @@ strip_control_bytes() {
       continue
     fi
     case "$b" in
-      [$'\300'-$'\301']) # C0/C1: overlong lead, not a valid UTF-8 start
+      [$'\300'-$'\301'] | [$'\365'-$'\377']) # overlong or out-of-range lead, not a valid UTF-8 start
         i=$((i + 1))
         continue
         ;;
@@ -387,7 +325,7 @@ strip_control_bytes() {
         i=$((i + 1))
         continue
         ;;
-      [$'\200'-$'\237']) # stray C1 control byte
+      [$'\200'-$'\277']) # stray continuation byte (C1 control or 0xA0-0xBF)
         i=$((i + 1))
         continue
         ;;
@@ -743,4 +681,22 @@ size_suffix_bytes() {
     fi
   fi
   printf '%d' "$whole"
+}
+
+# rclone_literal_pattern PATH - print the rclone filter pattern for the exact
+# PATH: a leading slash anchors it at the transfer root, and every rclone
+# glob metacharacter (\, *, ?, [, ], {, }) is backslash-escaped so the path
+# stays literal. An unescaped "]" or "}" makes rclone abort before it starts,
+# so the escape set must stay complete.
+rclone_literal_pattern() {
+  local path="${1:-}" out="" ch="" i=0
+  while [[ "$i" -lt "${#path}" ]]; do
+    ch="${path:$i:1}"
+    case "$ch" in
+      "\\" | '*' | '?' | '[' | ']' | '{' | '}') out="${out}\\${ch}" ;;
+      *) out="${out}${ch}" ;;
+    esac
+    i=$((i + 1))
+  done
+  printf '/%s\n' "$out"
 }

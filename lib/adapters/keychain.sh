@@ -178,23 +178,37 @@ _keychain_write() {
   esac
 }
 
-# _keychain_read ACCOUNT - print the stored secret, rc 1 with empty output
-# when the item is absent. All backend output is silenced.
+# _keychain_read ACCOUNT - print the stored secret. rc 1 with empty output when
+# the item is absent, rc 2 when the backend failed (absence is then unknown).
+# All backend output is silenced.
 _keychain_read() {
-  local account="$1" secret="" backend=""
+  local account="$1" secret="" backend="" rc=0 file=""
   # Forkless capture: keychain_backend only prints.
   backend=${ keychain_backend;}
   case "$backend" in
     security)
       secret="$(security find-generic-password -a "$account" \
-        -s "${KEYCHAIN_SERVICE:-}" -w 2>/dev/null)" || return 1
+        -s "${KEYCHAIN_SERVICE:-}" -w 2>/dev/null)" || rc=$?
+      # 44 is errSecItemNotFound.
+      [[ "$rc" -eq 0 ]] || return $((rc == 44 ? 1 : 2))
       ;;
     secret-tool)
       secret="$(secret-tool lookup service "${KEYCHAIN_SERVICE:-}" \
-        account "$account" 2>/dev/null)" || return 1
+        account "$account" 2>/dev/null)" || rc=$?
+      # secret-tool exits 1 with no output for a missing item.
+      if [[ "$rc" -ne 0 ]]; then
+        [[ "$rc" -eq 1 && -z "$secret" ]] || return 2
+        return 1
+      fi
       ;;
     pass)
-      secret="$(pass show "$(_keychain_pass_path "$account")" 2>/dev/null)" || return 1
+      secret="$(pass show "$(_keychain_pass_path "$account")" 2>/dev/null)" || rc=$?
+      if [[ "$rc" -ne 0 ]]; then
+        # pass hides why it failed: no entry file means absent, else an error.
+        file="${PASSWORD_STORE_DIR:-$HOME/.password-store}/${ _keychain_pass_path "$account";}.gpg"
+        [[ -e "$file" ]] || return 1
+        return 2
+      fi
       secret="${secret%%$'\n'*}"
       ;;
     *) return 1 ;;
@@ -263,7 +277,8 @@ keychain_store_item() {
 }
 
 # keychain_lookup_item SUFFIX - print the item's secret, rc 0. rc 1 with empty
-# output when key storage is unavailable or the item is absent. Successful
+# output when key storage is unavailable or the item is absent, rc 2 when the
+# backend failed so absence is unknown (see _keychain_read). Successful
 # lookups are cached per process; `plain` shares keychain_lookup_plain's cache.
 keychain_lookup_item() {
   local suffix="$1" secret="" account=""
@@ -277,7 +292,7 @@ keychain_lookup_item() {
     return 0
   fi
   account=${ keychain_account_item "$suffix";}
-  secret=${ _keychain_read "$account";} || return 1
+  secret=${ _keychain_read "$account";} || return $?
   KEYCHAIN_ITEM_CACHE[$suffix]="$secret"
   KEYCHAIN_ITEM_CACHE_SET[$suffix]=1
   printf '%s' "$secret"

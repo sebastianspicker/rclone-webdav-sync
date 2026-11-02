@@ -214,18 +214,6 @@ share_reject_combo() {
   return 0
 }
 
-# share_valid_id ID - true when ID is a non-empty numeric share id.
-share_valid_id() {
-  numeric_id "$1"
-}
-
-# share_interactive - true when a confirmation prompt may be shown: stdin
-# is a terminal and --non-interactive was not given. The terminal check goes
-# through the shared ui_stdin_tty seam so tests can substitute it.
-share_interactive() {
-  ui_stdin_tty && [[ -z "${SCIEBO_NON_INTERACTIVE:-}" ]]
-}
-
 # share_ocs_path SUB - the OCS `path` field for SUB.
 share_ocs_path() { printf '/%s/%s' "$REMOTE_BASE" "$1"; }
 
@@ -271,11 +259,11 @@ share_parse_permissions() {
   while [[ "$i" -lt "$n" ]]; do
     c="${value:$i:1}"
     case "$c" in
-      r) mask=$((mask + 1)) ;;
-      w) mask=$((mask + 2)) ;;
-      d) mask=$((mask + 8)) ;;
-      c) mask=$((mask + 4)) ;;
-      s) mask=$((mask + 16)) ;;
+      r) mask=$((mask | 1)) ;;
+      w) mask=$((mask | 2)) ;;
+      d) mask=$((mask | 8)) ;;
+      c) mask=$((mask | 4)) ;;
+      s) mask=$((mask | 16)) ;;
       *) usage_error share "unknown permission letter '${c}' (use r, w, d, c, s or a numeric mask)" ;;
     esac
     i=$((i + 1))
@@ -933,7 +921,7 @@ share_run_list() {
 share_run_info() {
   share_expect_args 2 2 "a share id"
   share_require_options info
-  share_valid_id "$SHARE_ARG1" ||
+  numeric_id "$SHARE_ARG1" ||
     usage_error share "invalid share id: $(printable "$SHARE_ARG1")"
   share_load_remote
   ocs_request GET "${SHARE_API}/${SHARE_ARG1}"
@@ -986,7 +974,7 @@ share_run_update() {
   share_expect_args 2 2 "a share id"
   share_require_options update password remove-password expire remove-expire note remove-note permissions label download send-mail
   share_require_download
-  share_valid_id "$SHARE_ARG1" ||
+  numeric_id "$SHARE_ARG1" ||
     usage_error share "invalid share id: $(printable "$SHARE_ARG1")"
   share_reject_combo password remove-password
   share_reject_combo expire remove-expire
@@ -1010,7 +998,7 @@ share_run_remove() {
   local path="" line=""
   share_expect_args 2 2 "a share id"
   share_require_options remove yes
-  share_valid_id "$SHARE_ARG1" ||
+  numeric_id "$SHARE_ARG1" ||
     usage_error share "invalid share id: $(printable "$SHARE_ARG1")"
   share_load_remote
   # Shared proceed gate (the share_confirm_mutation alias was inlined):
@@ -1113,7 +1101,7 @@ share_respond_all() {
     id="$SHARE_PENDING_RECORD_ID"
     # Ids come from the server; validate them before they reach the request
     # path so a malformed or hostile record cannot smuggle in a traversal.
-    if ! share_valid_id "$id"; then
+    if ! numeric_id "$id"; then
       warn "skipping pending share with invalid id: $(printable "$id")"
       continue
     fi
@@ -1147,7 +1135,7 @@ share_require_respond_options() {
 # prompt itself is the shared ui_confirm_mutation below.
 share_decline_gate() {
   local sub="$1" requires="$2"
-  if [[ "$sub" == "decline" && "${OPT_yes:-0}" != "1" ]] && ! share_interactive; then
+  if [[ "$sub" == "decline" && "${OPT_yes:-0}" != "1" ]] && ! _ui_promptable; then
     usage_error share "$requires"
   fi
   return 0
@@ -1174,7 +1162,7 @@ share_run_respond_all() {
 share_run_respond_id() {
   local sub="$1" requires="$2" kind=""
   share_expect_args 2 2 "a pending share id"
-  share_valid_id "$SHARE_ARG1" ||
+  numeric_id "$SHARE_ARG1" ||
     usage_error share "invalid share id: $(printable "$SHARE_ARG1")"
   share_load_remote
   share_pending_kind "$SHARE_ARG1" || die "$SHARE_PENDING_ERROR"
@@ -1221,7 +1209,7 @@ share_run_incoming() {
 share_run_send_email() {
   share_expect_args 2 2 "a share id"
   share_require_options send-email
-  share_valid_id "$SHARE_ARG1" ||
+  numeric_id "$SHARE_ARG1" ||
     usage_error share "invalid share id: $(printable "$SHARE_ARG1")"
   share_load_remote
   ocs_request POST "${SHARE_API}/${SHARE_ARG1}/send-email"
@@ -1295,7 +1283,7 @@ share_run_remote_list() {
 share_run_leave() {
   share_expect_args 2 2 "a share id"
   share_require_options leave yes
-  share_valid_id "$SHARE_ARG1" ||
+  numeric_id "$SHARE_ARG1" ||
     usage_error share "invalid share id: $(printable "$SHARE_ARG1")"
   share_load_remote
   # Same shared proceed gate as share_run_remove.

@@ -968,15 +968,6 @@ REGISTRY_HEADER
   done
   printf ')\n\n'
 
-  printf '# shellcheck disable=SC2034  # part of the generated registry; not read by the runtime dispatch today, kept for tooling that needs the core/extra split without re-deriving it from the spec\n'
-  printf 'declare -gA SCIEBO_COMMAND_TIER=(\n'
-  for row in "${COMMAND_ROWS[@]}"; do
-    IFS='|' read -r cmd tier module desc <<<"$row"
-    [ "$module" = "-" ] && continue
-    printf '  [%s]=%s\n' "$cmd" "$tier"
-  done
-  printf ')\n\n'
-
   printf '_SCIEBO_GLOBAL_SPECS=(\n'
   for row in "${GLOBAL_ROWS[@]}"; do
     IFS='|' read -r names _ _ _ _ env rkind early <<<"$row"

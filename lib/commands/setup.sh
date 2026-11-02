@@ -24,7 +24,8 @@ Options:
   --url URL     base URL for --login (optional; otherwise prompted)
   --rotate      fetch a fresh app password for the already-configured
                 remote via the Login Flow v2, keeping its url and user
-                (no prompts; cannot be combined with --login or --url)
+                (no prompts; cannot be combined with --login or --url;
+                refused when the browser is signed in as another user)
   --proxy URL   use URL as the proxy for this setup run only (a socks URL
                 through the explicit flags, an http(s) one through the
                 child environment); settings files are never written
@@ -33,7 +34,8 @@ Options:
                 remote, with fresh randomly generated passwords
                 (cannot be combined with --login, --rotate, or --url)
   --no-keychain for this run, store the obscured password in the rclone
-                config instead of the platform Keychain
+                config instead of the platform Keychain; once the remote
+                validates, the old Keychain app-password items are removed
   -h, --help    show this help
 
 If all three are already set, no prompts are shown. The URL is normalized
@@ -147,52 +149,49 @@ setup_require_base_url() {
   return 0
 }
 
-# setup_login_flow_curl_pass_file VAR PASSWORD - write a mode-600 curl config
-# file carrying the client-key passphrase as `pass = "..."` and store its path
-# in VAR. Delegates to the shared curl_key_pass_config_into (lib/base/core.sh),
-# which escapes backslash/double quote, refuses a control byte, and registers
-# the fresh mode-600 temp for exit cleanup; a control byte (rc 1) or write
-# failure (rc 2) is normalized to this path's rc 1. The caller adds
-# `--config FILE` and temp_discard()s it, so the passphrase never reaches the
-# curl argv.
-setup_login_flow_curl_pass_file() {
-  curl_key_pass_config_into "$1" "${2-}" || return 1
-}
-
 # Login-flow curl state prepared by _login_flow_client_args and reused by
 # _login_flow_poll. Module-private (the leading underscore).
-_LOGIN_FLOW_TLS_FLAG=""
 _LOGIN_FLOW_PASS_FILE=""
 _LOGIN_FLOW_CLIENT_ARGS=()
+_LOGIN_FLOW_PROXY_ENV=""
 
-# _login_flow_client_args - fill the login-flow curl TLS flag, the
-# mutual-TLS/CA/User-Agent argv, and the mode-600 client-key passphrase config
-# file, warning once when TLS verification is disabled. The passphrase reaches
+# _login_flow_client_args - fill the login-flow curl argv: the TLS/HTTP-version
+# and proxy flags from the shared _http_proxy_args (which warns once when TLS
+# verification is disabled), the timeouts, the mutual-TLS/CA/User-Agent flags,
+# and the mode-600 client-key passphrase config file. The passphrase reaches
 # curl through the config file instead of --pass, which would expose it in the
-# argv.
+# argv. An http(s) proxy travels in _LOGIN_FLOW_PROXY_ENV, applied by
+# _login_flow_curl.
 _login_flow_client_args() {
-  _LOGIN_FLOW_TLS_FLAG=""
+  local tls="" ver="" proxy_flag="" proxy_value=""
   _LOGIN_FLOW_PASS_FILE=""
   _LOGIN_FLOW_CLIENT_ARGS=()
-  if [[ "${TLS_INSECURE:-0}" == "1" ]]; then
-    _LOGIN_FLOW_TLS_FLAG="-k"
-    if [[ "${_LOGIN_FLOW_TLS_WARNED:-0}" != "1" ]]; then
-      warn "TLS certificate verification is disabled (--trust); this connection is not authenticated"
-      _LOGIN_FLOW_TLS_WARNED=1
-    fi
-  fi
+  _http_proxy_args tls ver proxy_flag proxy_value _LOGIN_FLOW_PROXY_ENV
   # The login flow uses raw curl, so apply the mutual-TLS/CA/User-Agent
   # settings here too. The client-key passphrase goes through a mode-600
-  # --config file (added last) instead of --pass, which would expose it in the
-  # argv.
+  # --config file instead of --pass, which would expose it in the argv.
   if [[ -n "${CLIENT_KEY_PASSWORD:-}" ]]; then
-    setup_login_flow_curl_pass_file _LOGIN_FLOW_PASS_FILE "$CLIENT_KEY_PASSWORD" ||
+    curl_key_pass_config_into _LOGIN_FLOW_PASS_FILE "$CLIENT_KEY_PASSWORD" ||
       die "the client key passphrase contains a control character and cannot be sent safely"
     curl_client_args_into _LOGIN_FLOW_CLIENT_ARGS --config "$_LOGIN_FLOW_PASS_FILE"
   else
     curl_client_args_into _LOGIN_FLOW_CLIENT_ARGS
   fi
+  _LOGIN_FLOW_CLIENT_ARGS+=(--connect-timeout "${HTTP_CONNECT_TIMEOUT:-15}" --max-time "${HTTP_TIMEOUT:-30}")
+  [[ -z "$tls" ]] || _LOGIN_FLOW_CLIENT_ARGS+=("$tls")
+  [[ -z "$ver" ]] || _LOGIN_FLOW_CLIENT_ARGS+=("$ver")
+  [[ -z "$proxy_flag" ]] || _LOGIN_FLOW_CLIENT_ARGS+=("$proxy_flag" "$proxy_value")
   return 0
+}
+
+# _login_flow_curl CURL_ARGS... - run curl with the argv from
+# _login_flow_client_args. Call it inside a command substitution so the proxy
+# environment stays in the child shell.
+_login_flow_curl() {
+  if [[ -n "$_LOGIN_FLOW_PROXY_ENV" ]]; then
+    export HTTP_PROXY="$_LOGIN_FLOW_PROXY_ENV" HTTPS_PROXY="$_LOGIN_FLOW_PROXY_ENV" ALL_PROXY="$_LOGIN_FLOW_PROXY_ENV"
+  fi
+  curl "${_LOGIN_FLOW_CLIENT_ARGS[@]}" "$@"
 }
 
 # _login_flow_poll RESPONSE_FILE POLL_ENDPOINT POLL_TOKEN - poll the login-flow
@@ -219,7 +218,7 @@ _login_flow_poll() {
   fi
   chmod 600 "$token_file" 2>/dev/null || true
   while :; do
-    http_code="$(curl -sS ${_LOGIN_FLOW_TLS_FLAG:+"$_LOGIN_FLOW_TLS_FLAG"} ${_LOGIN_FLOW_CLIENT_ARGS[@]+"${_LOGIN_FLOW_CLIENT_ARGS[@]}"} -o "$response_file" -w '%{http_code}' -X POST --data-urlencode "token@${token_file}" "$poll_endpoint" 2>/dev/null)" || http_code="000"
+    http_code="$(_login_flow_curl -sS -o "$response_file" -w '%{http_code}' -X POST --data-urlencode "token@${token_file}" "$poll_endpoint" 2>/dev/null)" || http_code="000"
     case "$http_code" in
       200) break ;;
       404) ;;
@@ -254,7 +253,7 @@ setup_login_flow_request() {
   local -n out_login="$2" out_token="$3" out_endpoint="$4"
 
   _login_flow_client_args
-  if ! body="$(curl -fsS ${_LOGIN_FLOW_TLS_FLAG:+"$_LOGIN_FLOW_TLS_FLAG"} ${_LOGIN_FLOW_CLIENT_ARGS[@]+"${_LOGIN_FLOW_CLIENT_ARGS[@]}"} -X POST -H 'OCS-APIRequest: true' "${base_url}/index.php/login/v2")"; then
+  if ! body="$(_login_flow_curl -fsS -X POST -H 'OCS-APIRequest: true' "${base_url}/index.php/login/v2")"; then
     die "login flow: cannot reach ${base_url}/index.php/login/v2 (curl failed)"
   fi
   out_login="$(json_string_field "$body" login)" || true
@@ -329,6 +328,14 @@ setup_login_flow_finish() {
   LOGIN_FLOW_PASSWORD="$(json_string_field "$resolved" appPassword)" || true
   [[ -n "$LOGIN_FLOW_URL" && -n "$LOGIN_FLOW_USER" && -n "$LOGIN_FLOW_PASSWORD" ]] ||
     die "login flow: authorization succeeded but the credentials response was incomplete"
+  # json_string_field decodes \n, \t and \uXXXX, so refuse control bytes before
+  # the credentials reach the rclone config or the keychain.
+  case "${LOGIN_FLOW_USER}${LOGIN_FLOW_PASSWORD}" in
+    *[[:cntrl:]]*)
+      LOGIN_FLOW_PASSWORD=""
+      die "login flow: the server returned credentials containing a control character; refusing them"
+      ;;
+  esac
 }
 
 # setup_login_flow BASE_URL - Nextcloud Login Flow v2: POST the flow,
@@ -394,8 +401,9 @@ setup_rotate() {
     die "remote '${RCLONE_REMOTE}:' has an unexpected url '${url}'; run '${CLI_NAME} setup --login' first"
 
   setup_login_flow "$base_url"
-  if [[ -n "${LOGIN_FLOW_USER:-}" && "${LOGIN_FLOW_USER}" != "$user" ]]; then
-    warn "login flow authorized '${LOGIN_FLOW_USER}', but remote '${RCLONE_REMOTE}:' is configured for '${user}'; keeping the configured user"
+  # A different account's app password would overwrite the working one.
+  if [[ -n "${LOGIN_FLOW_USER:-}" && "${LOGIN_FLOW_USER,,}" != "${user,,}" ]]; then
+    die "login flow authorized '$(printable "$LOGIN_FLOW_USER")', but remote '${RCLONE_REMOTE}:' is configured for '$(printable "$user")'; sign the browser in as '$(printable "$user")' and re-run '${CLI_NAME} setup --rotate'"
   fi
 
   if [[ "$no_keychain" -eq 0 ]] && keychain_enabled; then
@@ -605,11 +613,6 @@ setup_run_normal() {
 
   user="$(setup_prompt 'sciebo ID (e.g. alice@your-university.de; a plain Nextcloud username works too)' "${SCIEBO_USER:-}")"
   [[ -n "$user" ]] || die "sciebo ID is required; set SCIEBO_USER in .env (cp .env.example .env)"
-  case "$user" in
-    *[[:space:]]* | *[[:cntrl:]]*)
-      die "sciebo ID '${user}' must not contain whitespace or control characters"
-      ;;
-  esac
 
   pass="$(setup_prompt 'sciebo app password' "${SCIEBO_APP_PASSWORD:-}" secret)"
   [[ -n "$pass" ]] || die "sciebo app password is required; set SCIEBO_APP_PASSWORD in .env (cp .env.example .env)"
@@ -648,13 +651,30 @@ setup_prepare_credentials() {
   out_keychain="$use_keychain"
 }
 
-# setup_write_and_validate_remote URL USER PASS_CONFIG - stage 2 of
-# setup_commit: write the Nextcloud WebDAV remote into the rclone config and
-# validate it (validation failure dies). Runs only after the credentials stage
-# has zeroed the plaintext secrets.
+# setup_write_and_validate_remote URL USER PASS_CONFIG NO_KEYCHAIN USE_KEYCHAIN
+# - stage 2 of setup_commit: write the Nextcloud WebDAV remote into the rclone
+# config, drop stale keychain items for a --no-keychain run, and validate (a
+# validation failure dies). The drop comes first because with KEYCHAIN=1 rclone
+# is handed the keychain password, so validating before it would test the old
+# password instead of the new one. Runs only after the credentials stage has
+# zeroed the plaintext secrets.
 setup_write_and_validate_remote() {
   remote_write_nextcloud "$1" "$2" "$3"
+  setup_drop_stale_keychain "$4" "$5"
   remote_validate
+}
+
+# setup_drop_stale_keychain NO_KEYCHAIN USE_KEYCHAIN - for a --no-keychain
+# setup, remove the old app-password items: with KEYCHAIN=1 the keychain wins
+# over the rclone config, so they would keep the old password in use.
+# keychain_delete leaves the restic item alone.
+setup_drop_stale_keychain() {
+  [[ "$1" -eq 1 && "$2" -eq 0 ]] && keychain_enabled || return 0
+  if keychain_delete; then
+    log "removed the old app password from the keychain (--no-keychain)"
+  else
+    warn "could not remove the old app password from the keychain; remove it manually or it keeps overriding the rclone config"
+  fi
 }
 
 # setup_report_quota - stage 3 of setup_commit: print the quota readout from
@@ -673,7 +693,8 @@ setup_report_quota() {
 # hint), warning when the probe fails.
 setup_report_capabilities() {
   local chunk=""
-  if capabilities_probe; then
+  # --force: the cache is per profile, so a new server must not show the old one's.
+  if capabilities_probe --force; then
     printf '\n'
     capabilities_show
     chunk=${ capabilities_sync_chunk_size;} || chunk=""
@@ -694,7 +715,7 @@ setup_print_summary() {
   printf '\n'
   log "remote '${RCLONE_REMOTE}:' ready"
   shown_url="${ printable "$url";}"
-  printf '  url:    %s\n  user:   %s\n  config: %s\n' "$shown_url" "$user" "$RCLONE_CONFIG"
+  printf '  url:    %s\n  user:   %s\n  config: %s\n' "$shown_url" "${ printable "$user";}" "$RCLONE_CONFIG"
   if [[ "$use_keychain" -eq 1 ]]; then
     printf '  password: Keychain (%s, %s)\n' "$KEYCHAIN_SERVICE" "$(keychain_account_plain)"
   else
@@ -717,8 +738,9 @@ setup_commit() {
   local user="$2" proxy="$5"
   local url="" pass_config="" use_keychain=0
 
+  remote_require_user "$user"
   setup_prepare_credentials "$1" "$user" "$3" "$4" url pass_config use_keychain
-  setup_write_and_validate_remote "$url" "$user" "$pass_config"
+  setup_write_and_validate_remote "$url" "$user" "$pass_config" "$4" "$use_keychain"
   setup_report_quota
   setup_report_capabilities
   setup_print_summary "$url" "$user" "$use_keychain" "$proxy"

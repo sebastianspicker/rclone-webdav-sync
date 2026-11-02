@@ -67,7 +67,7 @@ download_dav_info() {
   local sub="$1" url="" body="" size=""
   DOWNLOAD_IS_DIR=false
   DOWNLOAD_REMOTE_SIZE=""
-  url="$(nc_path_url "${REMOTE_BASE}/${sub}")"
+  url="$(nc_sub_url "$sub")"
   nc_dav_request_allow PROPFIND "$url" 0 "$NC_FILE_INFO_BODY"
   http_ok_code_2xx "$HTTP_CODE" || return 1
   body="$HTTP_BODY"
@@ -175,7 +175,7 @@ download_emit_dir() {
 # refused and a failed request never truncates an existing DEST.
 download_dav_file() {
   local sub="$1" dest="$2" force="$3" resume="$4" url="" size=0
-  url="$(nc_path_url "${REMOTE_BASE}/${sub}")"
+  url="$(nc_sub_url "$sub")"
   DOWNLOAD_SKIPPED=0
   DOWNLOAD_FILES=0
   DOWNLOAD_BYTES=0

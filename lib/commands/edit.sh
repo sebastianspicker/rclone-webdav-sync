@@ -18,11 +18,12 @@ usage_edit() {
 Usage: sciebo edit SUB [options]
 
 Download one remote file on demand, open it in an editor, and upload it
-again when it changed. SUB is resolved through the manifest: the first
-entry whose remote_subdir equals SUB or is a parent of it wins (like
-hydrate), and the local copy lives at that entry's local path. Unlike
-hydrate there is no FOLDERS_LOCAL_ROOT fallback: edit needs a configured
-source, and SUB must name a file, not a directory.
+again when it changed. A local copy newer than the server is kept and
+edited instead of being replaced. SUB is resolved through the manifest:
+the first entry whose remote_subdir equals SUB or is a parent of it wins
+(like hydrate), and the local copy lives at that entry's local path.
+Unlike hydrate there is no FOLDERS_LOCAL_ROOT fallback: edit needs a
+configured source, and SUB must name a file, not a directory.
 
 The editor is --editor CMD when given, else $EDITOR, else $VISUAL; CMD may
 carry arguments (split on spaces, the file path is appended last). Without
@@ -131,6 +132,7 @@ edit_parse_args() {
 # requested). Sets EDIT_LOCAL_FILE and EDIT_REMOTE. Dies on the same errors
 # as the old inline prologue, before any editor is opened.
 edit_prepare_target() {
+  local before="" plan=""
   load_settings
   require_remote
   edit_resolve "$EDIT_SUB" ||
@@ -143,8 +145,16 @@ edit_prepare_target() {
     die "remote path is a directory (edit works on single files): ${EDIT_REMOTE}"
   fi
   acquire_lock
-  rclone_cmd copyto "$EDIT_REMOTE" "$EDIT_LOCAL_FILE" ||
+  [[ ! -f "$EDIT_LOCAL_FILE" ]] || before=${ edit_signature "$EDIT_LOCAL_FILE";}
+  # --update keeps a newer local copy whose edits are not uploaded yet.
+  rclone_cmd copyto --update "$EDIT_REMOTE" "$EDIT_LOCAL_FILE" ||
     die "rclone copy failed (exit $?) for ${EDIT_SUB}"
+  # Unchanged but still different from the server means --update skipped it.
+  if [[ -n "$before" && "$before" == "${ edit_signature "$EDIT_LOCAL_FILE";}" ]]; then
+    plan=${ rclone_cmd copyto --dry-run "$EDIT_REMOTE" "$EDIT_LOCAL_FILE" 2>&1;} || plan=""
+    [[ "$plan" != *'as --dry-run is set'* ]] ||
+      printf 'edit: local copy is newer than the server; editing the local copy\n'
+  fi
   if [[ "$EDIT_LOCK_REMOTE" == true ]]; then
     edit_lock_remote "$EDIT_SUB"
   fi

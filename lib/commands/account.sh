@@ -17,7 +17,8 @@ Subcommands:
   add NAME [--remote R] [--base B]       create a profile
   import [options]                       import accounts and folder pairs
                                          from the Nextcloud desktop client
-  remove NAME [--yes]                    delete a profile's config and state
+  remove NAME [--yes]                    delete a profile's config, state, and
+                                         app password (keychain)
   use NAME                               show how to activate a profile
   info [--json]                          show the account on the server
   avatar [--output FILE] [--size N]      download the account avatar
@@ -216,7 +217,7 @@ account_init_profile() {
   # Every profile gets its own rclone remote unless one was named: sharing
   # the project's remote would let this profile's setup or logout rewrite
   # or delete the default account.
-  [[ -n "$remote" ]] || remote="${SETTINGS_PROJECT_RCLONE_REMOTE:-${RCLONE_REMOTE:-sciebo}}-${name}"
+  [[ -n "$remote" ]] || remote="${SETTINGS_PROJECT_RCLONE_REMOTE:-${RCLONE_REMOTE:-sciebo}}_${name}"
   if [[ ! -e "${dir}/settings.local.env" ]]; then
     {
       printf '# Profile settings for %s.\n' "$name"
@@ -273,21 +274,70 @@ account_add() {
     die "profile '$(printable "$name")' already exists at $(account_dir "$name")"
   dir="$(account_dir "$name")"
   # The project settings name the default remote the new profile's own
-  # remote is derived from (<RCLONE_REMOTE>-<name>).
+  # remote is derived from (<RCLONE_REMOTE>_<name>; an underscore keeps RCLONE_CONFIG_<NAME>_PASS exportable).
   if [[ -z "$remote" ]]; then
     load_settings --no-rclone
-    remote="${SETTINGS_PROJECT_RCLONE_REMOTE:-${RCLONE_REMOTE:-sciebo}}-${name}"
+    remote="${SETTINGS_PROJECT_RCLONE_REMOTE:-${RCLONE_REMOTE:-sciebo}}_${name}"
   fi
   account_init_profile "$name" "$remote" "$base" || die "cannot create ${dir}"
-  log "created profile '$(printable "$name")' in ${dir} (rclone remote '${remote:-${RCLONE_REMOTE:-sciebo}-${name}}')"
+  log "created profile '$(printable "$name")' in ${dir} (rclone remote '${remote:-${RCLONE_REMOTE:-sciebo}_${name}}')"
   if [[ -z "${OPT_remote:-}" ]]; then
     printf 'next: %s --profile %s setup --login     # configure the account\n' "$CLI_NAME" "$name"
   fi
   printf 'next: %s --profile %s folders choose    # add folders to sync\n' "$CLI_NAME" "$name"
 }
 
+# account_secrets_shared NAME REMOTE SERVICE - true when a profile other than
+# NAME resolves to the same keychain service and remote, so the items under
+# that pair belong to it too.
+account_secrets_shared() {
+  local name="$1" pair="$2"$'\t'"$3" dir="" other="" values=""
+  for dir in default "$PROFILES_DIR"/*/; do
+    other="${dir%/}"
+    other="${other##*/}"
+    [[ "$other" != "$name" && ("$other" == default || -d "$dir") ]] || continue
+    values=${ account_profile_values "$other" 2>/dev/null;} || return 0
+    [[ "${values%%$'\t'*}"$'\t'"${values##*$'\t'}" != "$pair" ]] || return 0
+  done
+  return 1
+}
+
+# account_with_keychain REMOTE SERVICE CMD... - run CMD with the keychain
+# helpers pointed at another profile's remote and service. The locals shadow
+# the active profile's globals through bash's dynamic scoping.
+# shellcheck disable=SC2034  # read by the keychain helpers CMD calls
+account_with_keychain() {
+  local RCLONE_REMOTE="$1" KEYCHAIN_SERVICE="$2" KEYCHAIN=1
+  "${@:3}"
+}
+
+# account_remove_secrets NAME REMOTE SERVICE - delete the removed profile's
+# app-password keychain items (plain slot and legacy obscured item) under its
+# own service and remote. The restic backup password is never deleted here,
+# and rclone.conf is left alone; both get a hint instead.
+account_remove_secrets() {
+  local name="$1" remote="$2" service="$3"
+  if [[ -z "$remote" || -z "$service" ]]; then
+    warn "cannot read the remote of profile '${name}'; its keychain items and rclone remote were left in place"
+    return 0
+  fi
+  if account_secrets_shared "$name" "$remote" "$service"; then
+    warn "another profile uses keychain service '${service}' with remote '${remote}'; its keychain items were kept"
+  elif [[ -n "${ keychain_backend;}" ]]; then
+    if account_with_keychain "$remote" "$service" keychain_delete; then
+      log "deleted the app password of '${name}' from the keychain (service '${service}')"
+    else
+      warn "could not delete the app password of '${name}' from the keychain (service '${service}', account '${remote}')"
+    fi
+    if account_with_keychain "$remote" "$service" keychain_lookup_item restic >/dev/null; then
+      printf 'note: kept the restic backup password on purpose (keychain service %s, account %s#restic)\n' "$service" "$remote"
+    fi
+  fi
+  printf 'hint: rclone config delete %s    # remove its rclone remote\n' "$remote"
+}
+
 account_remove() {
-  local name="" dir="" state_dir=""
+  local name="" dir="" state_dir="" values="" remote="" service=""
   opt_begin "yes:b" account "" "$@"
   account_profile_arg name
   [[ "$name" != "default" ]] || die "the default profile cannot be removed"
@@ -295,15 +345,22 @@ account_remove() {
   account_exists "$name" || die "no such profile: $(printable "$name")"
   dir="$(account_dir "$name")"
   state_dir="${PROFILES_STATE_DIR}/${name}"
+  # Read the profile's own remote and keychain service before its files go.
+  values=${ account_profile_values "$name";} || values=""
+  [[ -z "$values" ]] || {
+    remote="${values%%$'\t'*}"
+    service="${values##*$'\t'}"
+  }
   # Soft confirmation gate, previously account_confirm_soft: --yes skips
   # the question, a non-interactive run without --yes fails the usage with
   # the same message, and a declined prompt logs "aborted, nothing changed"
   # so the command still exits 0 without removing anything.
   ui_confirm_mutation_soft account "refusing to remove '${name}' without --yes" \
-    "remove profile '${name}' (config and state, including its local trash ${state_dir}/trash)?" \
+    "remove profile '${name}' (config and state, including its local trash ${state_dir}/trash, and its app password in the keychain)?" \
     "aborted, nothing changed" || return 0
   rm -rf "$dir" "$state_dir" || die "cannot remove profile '${name}'"
   log "removed profile '$(printable "$name")'"
+  account_remove_secrets "$name" "$remote" "$service"
 }
 
 account_use() {
@@ -1507,7 +1564,6 @@ account_avatar() {
   http_load_context
   file="${OPT_output:-}"
   [[ -n "$file" ]] || file="./avatar-${HTTP_USER}.png"
-  [[ ! -L "$file" ]] || die "refusing to write avatar through symlink: ${file}"
   nc_avatar_download "$file" "$size"
   printf '%s\n' "$file"
   return 0

@@ -7,7 +7,8 @@ Usage: sciebo pause [--for DURATION]
 
 Skip sync and check runs until `sciebo resume`. Without --for the pause
 is indefinite; DURATION is a number with an optional s, m, h, or d
-suffix (90m, 24h, 1d), and a bare number means minutes. An expired
+suffix (90m, 24h, 1d), and a bare number means minutes; it must be
+greater than 0. An expired
 marker is removed automatically on the next check.
 
 Options:
@@ -32,10 +33,11 @@ cmd_pause() {
   duration="${OPT_for:-}"
   load_settings --no-rclone
   until=0
-  if [[ -n "$duration" ]]; then
+  if [[ -n "${OPT_for_SET:-}" ]]; then
     # duration_parse_or_usage (lib/base/duration.sh) owns the grammar and the
     # wording; its EXAMPLES argument carries pause's "90m, 24h, 1d" list.
     seconds=${ duration_parse_or_usage pause "" "$duration" invalid "90m, 24h, 1d";}
+    ((seconds > 0)) || usage_error pause "--for must be greater than 0; omit --for to pause indefinitely"
     until=$(($(now_epoch) + seconds))
   fi
   pause_set "$until" || die "cannot write pause marker: ${PAUSE_FILE}"

@@ -37,14 +37,6 @@ backup_keep_args_into() {
   return 0
 }
 
-# backup_remote_path_normalize P - print P without leading or trailing
-# slashes or "./" segments and with "//" collapsed.
-backup_remote_path_normalize() {
-  local out=""
-  _settings_relpath_into out "$1"
-  printf '%s' "$out"
-}
-
 # backup_repo_overlaps_path SUB - true when REMOTE_BASE/SUB (SUB may be empty
 # or "/" for the base itself) equals, lies inside, or contains
 # BACKUP_REMOTE_PATH, compared segment-wise.

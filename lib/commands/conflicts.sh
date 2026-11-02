@@ -38,6 +38,9 @@ declare -gA CONFLICTS_OPEN_SEEN=()
 CONFLICTS_RESOLVED=0
 CONFLICTS_FAILED=0
 CONFLICTS_PLAN=()
+# The keep-local winner per original (BASE_ABS -> "PLAN_INDEX<TAB>MTIME"), so
+# a second copy of the same original can never overwrite the first one.
+declare -gA CONFLICTS_WINNER=()
 # CONFLICTS_REC_* - the fields of the record conflicts_record_read last
 # parsed (out globals like SHARE_RECORD_*; assigned through record_split's
 # printf -v, hence the top-level declarations).
@@ -108,6 +111,9 @@ Options:
                     keep-oldest  keep the older of the two files
                     keep-both    rename the file to
                                  "<name> (local copy)<ext>"
+                  Equal mtimes under keep-newest/keep-oldest mean keep-both.
+                  With several copies of one original only one replaces it;
+                  the others are planned as keep-both.
                   Without --apply this is a dry run that prints one line per
                   planned action and changes nothing. Cannot be combined
                   with --remote.
@@ -325,6 +331,7 @@ conflicts_plan_reset() {
   CONFLICTS_RESOLVED=0
   CONFLICTS_FAILED=0
   CONFLICTS_PLAN=()
+  CONFLICTS_WINNER=()
 }
 
 # _conflicts_record_build VAR FIELD... - escape FIELDs (backslash and TAB,
@@ -431,30 +438,62 @@ conflicts_resolve_mode() {
       else
         base_epoch=${ file_mtime_or "$base_abs" 0;}
         conflict_epoch=${ file_mtime_or "$path" 0;}
-        out_action=keep-remote
-        if [[ "$mode" == keep-newest ]]; then
-          [[ "$conflict_epoch" -le "$base_epoch" ]] || out_action=keep-local
+        # Equal mtimes say nothing about the content, so keep both.
+        if [[ "$conflict_epoch" -eq "$base_epoch" ]]; then
+          out_action=keep-both
+        elif conflicts_beats "$mode" "$conflict_epoch" "$base_epoch"; then
+          out_action=keep-local
         else
-          [[ "$conflict_epoch" -ge "$base_epoch" ]] || out_action=keep-local
+          out_action=keep-remote
         fi
       fi
       if [[ "$out_action" == keep-remote ]]; then
         out_target_abs="$path"
         out_target_rel="$rel"
+      elif [[ "$out_action" == keep-both ]]; then
+        out_target_abs=${ conflicts_local_copy_path "$base_abs";}
+        out_target_rel=${ conflicts_rel_path "$dir" "$out_target_abs";}
       fi
       ;;
   esac
   return 0
 }
 
+# conflicts_beats MODE EPOCH OTHER - true when a copy with mtime EPOCH wins
+# over one with mtime OTHER under keep-newest/keep-oldest; ties never win.
+conflicts_beats() {
+  case "$1" in
+    keep-newest) [[ "$2" -gt "$3" ]] ;;
+    keep-oldest) [[ "$2" -lt "$3" ]] ;;
+    *) return 1 ;;
+  esac
+}
+
+# conflicts_plan_keep_both I - turn plan record I into a keep-both row (its
+# copy lost to a later winner for the same original).
+conflicts_plan_keep_both() {
+  local i="$1" target="" target_rel="" line=""
+  conflicts_record_read "${CONFLICTS_PLAN[$i]}"
+  target=${ conflicts_local_copy_path "$CONFLICTS_REC_BASE_ABS";}
+  target_rel=${ conflicts_rel_path "$CONFLICTS_REC_DIR" "$target";}
+  _conflicts_record_build line "$CONFLICTS_REC_SOURCE" "$CONFLICTS_REC_KIND" \
+    "$CONFLICTS_REC_CONFLICT" "$CONFLICTS_REC_DIR" "$CONFLICTS_REC_REL" \
+    "$CONFLICTS_REC_BASE_ABS" "$CONFLICTS_REC_BASE_REL" \
+    keep-both "$target" "$target_rel"
+  CONFLICTS_PLAN[i]="$line"
+  return 0
+}
+
 # conflicts_resolve_entry MODE - scan the entry currently parsed into ENTRY_*
 # and collect the actions MODE plans for its conflict files. Derived base
 # names that are empty or identical to the conflict file are warned about
-# and skipped; a missing local dir is skipped like the listing scan.
+# and skipped; a missing local dir is skipped like the listing scan. Only one
+# copy per original may replace it: later copies become keep-both unless one
+# beats the current winner, which then becomes keep-both instead.
 conflicts_resolve_entry() {
   local mode="$1"
   local dir="" path="" rel="" name="" kind="" base="" base_abs="" base_rel=""
-  local action="" target_abs="" target_rel="" p_rel=""
+  local action="" target_abs="" target_rel="" p_rel="" epoch="" won=""
   conflicts_entry_local_dir dir || return 0
   while IFS= read -r -d '' path; do
     [[ -n "$path" ]] || continue
@@ -479,6 +518,18 @@ conflicts_resolve_entry() {
     esac
     conflicts_resolve_mode "$mode" "$dir" "$path" "$rel" "$base_abs" "$base_rel" \
       action target_abs target_rel
+    if [[ "$action" == keep-local ]]; then
+      epoch=${ file_mtime_or "$path" 0;}
+      won="${CONFLICTS_WINNER[$base_abs]:-}"
+      if [[ -n "$won" ]] && ! conflicts_beats "$mode" "$epoch" "${won#*$'\t'}"; then
+        action=keep-both
+        target_abs=${ conflicts_local_copy_path "$base_abs";}
+        target_rel=${ conflicts_rel_path "$dir" "$target_abs";}
+      else
+        [[ -z "$won" ]] || conflicts_plan_keep_both "${won%%$'\t'*}"
+        CONFLICTS_WINNER[$base_abs]="${#CONFLICTS_PLAN[@]}"$'\t'"$epoch"
+      fi
+    fi
     conflicts_plan_add "$ENTRY_NAME" "$kind" "$path" "$dir" "$rel" "$base_abs" \
       "$base_rel" "$action" "$target_abs" "$target_rel"
   done < <(conflicts_find "$dir")
