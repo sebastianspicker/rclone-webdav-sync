@@ -8,6 +8,8 @@
 
 rclone-webdav-sync is an unofficial command-line client for sciebo (Hochschulcloud.NRW) and other Nextcloud servers, written in Bash. It keeps local folders and git repositories in sync with a Nextcloud server: it talks to the server over WebDAV, the file-access protocol Nextcloud exposes, and uses [rclone](https://rclone.org/webdav/) to do the actual file transfers.
 
+> _Claude was used to polish and proof-read the code and documentation of this repository._
+
 <details>
 <summary>Status and limitations</summary>
 
@@ -335,7 +337,7 @@ The defaults here are deliberately gentle (`TRANSFERS=2`, `CHECKERS=4`, `TPSLIMI
 | --- | --- |
 | [docs/commands.md](docs/commands.md) | every command, subcommand, option, exit code, and example |
 | [docs/settings.md](docs/settings.md) | every setting, precedence, profiles, state layout |
-| [docs/architecture.md](docs/architecture.md) | module map, command conventions, lock/state/HTTP design |
+| [docs/architecture.md](docs/architecture.md) | how it works: diagrams of the runtime, `sync` and `setup` flows, layers, and release; module map and lock/state/HTTP design |
 | [docs/parity.md](docs/parity.md) | Nextcloud Desktop parity matrix and its limits |
 | [SECURITY.md](SECURITY.md) | where the app password lives and what protects it |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | development setup, tests, style |

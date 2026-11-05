@@ -6,7 +6,7 @@ Reference documentation and the project's GitHub Pages site.
 | --- | --- |
 | `commands.md` | every command, subcommand, option, exit code, and example |
 | `settings.md` | every setting, its default, precedence, and the state layout |
-| `architecture.md` | module map, command conventions, lock/state/HTTP design |
+| `architecture.md` | how it works: runtime, `sync`/`setup` flow, layer and release diagrams; module map, conventions, lock/state/HTTP design |
 | `parity.md` | the Nextcloud Desktop client parity matrix and its limits |
 | `index.html` | the landing page published at [sebastianspicker.github.io/rclone-webdav-sync](https://sebastianspicker.github.io/rclone-webdav-sync/) |
 | `assets/screenshots/` | real CLI output rendered to SVG by `tools/screenshots.py` (`make screenshots`) |

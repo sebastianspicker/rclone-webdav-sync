@@ -29,6 +29,7 @@ namerefs, `wait -n`, `EPOCHSECONDS`, forkless command substitution,
 the version and fails fast with a clear message when it is too old.
 <!-- src: architecture.md -->
 
+- [At a glance](#at-a-glance)
 - [Layers](#layers)
 - [Startup and dispatch](#startup-and-dispatch)
 - [The CLI definition](#the-cli-definition)
@@ -53,6 +54,153 @@ the version and fails fast with a clear message when it is too old.
 - [Limitations](#limitations)
 - [Glossary](#glossary)
 
+## At a glance
+
+What runs where when you type a `sciebo` command:
+
+```mermaid
+flowchart LR
+  user((User))
+  subgraph proc [One sciebo process]
+    cli["bin/sciebo"]
+    lib["lib/ layers"]
+  end
+  subgraph kids [Child processes]
+    rclone[rclone]
+    curl[curl]
+    restic[restic]
+  end
+  subgraph os [This machine]
+    files[(Synced folders)]
+    conf[(config/ and state/)]
+    keychain[(Keychain)]
+    sched["launchd / systemd"]
+  end
+  nc["Nextcloud server"]
+  user -->|"sciebo CMD"| cli
+  sched -.->|"sciebo sync / backup run"| cli
+  cli -->|"sciebo_main"| lib
+  lib -->|"read settings, write state"| conf
+  lib -->|"app password"| keychain
+  lib -->|"argv + env"| rclone
+  lib -->|"netrc temp file"| curl
+  lib -->|"RESTIC_* env"| restic
+  rclone <-->|copy files| files
+  rclone -->|WebDAV| nc
+  curl -->|"OCS / DAV"| nc
+  restic -->|"via rclone serve restic"| nc
+  classDef focus fill:#fde68a,stroke:#b45309,color:#1f2937
+  class lib focus
+```
+
+There is no daemon: each invocation is one short-lived process that loads
+`lib/`, runs one command, and exits. File transfers always go through an
+rclone child; server features rclone does not cover (shares, trash,
+versions, notifications, the capabilities probe) go through curl via
+`lib/adapters/http.sh`. The app password reaches those children through the
+environment or a mode-600 netrc file, never argv. Recurring runs exist only
+when the user installs a launchd/systemd unit (`schedule install`) or runs
+`watch`; both spawn `bin/sciebo` again rather than syncing in-process.
+<!-- src: architecture.md#at-a-glance -->
+
+Where in the code: [bin/sciebo](../bin/sciebo),
+[lib/sciebo.sh](../lib/sciebo.sh), [lib/cli/main.sh](../lib/cli/main.sh),
+[lib/adapters/rclone.sh](../lib/adapters/rclone.sh),
+[lib/adapters/http.sh](../lib/adapters/http.sh),
+[lib/adapters/restic.sh](../lib/adapters/restic.sh),
+[lib/adapters/keychain.sh](../lib/adapters/keychain.sh).
+
+### What happens on `sciebo sync`
+
+The most common action, from command line to a run record:
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as User
+  participant cmd as cmd_sync
+  participant cfg as settings + manifest
+  participant guard as preflight guards
+  participant rc as rclone
+  participant st as state/
+  U->>cmd: sciebo sync
+  cmd->>cfg: load_settings
+  cmd->>st: acquire_lock (sync.lock)
+  cmd->>cfg: manifest_index_load
+  loop each folder pair
+    cmd->>guard: sync_run_preflight
+    guard-->>cmd: proceed / skip / fail
+    cmd->>rc: rclone sync / copy / bisync
+    rc-->>cmd: exit code + log
+    cmd->>st: runstate_write, blacklist
+  end
+  cmd-->>U: Summary line, notification
+  cmd->>st: release_lock (EXIT trap)
+```
+
+`sync_bootstrap` (steps 2–4) loads settings, checks the rclone version,
+honors a pause, takes the run lock, and loads the folder-pair list. For
+each pair, `sync_run_preflight` (5–6) runs the guards in order: paused pair,
+metered network (`net_gate`), disk space, download size, empty-side guard,
+bisync initialization, then the E2EE/external-storage/case-clash policies.
+A guard can skip or fail one pair without stopping the others. Each pair's
+outcome is written under `STATE_DIR` (9), which is what `status` and `retry`
+read later. `check` is the same path with the dry run forced. With
+`MAX_PARALLEL_SOURCES` > 1, the loop runs as bounded parallel workers; see
+[Parallel sync](#parallel-sync).
+<!-- src: architecture.md#at-a-glance -->
+
+Where in the code: [lib/commands/sync.sh](../lib/commands/sync.sh)
+(`cmd_sync`, `sync_bootstrap`, `sync_run_entry`, `sync_run_preflight`,
+`sync_finish_entry`), [lib/sync/policy.sh](../lib/sync/policy.sh),
+[lib/state/lock.sh](../lib/state/lock.sh),
+[lib/state/runstate.sh](../lib/state/runstate.sh),
+[lib/state/blacklist.sh](../lib/state/blacklist.sh).
+
+### What happens on `sciebo setup --login`
+
+First-time setup through Nextcloud Login Flow v2, ending with a working
+rclone remote:
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as User
+  participant setup as cmd_setup
+  participant nc as Nextcloud server
+  participant kc as Keychain
+  participant rc as rclone
+  U->>setup: sciebo setup --login
+  setup->>nc: POST /index.php/login/v2
+  nc-->>setup: login URL + poll token
+  setup->>U: open login URL in browser
+  U->>nc: log in, grant access
+  loop until granted
+    setup->>nc: POST poll endpoint
+  end
+  nc-->>setup: loginName + appPassword
+  setup->>kc: keychain_store_plain
+  setup->>rc: remote_write_nextcloud
+  setup->>rc: rclone lsd (remote_validate)
+  setup-->>U: quota, capabilities, next steps
+```
+
+The login URL and the server-reported URL are checked against the base URL
+and for control bytes before anything opens or is stored (steps 3 and 7).
+The app password goes to the keychain (8) and the rclone config gets an
+empty placeholder; with `--no-keychain` or no keychain backend, the obscured
+password goes into the rclone config instead. A failed `rclone lsd` (10)
+ends setup with an error. Without `--login`, setup prompts for URL, user,
+and app password and joins the same path at step 8.
+<!-- src: architecture.md#at-a-glance -->
+
+Where in the code: [lib/commands/setup.sh](../lib/commands/setup.sh)
+(`setup_login_flow`, `setup_commit`),
+[lib/adapters/rclone.sh](../lib/adapters/rclone.sh)
+(`remote_password_config_value`, `remote_write_nextcloud`,
+`remote_validate`), [lib/adapters/keychain.sh](../lib/adapters/keychain.sh),
+[lib/adapters/capabilities.sh](../lib/adapters/capabilities.sh).
+
 ## Layers
 
 `lib/` is a stack of seven code layers, one directory each. A file may call a
@@ -61,6 +209,26 @@ Within `lib/commands/`, one command module never calls another's functions;
 shared logic belongs in a lower layer, and a command that needs another
 command spawns `bin/sciebo` instead of calling it as a function.
 <!-- src: architecture.md#layers -->
+
+```mermaid
+flowchart TB
+  commands["commands/<br/>one file per command"]
+  cli["cli/<br/>dispatch, registry"]
+  sync["sync/<br/>shared domain rules"]
+  state["state/<br/>tool-written state"]
+  config["config/<br/>settings, manifest"]
+  adapters["adapters/<br/>rclone, curl, restic, OS"]
+  base["base/<br/>pure helpers"]
+  commands -->|may call| cli
+  cli --> sync
+  sync --> state
+  state --> config
+  config --> adapters
+  adapters --> base
+```
+
+Each arrow means "may call into"; calls are allowed to skip layers downward
+(a command may call `base` directly) but never point upward.
 
 | Layer | Directory | Owns | May depend on |
 | --- | --- | --- | --- |
@@ -616,6 +784,32 @@ section, every settings key `settings.sh` requires exists in
 `settings.env`, and, under `DRIFT_STRICT`, a live `<command> --help`'s long
 options match the spec. CI runs lint on macOS and Linux.
 <!-- src: architecture.md#tests-and-tooling -->
+
+There is no build step; releasing means packaging the git-tracked tree:
+
+```mermaid
+flowchart LR
+  spec["sciebo.spec"] -->|make gen| gen["registry + completions"]
+  gen -->|commit| pr["pull request"]
+  pr -->|ci.yml| lint["make lint<br/>macOS + Linux"]
+  tag["version tag"] -.->|"release.yml, manual"| dist["make dist tarball"]
+  dist --> rel["GitHub release"]
+  docsdir["docs/"] -.->|"pages.yml, manual"| pages["GitHub Pages"]
+```
+
+`ci.yml` runs on every pull request (and on manual dispatch): version
+consistency, `make lint`, and a packaging smoke test. `release.yml` and
+`pages.yml` run only on manual dispatch; the release job checks that the tag
+matches `VERSION`, lints, builds the tarball with `make dist`, and takes the
+release notes from `CHANGELOG.md`. Users install from a checkout or the
+tarball with `make install` (default `PREFIX=~/.local`).
+<!-- src: architecture.md#tests-and-tooling -->
+
+Where in the code: [Makefile](../Makefile),
+[scripts/gen-cli.sh](../scripts/gen-cli.sh),
+[.github/workflows/ci.yml](../.github/workflows/ci.yml),
+[.github/workflows/release.yml](../.github/workflows/release.yml),
+[.github/workflows/pages.yml](../.github/workflows/pages.yml).
 
 ## Adding a command
 
