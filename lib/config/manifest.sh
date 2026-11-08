@@ -245,6 +245,80 @@ manifest_has_name() { manifest_index_load && _manifest_membership "$1" "$MANIFES
 manifest_has_remote() { manifest_index_load && _manifest_membership "$1" "$MANIFEST_REMOTES"; }
 manifest_has_duplicate_name() { manifest_index_load && _manifest_membership "$1" "$MANIFEST_DUP_NAMES"; }
 
+# _manifest_path_under PARENT CHILD - true when CHILD is strictly below
+# PARENT on whole path components ("a/b" is not below "a/bc"); "." is the
+# remote root and holds everything. Sets _MANIFEST_UNDER_REL to the rest.
+_manifest_path_under() {
+  local parent="${1%/}" child="${2%/}"
+  if [[ "$parent" == "." ]]; then
+    [[ "$child" != "." ]] || return 1
+    _MANIFEST_UNDER_REL="$child"
+  else
+    [[ "$child" == "$parent"/* ]] || return 1
+    _MANIFEST_UNDER_REL="${child#"$parent"/}"
+  fi
+}
+
+# _manifest_excludes_path RULES REL - true when RULES (the "- /dir/" lines
+# manifest_write_pair_filter writes) exclude REL or one of its parent folders.
+_manifest_excludes_path() {
+  local rules=$'
+'"$1"$'
+' rel="$2" prefix=""
+  while :; do
+    prefix="${prefix:+${prefix}/}${rel%%/*}"
+    [[ "$rules" != *$'
+'"- ${ rclone_literal_pattern "$prefix";}/"$'
+'* ]] || return 0
+    [[ "$rel" == */* ]] || return 1
+    rel="${rel#*/}"
+  done
+}
+
+# _manifest_overlap_check SUB LOCAL SKIP FILTER EXCLUDES - manifest_each
+# callback: stop (1) with MANIFEST_OVERLAP_NAME set at the first entry (not
+# named SKIP) whose remote or local path is nested with the new pair's. Nested
+# remotes are fine when the parent pair's filter already excludes the child's
+# path; the new pair's filter is FILTER (existing file) or the raw EXCLUDES.
+_manifest_overlap_check() {
+  local sub="$1" new_local="${2%/}" skip="$3" filter="$4" excludes="$5" rules="" ex=""
+  [[ "$ENTRY_NAME" != "$skip" ]] || return 0
+  if _manifest_path_under "$ENTRY_REMOTE" "$sub"; then
+    [[ -z "$ENTRY_FILTER" ]] || rules="$(<"${FILTER_DIR}/${ENTRY_FILTER}")"
+    ! _manifest_excludes_path "$rules" "$_MANIFEST_UNDER_REL" || return 0
+  elif _manifest_path_under "$sub" "$ENTRY_REMOTE"; then
+    [[ -z "$filter" || ! -r "${FILTER_DIR}/${filter}" ]] || rules="$(<"${FILTER_DIR}/${filter}")"
+    while IFS= read -r ex; do
+      [[ -z "$ex" ]] || rules+=$'
+'"- ${ rclone_literal_pattern "${ex%/}";}/"
+    done <<<"$excludes"
+    ! _manifest_excludes_path "$rules" "$_MANIFEST_UNDER_REL" || return 0
+  elif ! _manifest_path_under "${ENTRY_LOCAL%/}" "$new_local" &&
+    ! _manifest_path_under "$new_local" "${ENTRY_LOCAL%/}"; then
+    return 0
+  fi
+  MANIFEST_OVERLAP_NAME="$ENTRY_NAME"
+  return 1
+}
+
+# manifest_pair_overlap SUB LOCAL [SKIP_NAME [FILTER [EXCLUDES]]] - true (and
+# MANIFEST_OVERLAP_NAME set) when a pair with remote SUB and local path LOCAL
+# would nest with an existing pair: a syncing parent would delete the child's
+# files. SKIP_NAME is the pair being edited.
+manifest_pair_overlap() {
+  local sub="$1" new_local=""
+  # shellcheck disable=SC2034  # read by the folder command module
+  MANIFEST_OVERLAP_NAME=""
+  expand_local_path_into new_local "$2"
+  # Subshell: manifest_each rewrites ENTRY_*, which `folders edit` still
+  # holds for the pair being edited.
+  MANIFEST_OVERLAP_NAME="$(
+    manifest_each _manifest_overlap_check "$sub" "$new_local" "${3:-}" "${4:-}" "${5:-}" >/dev/null
+    printf '%s' "$MANIFEST_OVERLAP_NAME"
+  )"
+  [[ -n "$MANIFEST_OVERLAP_NAME" ]]
+}
+
 # manifest_names_csv - the configured entry names as one space-separated line
 # (MANIFEST_NAMES is already unique and sorted).
 manifest_names_csv() {

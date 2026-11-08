@@ -8,6 +8,28 @@ uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- `folders add`/`edit` refuse a pair nested inside another pair's remote or
+  local folder (a syncing parent would delete the child's files), unless the
+  parent already excludes the child. `folders edit --remote` keeps the pair's
+  paused/hidden flags.
+- `edit` no longer overwrites a server file that changed while the editor was
+  open; the edit stays in the local file and the command exits non-zero.
+- `check`/`verify` report FAIL instead of SKIP when a two-way pair's remote
+  folder cannot be checked (server unreachable, login failed); `verify`
+  applies the same filters as `sync`, so skipped files no longer show as
+  differences.
+- `tags create|assign|clear` and `comments add` use the Nextcloud API's JSON
+  bodies and system-tag relations; `notifications --watch` keeps polling
+  after a network error or 5xx.
+- `METERED_SSIDS` matches case-insensitively, as documented.
+- Linux timers: the service finds rclone outside the default PATH, and a
+  missed daily run catches up after boot or wake (`Persistent=true`).
+- Poll `watch` no longer misses a change made during a scan; `account import`
+  no longer marks a folder paused when only `ignoreHiddenFiles` is set;
+  `update` ignores an enclosing git repository; failure paths containing
+  `": "` are blacklisted whole; a symlinked `rclone.conf` stays a symlink.
+- `make install` never seeds a checkout's `config/profiles/` or
+  `backup.key`, and `config/profiles/` is git-ignored.
 - Delete guard: two-way (`bisync`) pairs keep rclone bisync's own brake
   again. `--max-delete` is a percentage for bisync, so passing
   `DELETE_FILES_THRESHOLD` (100) switched the 50 % safety limit off; a run

@@ -170,11 +170,18 @@ folders_overlap_message() {
     "${ printable "$sub";}" "$BACKUP_REMOTE_PATH"
 }
 
-# folders_check_pair MODE LOCAL SUB [FILTER] - validate a pair that is
-# about to be added (mode, local path, remote path, duplicate name/remote,
-# filter name); dies on the first problem.
+# folders_check_overlap SUB LOCAL SKIP FILTER EXCLUDES - die when the pair
+# would nest with another one (see manifest_pair_overlap).
+folders_check_overlap() {
+  ! manifest_pair_overlap "$@" ||
+    die "'${ printable "$1";}' (${ printable "$2";}) overlaps pair '${MANIFEST_OVERLAP_NAME}'; a syncing parent would delete the child's files. Exclude the child folder in the parent pair's filter first"
+}
+
+# folders_check_pair MODE LOCAL SUB [FILTER [EXCLUDES]] - validate a pair that
+# is about to be added (mode, local path, remote path, duplicate name/remote,
+# nesting with other pairs, filter name); dies on the first problem.
 folders_check_pair() {
-  local mode="$1" local_path="$2" sub="$3" filter="${4:-}" name=""
+  local mode="$1" local_path="$2" sub="$3" filter="${4:-}" excludes="${5:-}" name=""
   valid_entry_mode "$mode" || die "invalid mode '${mode}' (expected sync, pull, or bisync)"
   [[ -n "$local_path" ]] || die "local path for '${sub}' must not be empty"
   safe_remote_path "$sub" || die "unsafe remote subdir '${ printable "$sub";}'"
@@ -182,6 +189,7 @@ folders_check_pair() {
   name="$(entry_name_for "$sub")"
   manifest_has_name "$name" && die "a source named '${name}' already exists"
   manifest_has_remote "$sub" && die "remote folder '${sub}' is already configured"
+  folders_check_overlap "$sub" "$local_path" "" "" "$excludes"
   folders_check_filter "$filter"
 }
 
@@ -231,7 +239,7 @@ folders_commit_pending() {
   for ((i = 0; i < ${#P_SUBS[@]}; i++)); do
     filter=""
     [[ -z "${P_EXCLUDES[$i]}" ]] || filter="pair-${P_NAMES[$i]}.txt"
-    folders_check_pair "${P_MODES[$i]}" "${P_LOCALS[$i]}" "${P_SUBS[$i]}" "$filter"
+    folders_check_pair "${P_MODES[$i]}" "${P_LOCALS[$i]}" "${P_SUBS[$i]}" "$filter" "${P_EXCLUDES[$i]}"
   done
   for ((i = 0; i < ${#P_SUBS[@]}; i++)); do
     folders_check_remote "${P_SUBS[$i]}" "${P_MODES[$i]}"
@@ -620,6 +628,7 @@ folders_edit_resolve_remote() {
       manifest_has_name "$FOLDERS_EDIT_NEW_NAME" &&
         die "a source named '${FOLDERS_EDIT_NEW_NAME}' already exists"
     fi
+    folders_check_overlap "$FOLDERS_EDIT_REMOTE" "$FOLDERS_EDIT_LOCAL" "$FOLDERS_EDIT_NAME" "$ENTRY_FILTER"
     folders_edit_bisync_guard
   fi
   return 0
@@ -758,6 +767,22 @@ folders_edit_commit_apply() {
     fi
   fi
   manifest_append_pair "$FOLDERS_EDIT_MODE" "$FOLDERS_EDIT_LOCAL" "$FOLDERS_EDIT_REMOTE" "$FOLDERS_EDIT_NEW_FILTER"
+  # A rename must carry the paused/hidden flags over and leave no stale flag
+  # file that would pause a later pair with the old name.
+  if [[ "$FOLDERS_EDIT_NEW_NAME" != "$FOLDERS_EDIT_NAME" ]]; then
+    local old_flags=""
+    if manifest_pair_paused "$FOLDERS_EDIT_NAME"; then
+      manifest_pair_flags_set "$FOLDERS_EDIT_NEW_NAME" paused 1 ||
+        warn "cannot carry the paused flag over to '${FOLDERS_EDIT_NEW_NAME}'"
+    fi
+    if manifest_pair_hidden "$FOLDERS_EDIT_NAME"; then
+      manifest_pair_flags_set "$FOLDERS_EDIT_NEW_NAME" hidden 1 ||
+        warn "cannot carry the hidden flag over to '${FOLDERS_EDIT_NEW_NAME}'"
+    fi
+    if manifest_pair_flags_file_into old_flags "$FOLDERS_EDIT_NAME"; then
+      rm -f "$old_flags"
+    fi
+  fi
   return 0
 }
 

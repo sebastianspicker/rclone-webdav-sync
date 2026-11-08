@@ -171,6 +171,8 @@ cp "${ROOT}/config/settings.local.env.example" \
 while IFS= read -r -d '' source_path; do
   relative="${source_path#"${ROOT}/config/"}"
   basename="${relative##*/}"
+  # A checkout's own profiles and restic password are private data, not seeds.
+  [[ "$relative" != profiles/* && "$basename" != backup.key ]] || continue
   case "$basename" in
     .* | settings.env | settings.local.env.example | settings.local.env | sources.generated.conf) continue ;;
   esac

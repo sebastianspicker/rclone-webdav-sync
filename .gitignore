@@ -6,6 +6,8 @@ config/settings.local.env
 # restic repository password file (KEYCHAIN=0 fallback); never commit it
 config/backup.key
 config/profiles/*/backup.key
+# Named profiles hold per-user settings and secrets (settings.local.env)
+/config/profiles/
 
 # Generated configuration and runtime state
 config/sources.generated.conf

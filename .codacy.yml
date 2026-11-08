@@ -1,0 +1,16 @@
+---
+# Codacy repository config. Keeps known false positives from coming back on
+# new lines; the coding standard itself is managed in Codacy.
+engines:
+  # Agent-instruction linter: SECURITY.md is a human security policy.
+  agentlinter:
+    exclude_paths:
+      - SECURITY.md
+  # tools/ holds dev-only scripts that run constant argv lists without a shell
+  # (subprocess import/call findings: Bandit B404/B603, Opengrep subprocess).
+  bandit:
+    exclude_paths:
+      - tools/**
+  semgrep:
+    exclude_paths:
+      - tools/**

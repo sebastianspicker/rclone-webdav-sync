@@ -53,3 +53,37 @@ rclone_filter_excludes() {
     warn "${name}: ${excluded_n} blacklisted path(s) excluded after repeated failures; run '${retry_cli} retry ${name}' to try them again"
   fi
 }
+
+# filter_entry_args FLAGS - append the per-entry filter stack to the named
+# argv array in order: server filter, clutter/entry filters, conflict and
+# hidden excludes, blacklist excludes (one warning when any applied), then
+# the name policy and per-entry policy excludes. Shared by sync and verify so
+# both skip the same files.
+filter_entry_args() {
+  # shellcheck disable=SC2178  # nameref to an argv array
+  local -n args_ref="$1"
+  local i=0
+  # Only the existence of a non-empty server filter matters here; the file
+  # body reaches rclone through the path below, so no `cat` of the whole
+  # file runs per entry.
+  if filter_server_filter_enabled; then
+    args_ref+=(--filter-from "$SERVER_EXCLUDE_FILTER")
+  fi
+  args_ref+=(--filter-from "${FILTER_DIR}/clutter.txt")
+  [[ -z "$ENTRY_FILTER" ]] || args_ref+=(--filter-from "${FILTER_DIR}/${ENTRY_FILTER}")
+  rclone_filter_excludes "$1" "$ENTRY_NAME" sciebo
+  # A pair imported with the desktop client's ignoreHiddenFiles gets the same
+  # dotfile exclusion as the global SKIP_HIDDEN=1 (which rclone_filter_excludes
+  # already added), so hidden files are not transferred for that pair alone.
+  if [[ "${SKIP_HIDDEN:-0}" -ne 1 ]] && manifest_pair_hidden "$ENTRY_NAME"; then
+    args_ref+=(--exclude ".*")
+  fi
+  policy_name_exclude_args args_ref
+  if [[ "${#SYNC_POLICY_EXCLUDES[@]}" -gt 0 ]]; then
+    i=0
+    while [[ "$i" -lt "${#SYNC_POLICY_EXCLUDES[@]}" ]]; do
+      args_ref+=(--exclude "${SYNC_POLICY_EXCLUDES[$i]}")
+      i=$((i + 1))
+    done
+  fi
+}

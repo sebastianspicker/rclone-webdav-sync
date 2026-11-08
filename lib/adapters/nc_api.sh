@@ -6,7 +6,7 @@
 # Built on lib/adapters/http.sh: every helper either fills HTTP_BODY / prints a value or
 # dies through http_request. All calls use the authenticated netrc path, so no
 # app password ever appears in a command line. Bodies embedded here are fixed
-# templates; user input is XML-escaped with nc_xml_escape before insertion.
+# templates; user input goes into JSON bodies through output_json_escape_into.
 # The policy preflights merge their e2ee and external-storage facts into one
 # Depth-1 PROPFIND (NC_POLICY_PROPFIND_BODY via _nc_policy_probe) so one
 # sync entry costs one round trip, not one per fact.
@@ -91,15 +91,6 @@ NC_POLICY_PROPFIND_BODY='<?xml version="1.0"?>
     <oc:permissions/>
   </d:prop>
 </d:propfind>'
-
-# nc_xml_escape TEXT - escape text for an XML element body, including the
-# attribute quote characters. The escaping itself is shared with schedule's
-# body-only variant through core's xml_escape_into.
-nc_xml_escape() {
-  local s=""
-  xml_escape_into s "$1" all
-  printf '%s' "$s"
-}
 
 # nc_path_url SUB - the DAV URL of SUB below the user's files root.
 nc_path_url() {
@@ -238,15 +229,15 @@ nc_comments_list() {
   nc_dav_request PROPFIND "${HTTP_DAV_ROOT}/comments/files/${1}" 1 "$NC_COMMENTS_LIST_BODY"
 }
 
-# nc_comment_add FILEID MESSAGE - create a comment and leave the response in
-# HTTP_BODY.
+# nc_comment_add FILEID MESSAGE - create a comment. The server only accepts
+# JSON here (415 otherwise) and answers 201 with the new id in the
+# Content-Location header.
 nc_comment_add() {
-  local fileid="$1" message="$2" body=""
-  body="<?xml version=\"1.0\"?>
-<oc:comment xmlns:oc=\"http://owncloud.org/ns\">
-  <oc:message>$(nc_xml_escape "$message")</oc:message>
-</oc:comment>"
-  nc_dav_request POST "${HTTP_DAV_ROOT}/comments/files/${fileid}" "" "$body"
+  local fileid="$1" message=""
+  output_json_escape_into message "$2"
+  http_request POST "${HTTP_DAV_ROOT}/comments/files/${fileid}" \
+    -H 'Content-Type: application/json' \
+    --data-binary "{\"actorType\":\"users\",\"verb\":\"comment\",\"message\":\"${message}\"}"
 }
 
 # nc_comment_delete FILEID COMMENT_ID - delete one comment.
@@ -281,32 +272,38 @@ nc_tags_list() {
   nc_dav_request PROPFIND "${HTTP_DAV_ROOT}/systemtags" 1 "$NC_TAGS_LIST_BODY"
 }
 
-# nc_tag_create NAME - create a user-visible, user-assignable system tag.
+# nc_tag_create NAME - create a user-visible, user-assignable system tag. JSON
+# only (415 otherwise); the new id is in the Content-Location header.
 nc_tag_create() {
-  local name="$1" body=""
-  body="<?xml version=\"1.0\"?>
-<oc:systemtag xmlns:oc=\"http://owncloud.org/ns\">
-  <oc:display-name>$(nc_xml_escape "$name")</oc:display-name>
-  <oc:user-visible>true</oc:user-visible>
-  <oc:user-assignable>true</oc:user-assignable>
-</oc:systemtag>"
-  nc_dav_request POST "${HTTP_DAV_ROOT}/systemtags" "" "$body"
+  local name=""
+  output_json_escape_into name "$1"
+  http_request POST "${HTTP_DAV_ROOT}/systemtags" \
+    -H 'Content-Type: application/json' \
+    --data-binary "{\"name\":\"${name}\",\"userVisible\":true,\"userAssignable\":true}"
 }
 
 # nc_tag_assign SUB TAG_IDS - replace the system tags of SUB with the
-# comma-separated TAG_IDS list. The ids go into an XML body, so the helper
+# comma-separated TAG_IDS list: read the current relations, DELETE the ones
+# not wanted and PUT the missing ones. The ids go into URLs, so the helper
 # validates them itself instead of trusting every caller.
 nc_tag_assign() {
-  local sub="$1" tagids="$2" body=""
+  local sub="$1" tagids="$2" fileid="" url="" id="" line="" current=","
   # An empty list is valid (clears the tags); a non-empty list must be
   # numeric ids only.
   [[ -z "$tagids" ]] || comma_ids_valid "$tagids" ||
     die "nc_tag_assign: invalid tag ids '$(printable "$tagids")'"
-  body="<?xml version=\"1.0\"?>
-<d:propertyupdate xmlns:d=\"DAV:\" xmlns:oc=\"http://owncloud.org/ns\">
-  <d:set><d:prop><oc:tags>${tagids}</oc:tags></d:prop></d:set>
-</d:propertyupdate>"
-  nc_dav_request PROPPATCH "$(nc_sub_url "$sub")" 0 "$body"
+  fileid="$(nc_fileid "$sub")"
+  url="${HTTP_DAV_ROOT}/systemtags-relations/files/${fileid}"
+  nc_dav_request PROPFIND "$url" 1 "$NC_TAGS_LIST_BODY"
+  while IFS= read -r line; do
+    id="${line%%$'\t'*}"
+    is_uint "$id" || continue
+    current+="${id},"
+    [[ ",${tagids}," == *",${id},"* ]] || nc_dav_request DELETE "${url}/${id}" ""
+  done < <(xml_records "$HTTP_BODY" "$(xml_wrapper_auto "$HTTP_BODY")" 'oc:id|id')
+  for id in ${tagids//,/ }; do
+    [[ "$current" == *",${id},"* ]] || nc_dav_request PUT "${url}/${id}" "" "" --data-binary ""
+  done
 }
 
 # nc_search TERM [LIMIT] - unified search over the files provider; the OCS

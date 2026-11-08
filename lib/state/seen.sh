@@ -50,16 +50,18 @@ seen_contains() {
   return 1
 }
 
-# seen_record FILE - append the ids on stdin (one per line) to FILE,
-# atomically and mode 600. Best effort: a state write problem must never
-# fail the caller, so atomic_write's die is contained in the subshell.
+# seen_record FILE - append the ids on stdin (one per line) to FILE, mode
+# 600. A plain O_APPEND write, not read-then-replace, so two overlapping
+# writers (watch --notify and an interactive run) both keep their ids. Best
+# effort: a state write problem must never fail the caller.
 seen_record() {
-  local file="$1"
+  local file="$1" ids=""
+  ids="$(cat)"
+  [[ -n "$ids" ]] || return 0
   (
-    {
-      [[ ! -f "$file" ]] || cat "$file"
-      cat
-    } | atomic_write "$file" 600
+    umask 077
+    [[ -d "${file%/*}" ]] || mkdir -p -- "${file%/*}"
+    printf '%s\n' "$ids" >>"$file"
   ) 2>/dev/null || true
   SEEN_CACHE_FILE=""
   SEEN_CACHE_STAMP=""

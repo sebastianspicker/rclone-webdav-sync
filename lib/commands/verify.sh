@@ -115,10 +115,16 @@ verify_entry_status() {
 # verify_prepare SPEC - local-directory and bisync remote-dir guards.
 # Returns 0=check, 1=failed, 2=skipped. Prints its own status lines.
 verify_prepare() {
-  local spec="$1"
-  if [[ "$ENTRY_MODE" == bisync ]] && ! remote_dir_exists "$spec"; then
-    verify_entry_status SKIP " (remote dir does not exist)"
-    return 2
+  local spec="$1" rc=0
+  if [[ "$ENTRY_MODE" == bisync ]]; then
+    remote_dir_exists "$spec" || rc=$?
+    if [[ "$rc" -eq 1 ]]; then
+      verify_entry_status SKIP " (remote dir does not exist)"
+      return 2
+    elif [[ "$rc" -ne 0 ]]; then
+      verify_entry_status FAIL " (cannot check remote dir: server unreachable or login failed)"
+      return 1
+    fi
   fi
   [[ ! -d "$ENTRY_LOCAL" ]] || return 0
   if [[ "$ENTRY_MODE" == pull ]]; then
@@ -137,10 +143,10 @@ verify_build_args() {
     --checkers "$CHECKERS"
     --retries "$RETRIES" --low-level-retries "$LOW_LEVEL_RETRIES"
     --timeout "$TIMEOUT" --contimeout "$CONTIMEOUT"
-    --filter-from "${FILTER_DIR}/clutter.txt"
   )
   [[ -z "${RETRIES_SLEEP:-}" ]] || flags+=(--retries-sleep "$RETRIES_SLEEP")
-  [[ -z "$ENTRY_FILTER" ]] || flags+=(--filter-from "${FILTER_DIR}/${ENTRY_FILTER}")
+  filter_entry_args flags
+  policy_symlink_args flags
   if [[ "$ENTRY_MODE" != bisync ]]; then
     flags+=(--one-way --exclude-if-present .nosync)
   fi

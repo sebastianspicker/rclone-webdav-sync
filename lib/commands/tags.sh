@@ -157,7 +157,9 @@ tags_run_action() {
       ;;
     create)
       nc_tag_create "$TAGS_NAME"
-      id="$(xml_get_any "$HTTP_BODY" 'oc:id' id)"
+      id="$(trim "$(http_header Content-Location)")"
+      id="${id%/}"
+      id="${id##*/}"
       if [[ -n "$id" ]]; then
         printf 'created tag %s\n' "$(printable "$id")"
       else

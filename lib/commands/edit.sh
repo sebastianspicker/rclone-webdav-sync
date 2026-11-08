@@ -11,6 +11,8 @@
 EDIT_LOCAL=""
 EDIT_IS_DIR=false
 EDIT_REMOTE_LOCKED=0
+EDIT_REMOTE_SIG=""
+EDIT_REMOTE_CHANGED=false
 EDIT_EDITOR_ARGS=()
 
 usage_edit() {
@@ -70,6 +72,13 @@ edit_signature() {
   mtime=${ file_mtime "$file";}
   size=${ file_size "$file";}
   printf '%s:%s' "$mtime" "$size"
+}
+
+# edit_remote_signature SPEC - print the remote file's `lsjson --stat` record
+# (ModTime, Size, plus Hashes/ID when the backend reports them); empty when
+# it cannot be read.
+edit_remote_signature() {
+  rclone_cmd lsjson --stat "$1" 2>/dev/null || true
 }
 
 # edit_open_path FILE - hand FILE to the platform opener (platform_opener
@@ -155,6 +164,7 @@ edit_prepare_target() {
     [[ "$plan" != *'as --dry-run is set'* ]] ||
       printf 'edit: local copy is newer than the server; editing the local copy\n'
   fi
+  EDIT_REMOTE_SIG=${ edit_remote_signature "$EDIT_REMOTE";}
   if [[ "$EDIT_LOCK_REMOTE" == true ]]; then
     edit_lock_remote "$EDIT_SUB"
   fi
@@ -191,6 +201,8 @@ edit_run_editor() {
 # edit_upload SUB LOCAL_FILE REMOTE BEFORE NO_UPLOAD - compare BEFORE against
 # the file's current signature and upload when it changed, unless NO_UPLOAD.
 # Sets EDIT_UPLOAD_RC to the rclone status (0 when no upload was attempted).
+# A remote that changed since the download is never overwritten: the edit stays
+# at LOCAL_FILE and EDIT_REMOTE_CHANGED is set.
 edit_upload() {
   local sub="$1" local_file="$2" remote="$3" before="$4" no_upload="$5" after=""
   EDIT_UPLOAD_RC=0
@@ -199,6 +211,9 @@ edit_upload() {
     printf 'edit: %s unchanged, not uploaded\n' "$sub"
   elif [[ "$no_upload" == true ]]; then
     printf 'edit: %s changed, not uploaded (--no-upload)\n' "$sub"
+  elif [[ "${ edit_remote_signature "$remote";}" != "$EDIT_REMOTE_SIG" ]]; then
+    EDIT_REMOTE_CHANGED=true
+    printf 'edit: remote changed since download; not uploaded, your edit is kept at %s\n' "$local_file"
   else
     rclone_cmd copyto "$local_file" "$remote" || EDIT_UPLOAD_RC=$?
     [[ "$EDIT_UPLOAD_RC" -ne 0 ]] || printf 'edit: uploaded %s\n' "$sub"
@@ -234,6 +249,7 @@ edit_run() {
   edit_run_editor "$EDIT_SUB" "$EDIT_LOCAL_FILE" "$editor_cmd"
   edit_upload "$EDIT_SUB" "$EDIT_LOCAL_FILE" "$EDIT_REMOTE" "$signature_before" "$EDIT_NO_UPLOAD"
   edit_unlock_remote "$EDIT_SUB"
+  [[ "$EDIT_REMOTE_CHANGED" != true ]] || return 1
   [[ "$EDIT_UPLOAD_RC" -eq 0 ]] || die "rclone upload failed (exit ${EDIT_UPLOAD_RC}) for ${EDIT_SUB}"
   return 0
 }

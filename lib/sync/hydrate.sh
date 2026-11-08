@@ -29,12 +29,6 @@ hydrate_resolve() {
   return 0
 }
 
-# hydrate_remote_exists SPEC - true when the remote directory exists.
-hydrate_remote_exists() {
-  local spec="$1"
-  remote_dir_exists "$spec"
-}
-
 # hydrate_build_args SUB DEST APPLY - fill HYDRATE_ARGS with the rclone copy
 # invocation: sync's filter layering (server-exclude, clutter, pair filter,
 # conflict and hidden exclusions, blacklist excludes) plus one-line stats.

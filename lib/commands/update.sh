@@ -28,9 +28,12 @@ Options:
 EOF
 }
 
-# update_is_worktree DIR - true when DIR is inside a git work tree.
+# update_is_worktree DIR - true when DIR is the root of a git work tree; an
+# install inside some other repository (a dotfiles $HOME) does not count.
 update_is_worktree() {
-  git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1
+  local top=""
+  top="$(git -C "$1" rev-parse --show-toplevel 2>/dev/null)" || return 1
+  [[ "$top" == "$(cd "$1" && pwd -P)" ]]
 }
 
 # update_head DIR - print HEAD's full object name.

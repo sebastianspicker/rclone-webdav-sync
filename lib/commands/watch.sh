@@ -196,7 +196,7 @@ watch_last_run_set() {
 
 # watch_dir_changed DIR MARKER - true (0) when DIR holds a path newer than
 # MARKER's mtime (missing marker = everything is new). watch_scan_source
-# rewrites the marker after every scan, so its mtime is the last scan and
+# replaces the marker after every scan, so its mtime is the last scan start and
 # one portable `find -newer` walk answers the check on BSD and GNU find.
 watch_dir_changed() {
   local dir="$1" marker="$2" out=""
@@ -216,10 +216,13 @@ watch_scan_source() {
   local marker="" changed=1
   # Forkless capture: watch_marker_file only prints.
   marker=${ watch_marker_file "$name";}
+  # Stamp the next marker BEFORE the walk: a file changed while find is
+  # still running must count as newer on the next scan.
+  printf '%s\n' "$EPOCHSECONDS" >"${marker}.new" 2>/dev/null || true
   if watch_dir_changed "$dir" "$marker"; then
     changed=0
   fi
-  printf '%s\n' "$EPOCHSECONDS" >"$marker" 2>/dev/null || true
+  mv -f "${marker}.new" "$marker" 2>/dev/null || true
   return "$changed"
 }
 

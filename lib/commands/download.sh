@@ -245,7 +245,7 @@ download_dir() {
   hydrate_build_args "$sub" "$dest" "$DOWNLOAD_APPLY"
   progress_append_args HYDRATE_ARGS "$DOWNLOAD_QUIET"
   HYDRATE_ARGS+=(--use-json-log)
-  if ! hydrate_remote_exists "$(remote_spec "$sub")"; then
+  if ! remote_dir_exists "$(remote_spec "$sub")"; then
     die "remote path not found: ${REMOTE_PREFIX}/${sub}"
   fi
   if [[ "$DOWNLOAD_APPLY" == true ]]; then

@@ -398,11 +398,15 @@ notifications_run_action() {
 }
 
 # notifications_fetch - GET the collection into NOTIFICATIONS_XML. 204/304
-# mean an empty collection.
+# mean an empty collection. "watch" (always in a subshell) makes 401/403 exit 2
+# so the watch loop can tell permanent auth failures from transient ones.
 notifications_fetch() {
   local path=""
   path=${ notifications_api_path;}
   ocs_request_allow GET "$path"
+  [[ "${1:-}" != watch ]] || case "$HTTP_CODE" in
+    401 | 403) (ocs_check_response GET "${HTTP_OCS_ROOT}${path}") || exit 2 ;;
+  esac
   ocs_check_response GET "${HTTP_OCS_ROOT}${path}"
   case "$HTTP_CODE" in
     204 | 304) NOTIFICATIONS_XML="" ;;
@@ -442,14 +446,23 @@ notifications_watch_cycle() {
 }
 
 # notifications_watch_loop INTERVAL - refresh every INTERVAL seconds until
-# INT/TERM (exit 130/143), like status --watch.
+# INT/TERM (exit 130/143), like status --watch. A failed poll (curl error,
+# 5xx) only warns and retries; 401/403 end the loop.
 notifications_watch_loop() {
-  local interval="$1"
+  local interval="$1" xml="" rc=0
   trap 'exit 130' INT
   trap 'exit 143' TERM
   while true; do
-    notifications_fetch || return 1
-    notifications_watch_cycle "$NOTIFICATIONS_XML"
+    rc=0
+    # Subshell: the http layer dies on transport failures.
+    xml="$(notifications_fetch watch && printf '%s' "$NOTIFICATIONS_XML")" || rc=$?
+    if ((rc == 2)); then
+      return 1
+    elif ((rc != 0)); then
+      warn "notifications poll failed; retrying in ${interval}s"
+    else
+      notifications_watch_cycle "$xml"
+    fi
     sleep "$interval"
   done
 }

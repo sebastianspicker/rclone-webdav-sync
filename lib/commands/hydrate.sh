@@ -3,7 +3,7 @@
 # on demand (the VFS "keep downloaded" analog). Resolves the destination
 # from the manifest (or FOLDERS_LOCAL_ROOT) and copies once with the same
 # filter layering sync uses; runstate records are not written. The path
-# resolver and argv builder (hydrate_resolve, hydrate_remote_exists,
+# resolver and argv builder (hydrate_resolve,
 # hydrate_build_args) live in lib/sync/hydrate.sh: download.sh's directory
 # path calls them directly too.
 
@@ -57,7 +57,7 @@ cmd_hydrate() {
   [[ -z "${OPT_dest:-}" ]] || HYDRATE_DEST=${ expand_local_path "$OPT_dest";}
   dest=${ strip_trailing_slashes "$HYDRATE_DEST";}
   [[ -n "$dest" ]] || die "cannot resolve a destination for '${sub}'"
-  if ! hydrate_remote_exists "$(remote_spec "$sub")"; then
+  if ! remote_dir_exists "$(remote_spec "$sub")"; then
     die "remote path not found: ${REMOTE_PREFIX}/${sub}"
   fi
   hydrate_build_args "$sub" "$dest" "$apply"

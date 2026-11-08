@@ -282,7 +282,7 @@ net_is_metered() {
       LC_ALL=C tr -s '[:space:]' ' ')"
     NET_METERED_LIST_KEY="$raw"
   fi
-  list=" ${NET_METERED_LIST} "
+  list=" ${NET_METERED_LIST,,} "
   case "$list" in
     *" ${ssid_lower} "*) return 0 ;;
   esac

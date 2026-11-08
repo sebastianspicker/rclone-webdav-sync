@@ -262,8 +262,7 @@ schedule_validate() {
 # schedule_xml_escape TEXT - escape the XML metacharacters that can appear
 # in label, project, rclone, log, and watch paths, so an "&" or "<" in a
 # directory name cannot produce an invalid (or injected) plist. Quotes are
-# deliberately left alone; the escaping is shared with nc_api's quote-aware
-# variant through core's xml_escape_into.
+# deliberately left alone (plist element bodies only).
 schedule_xml_escape() {
   local s=""
   xml_escape_into s "$1"
@@ -611,6 +610,10 @@ schedule_systemd_service_content() {
   printf 'Type=oneshot\n'
   printf 'ExecStart=%s\n' "$command"
   printf 'WorkingDirectory=%s\n' "$(schedule_systemd_quote "$PROJECT_DIR")"
+  # Same PATH idea as the launchd agent: the user manager's PATH may not
+  # contain rclone (e.g. Linuxbrew).
+  [[ -z "${SCHEDULE_RCLONE_DIR:-}" ]] ||
+    printf 'Environment=%s\n' "$(schedule_systemd_quote "PATH=${SCHEDULE_RCLONE_DIR}:/usr/local/bin:/usr/bin:/bin")"
   if [[ "${SCHEDULE_AT_LOGIN:-0}" == "1" ]]; then
     printf '\n[Install]\nWantedBy=default.target\n'
   fi
@@ -628,11 +631,14 @@ schedule_systemd_timer_content() {
   printf '[Timer]\n'
   if [[ "$kind" == "backup" ]]; then
     printf 'OnCalendar=*-*-* %02d:%02d:00\n' "$((10#${SCHEDULE_BACKUP_HOUR:-0}))" "$((10#${SCHEDULE_BACKUP_MINUTE:-0}))"
+    printf 'Persistent=true\n'
   elif [[ "$interval" =~ ^[0-9]+$ ]] && [[ "$((10#$interval))" -gt 0 ]]; then
     printf 'OnBootSec=1min\n'
     printf 'OnUnitActiveSec=%ss\n' "$((10#$interval))"
   else
     printf 'OnCalendar=*-*-* %02d:%02d:00\n' "$((10#${SCHEDULE_HOUR:-0}))" "$((10#${SCHEDULE_MINUTE:-0}))"
+    # Run a missed daily slot after wake/boot, as launchd does.
+    printf 'Persistent=true\n'
   fi
   if [[ "$jitter" =~ ^[0-9]+$ ]] && [[ "$((10#$jitter))" -gt 0 ]]; then
     printf 'RandomizedDelaySec=%ss\n' "$((10#$jitter))"
@@ -708,6 +714,7 @@ schedule_systemd_enable_agent() {
 schedule_systemd_install() {
   local dir=""
   schedule_validate
+  SCHEDULE_RCLONE_DIR="$(dirname "$RCLONE_BIN")"
   dir="$(schedule_systemd_unit_dir)"
   mkdir -p "$dir"
   schedule_each_agent schedule_systemd_write_units || return $?

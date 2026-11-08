@@ -180,7 +180,9 @@ cmd_comments() {
       ;;
     add)
       nc_comment_add "$fileid" "$COMMENTS_ARG"
-      id="$(xml_get_any "$HTTP_BODY" 'oc:id' id)"
+      id="$(trim "$(http_header Content-Location)")"
+      id="${id%/}"
+      id="${id##*/}"
       if [[ -n "$id" ]]; then
         printf 'added comment %s\n' "${ printable "$id";}"
       else

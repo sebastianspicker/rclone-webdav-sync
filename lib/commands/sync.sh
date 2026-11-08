@@ -210,11 +210,18 @@ sync_empty_side_guard() {
 # still gets created on the first apply, exactly like the old unconditional
 # mkdir made it.
 sync_prepare_bisync() {
-  local spec="$1"
-  if [[ "$SYNC_APPLY" == false ]] && ! remote_dir_exists "$spec"; then
-    SYNC_ENTRY_REASON="remote dir does not exist yet (first apply will create it)"
-    sync_entry_status SKIP "$SYNC_ENTRY_REASON"
-    return 2
+  local spec="$1" rc=0
+  if [[ "$SYNC_APPLY" == false ]]; then
+    remote_dir_exists "$spec" || rc=$?
+    if [[ "$rc" -eq 1 ]]; then
+      SYNC_ENTRY_REASON="remote dir does not exist yet (first apply will create it)"
+      sync_entry_status SKIP "$SYNC_ENTRY_REASON"
+      return 2
+    elif [[ "$rc" -ne 0 ]]; then
+      SYNC_ENTRY_REASON="cannot check remote dir ${spec}/ (server unreachable or login failed)"
+      sync_entry_status FAIL "$SYNC_ENTRY_REASON"
+      return 1
+    fi
   fi
   if [[ "$SYNC_RESYNC" == false ]] && ! bisync_initialized "$ENTRY_NAME"; then
     SYNC_ENTRY_REASON="bisync state missing for '${ENTRY_NAME}'; run '${CLI_NAME} sync --resync --apply --only ${ENTRY_NAME}'"
@@ -228,37 +235,12 @@ sync_prepare_bisync() {
   fi
 }
 
-# sync_args_add_filters FLAGS - append the filter stack to the named argv
-# array in order: server filter, clutter/entry filters, conflict and hidden
-# excludes, blacklist excludes (one warning when any applied), then the
-# name/checksum/symlink policy arguments and the per-entry policy excludes.
+# sync_args_add_filters FLAGS - append the filter stack (filter_entry_args)
+# to the named argv array, then the checksum and symlink policy arguments.
 sync_args_add_filters() {
   # shellcheck disable=SC2178  # nameref to an argv array
   local -n args_ref="$1"
-  local i=0
-  # Only the existence of a non-empty server filter matters here; the file
-  # body reaches rclone through the path below, so no `cat` of the whole
-  # file runs per entry.
-  if filter_server_filter_enabled; then
-    args_ref+=(--filter-from "$SERVER_EXCLUDE_FILTER")
-  fi
-  args_ref+=(--filter-from "${FILTER_DIR}/clutter.txt")
-  [[ -z "$ENTRY_FILTER" ]] || args_ref+=(--filter-from "${FILTER_DIR}/${ENTRY_FILTER}")
-  rclone_filter_excludes "$1" "$ENTRY_NAME" sciebo
-  # A pair imported with the desktop client's ignoreHiddenFiles gets the same
-  # dotfile exclusion as the global SKIP_HIDDEN=1 (which rclone_filter_excludes
-  # already added), so hidden files are not transferred for that pair alone.
-  if [[ "${SKIP_HIDDEN:-0}" -ne 1 ]] && manifest_pair_hidden "$ENTRY_NAME"; then
-    args_ref+=(--exclude ".*")
-  fi
-  policy_name_exclude_args args_ref
-  if [[ "${#SYNC_POLICY_EXCLUDES[@]}" -gt 0 ]]; then
-    i=0
-    while [[ "$i" -lt "${#SYNC_POLICY_EXCLUDES[@]}" ]]; do
-      args_ref+=(--exclude "${SYNC_POLICY_EXCLUDES[$i]}")
-      i=$((i + 1))
-    done
-  fi
+  filter_entry_args "$1"
   policy_checksum_args args_ref "$ENTRY_MODE"
   policy_symlink_args args_ref
 }
@@ -866,14 +848,6 @@ sync_guard_run() {
   return "$rc"
 }
 
-# _sync_file_size FILE - print FILE's size in bytes, or nothing when it
-# cannot be read. A thin wrapper over core.sh's flavour-cached file_size
-# (the old inline BSD/GNU stat dance and the standalone fallback both live
-# there now); the name is kept for sync_log_offset and any external stubbing.
-_sync_file_size() {
-  file_size "${1:-}"
-}
-
 # sync_log_offset - set SYNC_LOG_OFFSET to the current size of SYNC_LOG_FILE
 # (0 when it does not exist yet), so a later sync_record_errors only reads
 # what this run appended.
@@ -881,7 +855,7 @@ sync_log_offset() {
   local size=""
   SYNC_LOG_OFFSET=0
   [[ -f "$SYNC_LOG_FILE" ]] || return 0
-  size=${ _sync_file_size "$SYNC_LOG_FILE";}
+  size=${ file_size "$SYNC_LOG_FILE";}
   case "$size" in '' | *[!0-9]*) size=0 ;; esac
   SYNC_LOG_OFFSET="$size"
 }
@@ -1056,7 +1030,18 @@ sync_record_errors() {
         if (offset == 0) next
         rest = substr($0, offset + 8)
         if (rest ~ /^(Attempt [0-9]+\/[0-9]+ failed|Bisync |Safety abort)/) next
-        split_at = index(rest, ": ")
+        # The path ends at the first ": " that starts a known rclone message,
+        # so "docs/Report: Q3.pdf" stays whole; else at the first ": ".
+        split_at = 0; first = 0; off = 0
+        for (tail = rest; (n = index(tail, ": ")) > 0; tail = substr(tail, n + 2)) {
+          if (!first) first = off + n
+          if (substr(tail, n + 2) ~ /^(Failed|failed|Couldn.t|couldn.t|error|corrupted|Dangling|Duplicate|Update|Skipping)/) {
+            split_at = off + n
+            break
+          }
+          off += n + 1
+        }
+        if (!split_at) split_at = first
         if (split_at == 0) next
         path = substr(rest, 1, split_at - 1)
         if (seen[path]++) next

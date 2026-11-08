@@ -411,22 +411,6 @@ xml_get() {
   '
 }
 
-# xml_get_any XML TAG... - print the first non-empty value among the TAG
-# spellings (e.g. the "oc:"-prefixed and plain variants). Prints nothing
-# when every spelling is empty.
-xml_get_any() {
-  local xml="$1" tag="" value=""
-  shift
-  for tag in "$@"; do
-    value="$(xml_get "$xml" "$tag")"
-    if [[ -n "$value" ]]; then
-      printf '%s' "$value"
-      return 0
-    fi
-  done
-  return 0
-}
-
 # xml_wrapper_auto XML - print the record wrapper tag the document uses:
 # "element" for OCS-style payloads, else "d:response".
 xml_wrapper_auto() {

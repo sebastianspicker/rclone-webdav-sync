@@ -28,11 +28,8 @@ trim_into() {
   printf -v "$1" '%s' "${s%"${s##*[![:space:]]}"}"
 }
 
-# xml_escape_into VAR TEXT [all] - XML-escape TEXT into VAR without a command
-# substitution. The default escapes the element-body metacharacters & < >; the
-# literal mode "all" also escapes the attribute quote characters " and '. The
-# two callers keep their own wrapper (nc_xml_escape escapes quotes,
-# schedule_xml_escape does not), so the entity spellings stay identical.
+# xml_escape_into VAR TEXT - XML-escape the element-body metacharacters & < >
+# of TEXT into VAR without a command substitution (schedule_xml_escape).
 # patsub_replacement is on by default in Bash 5.2+, so a literal "&" in a
 # replacement must be written "\&" or it would expand to the matched text.
 xml_escape_into() {
@@ -40,10 +37,6 @@ xml_escape_into() {
   _xe_s="${_xe_s//&/\&amp;}"
   _xe_s="${_xe_s//</\&lt;}"
   _xe_s="${_xe_s//>/\&gt;}"
-  if [[ "${3:-}" == "all" ]]; then
-    _xe_s="${_xe_s//\"/\&quot;}"
-    _xe_s="${_xe_s//\'/\&apos;}"
-  fi
   printf -v "$1" '%s' "$_xe_s"
 }
 

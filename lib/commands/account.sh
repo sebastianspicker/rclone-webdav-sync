@@ -1014,7 +1014,11 @@ account_import_pairs_block() {
       warn "import: account ${idx} has an invalid target path '$(printable "$target")'; skipped"
       continue
     fi
-    printf '%s\t%s\t%s\t%s\n' "$local_path" "$remote" "$paused" "$hidden"
+    # Always 0/1: TAB is IFS whitespace, so an empty field would collapse in
+    # the `IFS=$'\t' read` consumers and shift HIDDEN into PAUSED.
+    account_import_bool_into paused "$paused"
+    account_import_bool_into hidden "$hidden"
+    printf '%s\t%s\t%s\t%s\n' "$local_path" "$remote" "${paused:-0}" "${hidden:-0}"
   done <<<"$folders"
   return 0
 }

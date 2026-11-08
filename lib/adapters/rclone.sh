@@ -513,6 +513,9 @@ rclone_config_patch_value() {
   local remote="$1" key="$2" expected="$3" value="$4" file="${RCLONE_CONFIG:-}" tmp=""
   [[ -n "$file" && -f "$file" && -n "$remote" && -n "$key" ]] || return 1
   case "$key$value" in *[[:cntrl:]]* | *\\*) return 1 ;; esac
+  # A symlinked config (dotfiles/stow) is patched at its target, so the mv
+  # below does not replace the link with a regular file.
+  [[ ! -L "$file" ]] || file=$(readlink -f "$file") || return 1
   temp_mktemp_into tmp "${file}.tmp.XXXXXX" || return 1
   if ! VALUE="$value" awk -v section="[${remote}]" -v key="$key" -v expected="$expected" '
     function trim(s) {
@@ -830,22 +833,27 @@ remote_spec() { printf '%s/%s' "$REMOTE_PREFIX" "$1"; }
 # caches, like the config and size caches.
 declare -gA REMOTE_DIR_EXISTS_CACHE=()
 
-# remote_dir_exists SPEC - true when SPEC (a remote directory) exists. The
-# positive/negative answer is memoized per spec for the life of the process;
-# callers are read-only probes and never rely on observing a directory they
-# create later in the same run.
+# remote_dir_exists SPEC - rc 0 when SPEC (a remote directory) exists, rc 1
+# when rclone reports it missing (exit 3), rc 2 for any other failure
+# (unreachable server, revoked password). Only definite answers are memoized
+# per spec for the life of the process; errors are re-probed. Callers are
+# read-only probes and never rely on observing a directory they create later
+# in the same run. Plain `! remote_dir_exists` still treats an error as "no".
 remote_dir_exists() {
-  local spec="${1:-}"
+  local spec="${1:-}" rc=0
   if [[ -n "${REMOTE_DIR_EXISTS_CACHE[$spec]+cached}" ]]; then
     [[ "${REMOTE_DIR_EXISTS_CACHE[$spec]}" == "1" ]]
     return
   fi
-  if rclone_cmd lsd "$spec/" >/dev/null 2>&1; then
-    REMOTE_DIR_EXISTS_CACHE[$spec]="1"
-    return 0
-  fi
-  REMOTE_DIR_EXISTS_CACHE[$spec]="0"
-  return 1
+  rclone_cmd lsd "$spec/" >/dev/null 2>&1 || rc=$?
+  case "$rc" in
+    0) REMOTE_DIR_EXISTS_CACHE[$spec]="1" ;;
+    3)
+      REMOTE_DIR_EXISTS_CACHE[$spec]="0"
+      return 1
+      ;;
+    *) return 2 ;;
+  esac
 }
 
 # rclone_stat_is_dir SPEC OUT_VAR - classify SPEC with `rclone lsjson --stat`;

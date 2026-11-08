@@ -96,7 +96,7 @@ def build_sandbox():
         "CAP_CHUNK_MAX_SIZE=10485760\n"
         "CAP_UNDELETE=true\n"
         "CAP_CHECKSUMS=true\n"
-        "CAP_PROBED_AT=%d\n" % int(time.time())
+        f"CAP_PROBED_AT={int(time.time())}\n"
     ))
     shutil.copy(
         os.path.join(REPO, "config", "filters", "clutter.txt"),
@@ -200,11 +200,10 @@ def run_cli_pty(box, argv, answers, *, timeout=90):
         for pattern, answer in answers:
             rx = re.compile(pattern.encode())
             while not rx.search(out):
-                if time.time() > deadline or not read_chunk(master, out, 0.2):
-                    if proc.poll() is not None:
-                        break
+                if (time.time() > deadline or not read_chunk(master, out, 0.2)) and proc.poll() is not None:
+                    break
             if not rx.search(out):
-                raise RuntimeError("prompt never appeared: %s" % pattern)
+                raise RuntimeError(f"prompt never appeared: {pattern}")
             matched += 1
             drain(master, out, 0.1)
             os.write(master, answer.encode())
@@ -218,9 +217,9 @@ def run_cli_pty(box, argv, answers, *, timeout=90):
         rc = proc.wait(timeout=10)
         os.close(master)
     if matched != len(answers):
-        raise RuntimeError("answered %d of %d prompts" % (matched, len(answers)))
+        raise RuntimeError(f"answered {matched} of {len(answers)} prompts")
     if rc != 0:
-        raise RuntimeError("interactive run exited %d:\n%s" % (rc, out.decode("utf-8", "replace")))
+        raise RuntimeError(f"interactive run exited {rc}:\n{out.decode('utf-8', 'replace')}")
     return out.decode("utf-8", "replace")
 
 
@@ -263,7 +262,7 @@ def make_transcripts(box):
     shots = []
 
     def command(label, output, note=None):
-        text = "$ %s\n%s" % (label, output)
+        text = f"$ {label}\n{output}"
         shots.append({"name": note or label.split()[1], "title": label, "text": display_text(text, box)})
 
     command("bin/sciebo help", run_cli(box, ["help"]))
@@ -355,29 +354,26 @@ def render_svg(title, text, path):
     width = PAD_X * 2 + cols * CHAR_W
     height = TITLE_H + PAD_TOP + len(lines) * LINE_H + PAD_BOTTOM
 
+    w, h = round(width), round(height)
     parts = [
-        '<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" '
-        'viewBox="0 0 %d %d" role="img" aria-label="%s">'
-        % (round(width), round(height), round(width), round(height), esc(title)),
-        "<title>%s</title>" % esc(title),
-        "<defs><clipPath id=\"win\"><rect x=\"0.5\" y=\"0.5\" width=\"%d\" height=\"%d\" rx=\"10\"/>"
-        "</clipPath></defs>" % (round(width) - 1, round(height) - 1),
+        (f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" '
+        f'viewBox="0 0 {w} {h}" role="img" aria-label="{esc(title)}">'),
+        f"<title>{esc(title)}</title>",
+        (f'<defs><clipPath id="win"><rect x="0.5" y="0.5" width="{w - 1}" height="{h - 1}" rx="10"/>'
+        "</clipPath></defs>"),
         '<g clip-path="url(#win)">',
-        '<rect x="0.5" y="0.5" width="%d" height="%d" rx="10" fill="%s" stroke="%s"/>'
-        % (round(width) - 1, round(height) - 1, BG, BORDER),
-        '<rect x="0.5" y="0.5" width="%d" height="%d" fill="%s"/>'
-        % (round(width) - 1, TITLE_H, BAR),
-        '<line x1="0.5" y1="%.1f" x2="%.1f" y2="%.1f" stroke="%s"/>'
-        % (TITLE_H + 0.5, round(width) - 0.5, TITLE_H + 0.5, BORDER),
+        f'<rect x="0.5" y="0.5" width="{w - 1}" height="{h - 1}" rx="10" fill="{BG}" stroke="{BORDER}"/>',
+        f'<rect x="0.5" y="0.5" width="{w - 1}" height="{int(TITLE_H)}" fill="{BAR}"/>',
+        f'<line x1="0.5" y1="{TITLE_H + 0.5:.1f}" x2="{w - 0.5:.1f}" y2="{TITLE_H + 0.5:.1f}" stroke="{BORDER}"/>',
     ]
     for i, color in enumerate(("#ff5f56", "#ffbd2e", "#27c93f")):
-        parts.append('<circle cx="%.1f" cy="18.5" r="6" fill="%s"/>' % (20 + i * 20, color))
+        parts.append(f'<circle cx="{20 + i * 20:.1f}" cy="18.5" r="6" fill="{color}"/>')
     parts.append(
-        '<text x="%.1f" y="23" text-anchor="middle" font-family="%s" font-size="12.5" '
-        'fill="%s">%s</text>' % (round(width) / 2, MONO, DIM, esc(title))
+        f'<text x="{w / 2:.1f}" y="23" text-anchor="middle" font-family="{MONO}" font-size="12.5" '
+        f'fill="{DIM}">{esc(title)}</text>'
     )
 
-    font = 'font-family="%s" font-size="%.1f"' % (MONO, FONT_SIZE)
+    font = f'font-family="{MONO}" font-size="{FONT_SIZE:.1f}"'
     y = TITLE_H + PAD_TOP + FONT_SIZE
     for line in lines:
         prefix, pcolor, rest, rcolor, bold = line_colors(line)
@@ -385,14 +381,12 @@ def render_svg(title, text, path):
         x = PAD_X
         if prefix:
             parts.append(
-                '<text x="%.1f" y="%.1f" %s fill="%s"%s xml:space="preserve">%s</text>'
-                % (x, y, font, pcolor, weight, esc(prefix))
+                f'<text x="{x:.1f}" y="{y:.1f}" {font} fill="{pcolor}"{weight} xml:space="preserve">{esc(prefix)}</text>'
             )
             x += len(prefix) * CHAR_W
         if rest:
             parts.append(
-                '<text x="%.1f" y="%.1f" %s fill="%s"%s xml:space="preserve">%s</text>'
-                % (x, y, font, rcolor, weight, esc(rest))
+                f'<text x="{x:.1f}" y="{y:.1f}" {font} fill="{rcolor}"{weight} xml:space="preserve">{esc(rest)}</text>'
             )
         y += LINE_H
 
@@ -413,7 +407,7 @@ def main():
     args = parser.parse_args()
 
     if not os.access(CLI, os.X_OK):
-        sys.exit("error: %s is not executable" % CLI)
+        sys.exit(f"error: {CLI} is not executable")
 
     box = build_sandbox()
     try:
@@ -427,7 +421,7 @@ def main():
         if shot["name"] not in selected:
             continue
         render_svg(shot["title"], shot["text"], os.path.join(args.out, shot["name"] + ".svg"))
-        print("wrote %s.svg" % shot["name"])
+        print(f"wrote {shot['name']}.svg")
 
 
 if __name__ == "__main__":

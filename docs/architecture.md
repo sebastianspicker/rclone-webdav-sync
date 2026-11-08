@@ -568,10 +568,10 @@ with `ocs_parse`.
 
 `lib/adapters/nc_api.sh` holds the fixed PROPFIND/REPORT/PROPPATCH bodies
 and the operations built from them (file ids/metadata, user info, avatars,
-comments, favorites, system tags, unified search), XML-escaping user input
-with `nc_xml_escape` before it reaches a body. Responses are parsed with the
-awk-based helpers in `lib/base/xml.sh`, so no `jq` is needed: `xml_get`/
-`xml_get_any` for single values, `xml_records`/`xml_records_top` for list
+comments, favorites, system tags, unified search), JSON-escaping user input
+with `output_json_escape_into` before it reaches a JSON body. Responses are parsed with the
+awk-based helpers in `lib/base/xml.sh`, so no `jq` is needed: `xml_get`
+for single values, `xml_records`/`xml_records_top` for list
 responses (one awk pass, `xml_wrapper_auto` picking the wrapper tag), and
 `json_string_field` for OCS JSON replies.
 <!-- src: architecture.md#http--dav--ocs-layer -->
