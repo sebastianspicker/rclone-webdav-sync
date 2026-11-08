@@ -18,11 +18,26 @@ valid_entry_mode() {
   esac
 }
 
-# entry_name_for SUBDIR - sanitized name used for logs and bisync workdirs.
+# entry_name_into VAR SUBDIR - the pair name (logs, bisync workdirs, state)
+# for SUBDIR, forkless in the common case. A name that sanitizes to nothing is
+# "entry" (the root "."), except when SUBDIR has non-ASCII bytes (Cyrillic,
+# CJK): those get "entry-<cksum>" so different folders do not share a name.
+entry_name_into() {
+  local _en_sum=""
+  sanitize_name_into "$1" "$2"
+  [[ -z "${!1}" ]] || return 0
+  if [[ "$2" == *[![:ascii:]]* ]]; then
+    read -r _en_sum _ < <(printf '%s' "$2" | cksum)
+    printf -v "$1" 'entry-%s' "$_en_sum"
+  else
+    printf -v "$1" 'entry'
+  fi
+}
+
+# entry_name_for SUBDIR - entry_name_into, printed.
 entry_name_for() {
   local name=""
-  sanitize_name_into name "$1"
-  [[ -n "$name" ]] || name="entry"
+  entry_name_into name "$1"
   printf '%s' "$name"
 }
 
@@ -105,8 +120,7 @@ manifest_parse_line() {
   ENTRY_ERROR=""
   # Inline the sanitized name (no command substitution): manifest parsing runs
   # once per line and forks otherwise.
-  sanitize_name_into ENTRY_NAME "$ENTRY_REMOTE"
-  [[ -n "$ENTRY_NAME" ]] || ENTRY_NAME="entry"
+  entry_name_into ENTRY_NAME "$ENTRY_REMOTE"
   if [[ -n "$extra" ]]; then
     ENTRY_ERROR="too many fields (expected mode|local|remote[|filter])"
   elif ! valid_entry_mode "$ENTRY_MODE"; then
@@ -409,8 +423,7 @@ manifest_append_pairs() {
     safe_local_path "$local_path" || die "invalid local path '${ printable "$local_path";}'"
     safe_remote_path "$sub" || die "unsafe remote subdir '${ printable "$sub";}'"
     [[ -z "$filter" ]] || safe_filter_name "$filter" || die "invalid filter file '${ printable "$filter";}'"
-    sanitize_name_into name "$sub"
-    [[ -n "$name" ]] || name="entry"
+    entry_name_into name "$sub"
     if _manifest_membership "$name" "$MANIFEST_NAMES" ||
       _manifest_membership "$sub" "$MANIFEST_REMOTES" ||
       [[ -n "${seen_names[$name]:-}" || -n "${seen_remotes[$sub]:-}" ]]; then

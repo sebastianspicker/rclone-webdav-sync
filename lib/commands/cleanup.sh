@@ -244,11 +244,11 @@ cleanup_state_used_names() {
   local line="" name="" rc=0
   while IFS= read -r line; do
     if ! manifest_parse_line "$line"; then
-      sanitize_name_into name "$ENTRY_REMOTE"
-      if [[ -z "$name" ]]; then
+      if [[ -z "$ENTRY_REMOTE" ]]; then
         rc=1
         continue
       fi
+      entry_name_into name "$ENTRY_REMOTE"
     fi
     printf '%s\n' "$ENTRY_NAME"
   done < <(manifest_lines)

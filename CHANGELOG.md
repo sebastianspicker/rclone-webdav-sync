@@ -8,6 +8,14 @@ uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- `setup` and `provision` put the previous remote settings and app password
+  back when the new credentials fail validation, so a typo no longer breaks
+  a working setup.
+- Folders whose names have no ASCII letters or digits (Cyrillic, CJK) get
+  distinct internal names (`entry-<checksum>`) instead of all sharing
+  `entry`. An existing pair of that kind starts with fresh state: a
+  two-way pair needs one `sync --resync --apply --only NAME`, and a
+  paused one must be paused again.
 - `folders add`/`edit` refuse a pair nested inside another pair's remote or
   local folder (a syncing parent would delete the child's files), unless the
   parent already excludes the child. `folders edit --remote` keeps the pair's

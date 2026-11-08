@@ -299,10 +299,16 @@ cmd_provision() {
   provision_check_duplicates "$pair_added" "$name" "$sub"
 
   provision_resolve_keychain use_keychain
-  provision_write_remote "$url" "$user" "$pass" "$use_keychain"
+  remote_credentials_snapshot
+  # Subshell: validation dies on bad credentials; the old ones come back.
+  if ! (provision_write_remote "$url" "$user" "$pass" "$use_keychain" && provision_validate_remote); then
+    pass=""
+    remote_credentials_restore
+    die "provision failed; the previous remote settings and app password were restored"
+  fi
   pass=""
   unset pass
-  provision_validate_remote
+  remote_credentials_forget
 
   if [[ "$pair_added" -eq 1 ]]; then
     acquire_lock

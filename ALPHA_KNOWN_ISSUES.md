@@ -93,6 +93,11 @@ Please report anything that looks wrong, especially:
   when run from a script without a terminal.
 - `sciebo quota` and `sciebo recent` show a raw rclone error instead of
   "run sciebo setup" when no account is configured.
+- Two server folders whose names differ only in non-ASCII letters (for
+  example `Müller` and `Möller`) cannot both be added as pairs: both get
+  the internal name `M_ller`, and `folders add` refuses the second one
+  ("a source named … already exists"). Sync one of them through its parent
+  folder instead.
 - Proxy passwords given with a `socks5://` proxy are visible in the process
   list. For an authenticated proxy, prefer an `https://` proxy or the
   `HTTPS_PROXY` environment variable.

@@ -262,6 +262,16 @@ keychain_store_plain() {
   remote_secret_invalidate
 }
 
+# keychain_store_legacy SECRET - write the legacy obscured-value item (setup
+# puts it back when new credentials fail validation). Dies like
+# keychain_store_plain.
+keychain_store_legacy() {
+  _keychain_write "$(keychain_account)" "$1"
+  KEYCHAIN_CACHE="$1"
+  KEYCHAIN_CACHE_SET=1
+  remote_secret_invalidate
+}
+
 # keychain_store_item SUFFIX SECRET - overwrite the item <remote>#SUFFIX. Dies
 # like keychain_store_plain; `plain` delegates to it so the remote/HTTP caches
 # are invalidated too.

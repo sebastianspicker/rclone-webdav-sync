@@ -1196,8 +1196,7 @@ _account_import_batch_pairs() {
   local flag_line="" flag_name="" flag_paused="" flag_hidden=""
   while IFS=$'\t' read -r local_path remote paused hidden; do
     [[ -n "$local_path" ]] || continue
-    sanitize_name_into name "$remote"
-    [[ -n "$name" ]] || name="entry"
+    entry_name_into name "$remote"
     if manifest_has_name "$name" || manifest_has_remote "$remote" ||
       [[ -n "${batch_names[$name]:-}" || -n "${batch_remotes[$remote]:-}" ]]; then
       skipped=$((skipped + 1))

@@ -739,8 +739,14 @@ setup_commit() {
   local url="" pass_config="" use_keychain=0
 
   remote_require_user "$user"
+  remote_credentials_snapshot
   setup_prepare_credentials "$1" "$user" "$3" "$4" url pass_config use_keychain
-  setup_write_and_validate_remote "$url" "$user" "$pass_config" "$4" "$use_keychain"
+  # Subshell: validation dies on bad credentials; the old ones come back.
+  if ! (setup_write_and_validate_remote "$url" "$user" "$pass_config" "$4" "$use_keychain"); then
+    remote_credentials_restore
+    die "setup failed; the previous remote settings and app password were restored"
+  fi
+  remote_credentials_forget
   setup_report_quota
   setup_report_capabilities
   setup_print_summary "$url" "$user" "$use_keychain" "$proxy"

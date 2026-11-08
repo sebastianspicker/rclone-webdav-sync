@@ -144,7 +144,9 @@ sciebo setup [--login] [--url URL] [--no-keychain] [--rotate]
 Create or update the rclone remote named `RCLONE_REMOTE` as a Nextcloud
 WebDAV backend, validate it with `rclone lsd`, print the quota, probe the
 server capabilities, and point out the server's chunk size when it differs
-from `CHUNK_SIZE`.
+from `CHUNK_SIZE`. When validation fails, the previous remote settings and
+app-password items are put back, so a mistyped password does not break a
+working setup (`provision` does the same).
 
 | Option | Effect |
 | --- | --- |

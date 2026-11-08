@@ -620,6 +620,56 @@ remote_write_pass() {
   die "could not patch the password into the rclone config (unreadable or changed); re-run '${CLI_NAME} setup --rotate'"
 }
 
+# remote_credentials_snapshot - remember the rclone config file and the
+# keychain app-password items before setup/provision overwrite them, so a
+# failed validation can put a working installation back (REMOTE_SNAP_*).
+REMOTE_SNAP_CONF=""
+REMOTE_SNAP_PLAIN=""
+REMOTE_SNAP_PLAIN_RC=1
+REMOTE_SNAP_LEGACY=""
+REMOTE_SNAP_LEGACY_RC=1
+remote_credentials_snapshot() {
+  REMOTE_SNAP_CONF=""
+  if [[ -f "$RCLONE_CONFIG" ]]; then
+    temp_mktemp_into REMOTE_SNAP_CONF "${TMPDIR:-/tmp}/sciebo-rclone-conf.XXXXXX" ||
+      die "cannot snapshot the rclone config"
+    cat "$RCLONE_CONFIG" >"$REMOTE_SNAP_CONF" || die "cannot snapshot the rclone config"
+  fi
+  REMOTE_SNAP_PLAIN_RC=0 REMOTE_SNAP_LEGACY_RC=0
+  REMOTE_SNAP_PLAIN=${ keychain_lookup_plain 2>/dev/null;} || REMOTE_SNAP_PLAIN_RC=$?
+  REMOTE_SNAP_LEGACY=${ keychain_lookup 2>/dev/null;} || REMOTE_SNAP_LEGACY_RC=$?
+}
+
+# remote_credentials_restore - undo setup's writes after a failed validation:
+# the rclone config bytes (written through any symlink) and the keychain
+# items that existed before; a plain item that did not exist is removed. An
+# unreadable keychain state (rc 2) is left alone rather than guessed.
+remote_credentials_restore() {
+  if [[ -n "$REMOTE_SNAP_CONF" ]]; then
+    cat "$REMOTE_SNAP_CONF" >"$RCLONE_CONFIG" || warn "could not restore ${RCLONE_CONFIG}"
+    temp_discard "$REMOTE_SNAP_CONF"
+  fi
+  remote_config_invalidate
+  if keychain_enabled; then
+    case "$REMOTE_SNAP_PLAIN_RC" in
+      0) keychain_store_plain "$REMOTE_SNAP_PLAIN" ;;
+      1) keychain_delete_item plain || true ;;
+    esac
+    [[ "$REMOTE_SNAP_LEGACY_RC" -ne 0 ]] || keychain_store_legacy "$REMOTE_SNAP_LEGACY"
+  fi
+  REMOTE_SNAP_PLAIN="" REMOTE_SNAP_LEGACY=""
+  remote_secret_invalidate
+}
+
+# remote_credentials_forget - drop the snapshot after a successful setup and
+# re-read the config and secret the subshell wrote.
+remote_credentials_forget() {
+  temp_discard "$REMOTE_SNAP_CONF"
+  REMOTE_SNAP_CONF="" REMOTE_SNAP_PLAIN="" REMOTE_SNAP_LEGACY=""
+  remote_config_invalidate
+  remote_secret_invalidate
+}
+
 # remote_validate [HINT] - `rclone lsd` against the configured remote; log
 # success or die naming the Nextcloud credentials. HINT is the exact list
 # of options/values to check (defaults to setup's wording).
